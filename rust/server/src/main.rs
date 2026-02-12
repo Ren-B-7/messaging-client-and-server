@@ -4,6 +4,7 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Request, Response};
 use hyper_util::rt::{TokioIo, TokioTimer};
+use std::fmt;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 
@@ -11,7 +12,7 @@ use tokio::net::TcpListener;
 use anyhow::{Context, Result};
 use tracing::{error, info};
 
-use handlers::{admin, user};
+use super::handlers::{admin, user};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -29,7 +30,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     );
 
     let user_serv = async move {
-        let listener = TcpListener::bind(user_sock).await.unwrap();
+        let listener = TcpListener::bind(user_sock)
+            .await
+            .context(format!("Failed to bind to {}", user_sock))
+            .unwrap();
         loop {
             let (stream, _) = listener.accept().await.unwrap();
             let io = TokioIo::new(stream);
