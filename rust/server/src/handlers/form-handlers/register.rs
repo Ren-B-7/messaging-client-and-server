@@ -10,6 +10,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>
 pub struct RegistrationData {
     pub username: String,
     pub password: String,
+    pub password_dup: String,
     pub email: Option<String>,
 }
 
@@ -29,7 +30,7 @@ pub async fn parse_registration_form(
 ) -> Result<RegistrationData> {
     // Concatenate the body
     let body = req.collect().await?.to_bytes();
-    
+
     // Parse the request body using form_urlencoded
     let params = form_urlencoded::parse(body.as_ref())
         .into_owned()
