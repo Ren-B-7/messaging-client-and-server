@@ -1,0 +1,53 @@
+[workspace]
+members = [
+    "shared",
+    "server",
+    "tui"
+]
+
+resolver = "2"
+
+[workspace.dependencies]
+# Config + serial
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# Async
+tokio = { version = "1.37", features = ["full"] }
+
+# HTTP
+hyper = { version = "1.2", features = ["full"] }
+http = "1"
+
+# Hyper dependencies
+hyper-util = { version = "0.1", features = ["full"] }
+http-body-util = "0.1"
+
+# websocket support
+tokio-tungstenite = "0.21"
+tungstenite = "0.21"
+
+# Error tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+
+# Error handling
+anyhow = "1.0.101"
+
+bytes = "1"
+
+[profile.release]
+opt-level = 3           # Maximum optimizations
+lto = "thin"            # Link-time optimization (thin is faster than "fat")
+codegen-units = 1       # Better optimization (slower compile, faster runtime)
+strip = true            # Remove debug symbols - smaller binary
+panic = 'abort'         # Smaller binary, no unwinding
+
+[profile.dev]
+opt-level = 1           # Basic optimizations in debug mode
+
+# For benchmarking
+[profile.bench]
+inherits = "release"
+debug = true            # Keep debug info for profiling

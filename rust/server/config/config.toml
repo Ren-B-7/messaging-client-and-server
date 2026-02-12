@@ -1,0 +1,11 @@
+[server]
+bind = "127.0.0.1:8080"
+max_connections = 10000
+
+[assets]
+mode = "filesystem"
+web_dir = "../web"
+
+[auth]
+token_expiry_minutes = 60
+
