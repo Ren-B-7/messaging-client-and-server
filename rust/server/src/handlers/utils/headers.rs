@@ -1,13 +1,18 @@
 use hyper::header::{HeaderMap, HeaderName, HeaderValue};
 use hyper::{Request, Response};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tracing::{debug, warn};
+use anyhow::{anyhow, Result};
 
 /// Extract a header value as a string
 pub fn get_header_value(headers: &HeaderMap, name: &str) -> Option<String> {
     headers
         .get(name)
         .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string())
+        .map(|s| {
+            debug!("Retrieved header: {}", name);
+            s.to_string()
+        })
 }
 
 /// Check if a header exists and matches a value
@@ -28,11 +33,16 @@ pub fn get_cookie(headers: &HeaderMap, cookie_name: &str) -> Option<String> {
                 let name = parts.next()?.trim();
                 let value = parts.next()?.trim();
                 if name == cookie_name {
+                    debug!("Cookie found: {}", cookie_name);
                     Some(value.to_string())
                 } else {
                     None
                 }
             })
+        })
+        .or_else(|| {
+            warn!("Cookie not found: {}", cookie_name);
+            None
         })
 }
 
@@ -44,7 +54,7 @@ pub fn set_cookie(
     path: Option<&str>,
     http_only: bool,
     secure: bool,
-) -> HeaderValue {
+) -> Result<HeaderValue> {
     let mut cookie = format!("{}={}", name, value);
 
     if let Some(age) = max_age {
@@ -65,11 +75,17 @@ pub fn set_cookie(
 
     cookie.push_str("; SameSite=Strict");
 
-    HeaderValue::from_str(&cookie).unwrap_or_else(|_| HeaderValue::from_static(""))
+    debug!("Setting cookie: {}", name);
+    
+    HeaderValue::from_str(&cookie).map_err(|e| {
+        warn!("Failed to create cookie header for {}: {}", name, e);
+        anyhow!("Invalid cookie value: {}", e)
+    })
 }
 
 /// Create a session cookie (expires when browser closes)
-pub fn create_session_cookie(name: &str, value: &str, secure: bool) -> HeaderValue {
+pub fn create_session_cookie(name: &str, value: &str, secure: bool) -> Result<HeaderValue> {
+    debug!("Creating session cookie: {}", name);
     set_cookie(name, value, None, Some("/"), true, secure)
 }
 
@@ -79,12 +95,14 @@ pub fn create_persistent_cookie(
     value: &str,
     max_age: Duration,
     secure: bool,
-) -> HeaderValue {
+) -> Result<HeaderValue> {
+    debug!("Creating persistent cookie: {} with max_age: {:?}", name, max_age);
     set_cookie(name, value, Some(max_age), Some("/"), true, secure)
 }
 
 /// Delete a cookie by setting it to expire
-pub fn delete_cookie(name: &str) -> HeaderValue {
+pub fn delete_cookie(name: &str) -> Result<HeaderValue> {
+    debug!("Deleting cookie: {}", name);
     set_cookie(
         name,
         "",
@@ -179,8 +197,10 @@ pub fn add_security_headers<T>(mut res: Response<T>) -> Response<T> {
 pub fn get_bearer_token(req: &Request<hyper::body::Incoming>) -> Option<String> {
     get_header_value(req.headers(), "authorization").and_then(|auth| {
         if auth.starts_with("Bearer ") {
+            debug!("Bearer token extracted");
             Some(auth[7..].to_string())
         } else {
+            warn!("Invalid or missing Bearer token");
             None
         }
     })
@@ -191,6 +211,7 @@ pub fn get_bearer_token(req: &Request<hyper::body::Incoming>) -> Option<String> 
 pub fn get_basic_auth(req: &Request<hyper::body::Incoming>) -> Option<(String, String)> {
     get_header_value(req.headers(), "authorization").and_then(|auth| {
         if auth.starts_with("Basic ") {
+            debug!("Basic auth credentials extracted");
             // TODO: Implement base64 decoding
             // For now, return None
             // Full implementation requires base64 crate:
@@ -200,6 +221,7 @@ pub fn get_basic_auth(req: &Request<hyper::body::Incoming>) -> Option<(String, S
             // Some((parts.next()?.to_string(), parts.next()?.to_string()))
             None
         } else {
+            warn!("Invalid or missing Basic auth");
             None
         }
     })

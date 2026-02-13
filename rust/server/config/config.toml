@@ -1,11 +1,22 @@
+# Server configuration
 [server]
-bind = "127.0.0.1:8080"
-max_connections = 10000
+bind = "127.0.0.1"
+port_admin = 1338  # Port for admin interface (default: 1338)
+port_client = 1337  # Port for client interface (default: 1337)
+max_connections = 1000  # Maximum concurrent connections
 
-[assets]
-mode = "filesystem"
-web_dir = "../web"
+# Path configuration
+[paths]
+web_dir = "./static"  # Directory for serving static files
+icons = "./static/icons"  # Optional: Directory for user icons/avatars
+blocked_paths = [  # Paths that should return 403
+    "/admin",
+    "/.git",
+    "/.env",
+    "/config.toml"
+]
 
+# Authentication configuration
 [auth]
-token_expiry_minutes = 60
-
+token_expiry_minutes = 60  # How long auth tokens are valid
+email_required = true  # Whether email is required for registration

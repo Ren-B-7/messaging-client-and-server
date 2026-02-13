@@ -4,12 +4,16 @@ use hyper::header::{HeaderValue, UPGRADE};
 use hyper::upgrade::Upgraded;
 use hyper::{Request, Response, StatusCode};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+use anyhow::{anyhow, Result};
+use tracing::{debug, info, warn, error};
 
 /// Check if a request contains an upgrade header
 pub fn is_upgrade_request(req: &Request<hyper::body::Incoming>) -> bool {
-    req.headers().contains_key(UPGRADE)
+    let is_upgrade = req.headers().contains_key(UPGRADE);
+    if is_upgrade {
+        debug!("Upgrade request detected");
+    }
+    is_upgrade
 }
 
 /// Get the upgrade protocol from the request headers
@@ -17,11 +21,15 @@ pub fn get_upgrade_protocol(req: &Request<hyper::body::Incoming>) -> Option<Stri
     req.headers()
         .get(UPGRADE)
         .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string())
+        .map(|s| {
+            debug!("Upgrade protocol: {}", s);
+            s.to_string()
+        })
 }
 
 /// Create a response accepting the upgrade to a specific protocol
 pub fn accept_upgrade(protocol: &str) -> Response<Empty<Bytes>> {
+    info!("Accepting upgrade to protocol: {}", protocol);
     let mut res = Response::new(Empty::new());
     *res.status_mut() = StatusCode::SWITCHING_PROTOCOLS;
     res.headers_mut()
@@ -31,6 +39,7 @@ pub fn accept_upgrade(protocol: &str) -> Response<Empty<Bytes>> {
 
 /// Create a response rejecting the upgrade
 pub fn reject_upgrade() -> Response<Empty<Bytes>> {
+    warn!("Upgrade request rejected");
     let mut res = Response::new(Empty::new());
     *res.status_mut() = StatusCode::BAD_REQUEST;
     res
@@ -47,6 +56,7 @@ pub async fn handle_websocket_upgrade(
 
     let protocol = get_upgrade_protocol(&req);
     if protocol.as_deref() != Some("websocket") {
+        warn!("WebSocket upgrade requested but protocol mismatch: {:?}", protocol);
         return Ok(reject_upgrade());
     }
 
@@ -54,11 +64,14 @@ pub async fn handle_websocket_upgrade(
     tokio::task::spawn(async move {
         match hyper::upgrade::on(&mut req).await {
             Ok(upgraded) => {
+                info!("WebSocket upgrade successful");
                 if let Err(e) = websocket_io(upgraded).await {
-                    eprintln!("WebSocket I/O error: {}", e);
+                    error!("WebSocket I/O error: {}", e);
                 }
             }
-            Err(e) => eprintln!("Upgrade error: {}", e),
+            Err(e) => {
+                error!("WebSocket upgrade failed: {}", e);
+            }
         }
     });
 
@@ -73,6 +86,8 @@ async fn websocket_io(upgraded: Upgraded) -> Result<()> {
     // Simple echo server for WebSocket frames
     // This is a simplified version - actual WebSocket implementation
     // requires proper frame handling
+    
+    debug!("WebSocket I/O handler started");
     
     // Placeholder - you'll need to implement proper WebSocket protocol
     Ok(())
@@ -90,17 +105,23 @@ pub async fn handle_custom_upgrade(
 
     let req_protocol = get_upgrade_protocol(&req);
     if req_protocol.as_deref() != Some(protocol) {
+        warn!("Custom upgrade requested for {} but got: {:?}", protocol, req_protocol);
         return Ok(reject_upgrade());
     }
+
+    info!("Handling custom protocol upgrade: {}", protocol);
 
     tokio::task::spawn(async move {
         match hyper::upgrade::on(&mut req).await {
             Ok(upgraded) => {
+                info!("Custom upgrade successful for protocol: {}", protocol);
                 if let Err(e) = handler(upgraded).await {
-                    eprintln!("{} I/O error: {}", protocol, e);
+                    error!("{} I/O error: {}", protocol, e);
                 }
             }
-            Err(e) => eprintln!("Upgrade error: {}", e),
+            Err(e) => {
+                error!("Custom upgrade failed for {}: {}", protocol, e);
+            }
         }
     });
 

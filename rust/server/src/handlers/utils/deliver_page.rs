@@ -1,63 +1,107 @@
+use anyhow::{Result, anyhow};
 use bytes::Bytes;
-use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
-use hyper::{header, Response, StatusCode};
-use std::convert::Infallible;
+use http_body_util::{BodyExt, Empty, Full, combinators::BoxBody};
+use hyper::{Response, StatusCode, header};
+use std::{convert::Infallible, vec};
+use tracing::{debug, error};
 
-/// Delivers an HTML page with proper headers
-pub fn deliver_html_page(html: &str) -> Response<BoxBody<Bytes, Infallible>> {
-    Response::builder()
-        .status(StatusCode::OK)
+fn apply_security_headers(builder: http::response::Builder) -> http::response::Builder {
+    builder
         .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
         .header(header::CACHE_CONTROL, "no-cache, no-store, must-revalidate")
-        .body(full(html))
-        .expect("valid response")
+        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+        .header(header::X_FRAME_OPTIONS, "DENY")
+        .header(
+            header::STRICT_TRANSPORT_SECURITY,
+            "max-age=31536000; includeSubDomains",
+        )
+        .header(
+            header::CONTENT_SECURITY_POLICY,
+            "default-src 'self'; script-src 'self'",
+        )
+        .header(header::REFERRER_POLICY, "no-referrer")
+}
+
+/// Delivers an HTML page with proper headers (Default OK status)
+pub fn deliver_html_page(html: &str) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    deliver_html_page_with_status(html, StatusCode::OK)
 }
 
 /// Delivers a page with a custom status code
-pub fn deliver_html_page_with_status(
-    html: &str,
+pub fn deliver_html_page_with_status<T: AsRef<[u8]>>(
+    html: T,
     status: StatusCode,
-) -> Response<BoxBody<Bytes, Infallible>> {
-    Response::builder()
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    let bytes_string = Bytes::copy_from_slice(html.as_ref());
+    let bytes_vec: Vec<Bytes> = vec![bytes_string.clone()];
+    debug!(
+        "Delivering HTML page with status: {}, size: {} bytes",
+        status,
+        bytes_vec.len()
+    );
+
+    apply_security_headers(Response::builder())
         .status(status)
-        .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-        .header(header::CACHE_CONTROL, "no-cache, no-store, must-revalidate")
-        .body(full(html))
-        .expect("valid response")
+        .body(full(bytes_string))
+        .map_err(|e| {
+            error!("Failed to build HTML response: {}", e);
+            anyhow!("Failed to build HTML response: {}", e)
+        })
 }
 
 /// Delivers a JSON response
-pub fn deliver_json(json: &str) -> Response<BoxBody<Bytes, Infallible>> {
+pub fn deliver_json<T: Into<Bytes>>(json: T) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    let bytes_string = json.into();
+    let bytes_vec: Vec<Bytes> = vec![bytes_string.clone()];
+    debug!("Delivering JSON response, size: {} bytes", bytes_vec.len());
+
     Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "application/json")
-        .body(full(json))
-        .expect("valid response")
+        .body(full(bytes_string))
+        .map_err(|e| {
+            error!("Failed to build JSON response: {}", e);
+            anyhow!("Failed to build JSON response: {}", e)
+        })
 }
 
 /// Delivers a redirect response
-pub fn deliver_redirect(location: &str) -> Response<BoxBody<Bytes, Infallible>> {
+pub fn deliver_redirect(location: &str) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    debug!("Delivering redirect to: {}", location);
+
     Response::builder()
         .status(StatusCode::FOUND)
         .header(header::LOCATION, location)
         .body(full(""))
-        .expect("valid response")
+        .map_err(|e| {
+            error!("Failed to build redirect response to {}: {}", location, e);
+            anyhow!("Failed to build redirect response: {}", e)
+        })
 }
 
 /// Delivers a plain text response
-pub fn deliver_text(text: &str) -> Response<BoxBody<Bytes, Infallible>> {
+pub fn deliver_text<T: Into<Bytes>>(text: T) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    let bytes_string = text.into();
+    let bytes_vec: Vec<Bytes> = vec![bytes_string.clone()];
+    debug!("Delivering text response, size: {} bytes", bytes_vec.len());
+
     Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
-        .body(full(text))
-        .expect("valid response")
+        .body(full(bytes_string))
+        .map_err(|e| {
+            error!("Failed to build text response: {}", e);
+            anyhow!("Failed to build text response: {}", e)
+        })
 }
 
 /// Delivers an error page with appropriate status code
 pub fn deliver_error_page(
     status: StatusCode,
     message: &str,
-) -> Response<BoxBody<Bytes, Infallible>> {
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    error!("Delivering error page: {} - {}", status, message);
+
     let html = format!(
         r#"<!DOCTYPE html>
 <html>
