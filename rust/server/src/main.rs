@@ -1,19 +1,13 @@
 use std::env;
-use std::future::Future;
 use std::net::SocketAddr;
-use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use bytes::Bytes;
-use http_body_util::Full;
-use hyper::body::Incoming as IncomingBody;
-use hyper::server::conn::http1;
-use hyper::service::Service;
-use hyper::{Request, Response};
-use hyper_util::rt::{TokioIo, TokioTimer};
 use tokio::net::TcpListener;
 use tokio::pin;
+
+use hyper::server::conn::http1;
+use hyper_util::rt::{TokioIo, TokioTimer};
 
 // Error tracing
 use anyhow::Context;
@@ -24,7 +18,7 @@ mod handlers;
 
 use shared::config::{self, Config};
 
-use handlers::{admin, user};
+use handlers::{admin::AdminService, user::UserService};
 
 /// Shared application state that will be passed to all handlers
 /// Clone is cheap because Config is wrapped in Arc
@@ -38,66 +32,6 @@ impl AppState {
         Self {
             config: Arc::new(config),
         }
-    }
-}
-
-/// User service implementation
-#[derive(Clone, Debug)]
-struct UserService {
-    state: AppState,
-    addr: SocketAddr,
-}
-
-impl Service<Request<IncomingBody>> for UserService {
-    type Response = Response<Full<Bytes>>;
-    type Error = hyper::Error;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
-
-    fn call(&self, req: Request<IncomingBody>) -> Self::Future {
-        let state = self.state.clone();
-        let addr = self.addr;
-        
-        Box::pin(async move {
-            user::user_conn(req, addr, state)
-                .await
-                .or_else(|e| {
-                    error!("User handler error: {:?}", e);
-                    Ok(Response::builder()
-                        .status(500)
-                        .body(Full::new(Bytes::from("Internal Server Error")))
-                        .unwrap())
-                })
-        })
-    }
-}
-
-/// Admin service implementation
-#[derive(Clone, Debug)]
-struct AdminService {
-    state: AppState,
-    addr: SocketAddr,
-}
-
-impl Service<Request<IncomingBody>> for AdminService {
-    type Response = Response<Full<Bytes>>;
-    type Error = hyper::Error;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
-
-    fn call(&self, req: Request<IncomingBody>) -> Self::Future {
-        let state = self.state.clone();
-        let addr = self.addr;
-        
-        Box::pin(async move {
-            admin::admin_conn(req, addr, state)
-                .await
-                .or_else(|e| {
-                    error!("Admin handler error: {:?}", e);
-                    Ok(Response::builder()
-                        .status(500)
-                        .body(Full::new(Bytes::from("Internal Server Error")))
-                        .unwrap())
-                })
-        })
     }
 }
 
@@ -126,7 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let admin_sock: SocketAddr = ([127, 0, 0, 1], admin_port).into();
 
     info!(
-        "Listening on http://{} and (admin) http://{}",
+        "Listening on http://{} (user) and http://{} (admin)",
         user_sock, admin_sock
     );
 
@@ -153,10 +87,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let connection_timeouts_clone = user_timeouts.clone();
 
             // Create service instance for this connection
-            let svc = UserService {
-                state: user_state.clone(),
-                addr,
-            };
+            let svc = UserService::new(user_state.clone(), addr);
 
             tokio::task::spawn(async move {
                 let conn = http1::Builder::new()
@@ -197,10 +128,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let connection_timeouts_clone = admin_timeouts.clone();
 
             // Create service instance for this connection
-            let svc = AdminService {
-                state: admin_state.clone(),
-                addr,
-            };
+            let svc = AdminService::new(admin_state.clone(), addr);
 
             tokio::task::spawn(async move {
                 let conn = http1::Builder::new()

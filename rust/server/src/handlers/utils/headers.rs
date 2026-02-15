@@ -1,18 +1,15 @@
-use hyper::header::{HeaderMap, HeaderName, HeaderValue};
-use hyper::{Request, Response};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use anyhow::{Result, anyhow};
+use hyper::header::{HeaderMap, HeaderValue};
+use hyper::Request;
+use std::time::Duration;
 use tracing::{debug, warn};
-use anyhow::{anyhow, Result};
 
 /// Extract a header value as a string
 pub fn get_header_value(headers: &HeaderMap, name: &str) -> Option<String> {
-    headers
-        .get(name)
-        .and_then(|v| v.to_str().ok())
-        .map(|s| {
-            debug!("Retrieved header: {}", name);
-            s.to_string()
-        })
+    headers.get(name).and_then(|v| v.to_str().ok()).map(|s| {
+        debug!("Retrieved header: {}", name);
+        s.to_string()
+    })
 }
 
 /// Check if a header exists and matches a value
@@ -76,7 +73,7 @@ pub fn set_cookie(
     cookie.push_str("; SameSite=Strict");
 
     debug!("Setting cookie: {}", name);
-    
+
     HeaderValue::from_str(&cookie).map_err(|e| {
         warn!("Failed to create cookie header for {}: {}", name, e);
         anyhow!("Invalid cookie value: {}", e)
@@ -96,7 +93,10 @@ pub fn create_persistent_cookie(
     max_age: Duration,
     secure: bool,
 ) -> Result<HeaderValue> {
-    debug!("Creating persistent cookie: {} with max_age: {:?}", name, max_age);
+    debug!(
+        "Creating persistent cookie: {} with max_age: {:?}",
+        name, max_age
+    );
     set_cookie(name, value, Some(max_age), Some("/"), true, secure)
 }
 
@@ -117,10 +117,7 @@ pub fn delete_cookie(name: &str) -> Result<HeaderValue> {
 pub fn get_client_ip(req: &Request<hyper::body::Incoming>) -> Option<String> {
     // Check X-Forwarded-For header first (for proxied requests)
     if let Some(forwarded) = get_header_value(req.headers(), "x-forwarded-for") {
-        return forwarded
-            .split(',')
-            .next()
-            .map(|s| s.trim().to_string());
+        return forwarded.split(',').next().map(|s| s.trim().to_string());
     }
 
     // Check X-Real-IP header
@@ -128,8 +125,6 @@ pub fn get_client_ip(req: &Request<hyper::body::Incoming>) -> Option<String> {
         return Some(real_ip);
     }
 
-    // Fall back to remote address if available
-    // Note: In a real implementation, you'd get this from the connection info
     None
 }
 
@@ -146,7 +141,7 @@ pub fn accepts_content_type(req: &Request<hyper::body::Incoming>, content_type: 
 }
 
 /// Add CORS headers to a response
-pub fn add_cors_headers<T>(mut res: Response<T>, origin: &str) -> Response<T> {
+pub fn add_cors_headers<T>(mut res: hyper::Response<T>, origin: &str) -> hyper::Response<T> {
     let headers = res.headers_mut();
 
     headers.insert(
@@ -161,26 +156,20 @@ pub fn add_cors_headers<T>(mut res: Response<T>, origin: &str) -> Response<T> {
         "access-control-allow-headers",
         HeaderValue::from_static("Content-Type, Authorization"),
     );
-    headers.insert(
-        "access-control-max-age",
-        HeaderValue::from_static("86400"),
-    );
+    headers.insert("access-control-max-age", HeaderValue::from_static("86400"));
 
     res
 }
 
 /// Add security headers to a response
-pub fn add_security_headers<T>(mut res: Response<T>) -> Response<T> {
+pub fn add_security_headers<T>(mut res: hyper::Response<T>) -> hyper::Response<T> {
     let headers = res.headers_mut();
 
     headers.insert(
         "x-content-type-options",
         HeaderValue::from_static("nosniff"),
     );
-    headers.insert(
-        "x-frame-options",
-        HeaderValue::from_static("DENY"),
-    );
+    headers.insert("x-frame-options", HeaderValue::from_static("DENY"));
     headers.insert(
         "x-xss-protection",
         HeaderValue::from_static("1; mode=block"),
@@ -207,18 +196,12 @@ pub fn get_bearer_token(req: &Request<hyper::body::Incoming>) -> Option<String> 
 }
 
 /// Extract basic auth credentials from Authorization header
-/// Note: Requires base64 crate for full implementation
 pub fn get_basic_auth(req: &Request<hyper::body::Incoming>) -> Option<(String, String)> {
     get_header_value(req.headers(), "authorization").and_then(|auth| {
         if auth.starts_with("Basic ") {
             debug!("Basic auth credentials extracted");
             // TODO: Implement base64 decoding
-            // For now, return None
-            // Full implementation requires base64 crate:
-            // let decoded = base64::decode(&auth[6..]).ok()?;
-            // let credentials = String::from_utf8(decoded).ok()?;
-            // let mut parts = credentials.splitn(2, ':');
-            // Some((parts.next()?.to_string(), parts.next()?.to_string()))
+            // Requires base64 crate
             None
         } else {
             warn!("Invalid or missing Basic auth");

@@ -1,9 +1,26 @@
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, Context};
 use bytes::Bytes;
 use http_body_util::{BodyExt, Empty, Full, combinators::BoxBody};
 use hyper::{Response, StatusCode, header};
-use std::{convert::Infallible, vec};
+use std::convert::Infallible;
+use std::path::{Path, PathBuf};
 use tracing::{debug, error};
+
+/// Expand tilde (~) in path to home directory
+fn expand_tilde<P: AsRef<Path>>(path: P) -> PathBuf {
+    let path_ref: &Path = path.as_ref();
+    let path_str: &str = path_ref.to_str().unwrap_or("");
+    
+    if path_str.starts_with("~/") {
+        if let Some(home) = std::env::var_os("HOME") {
+            let mut home_path: PathBuf = PathBuf::from(home);
+            home_path.push(&path_str[2..]);
+            return home_path;
+        }
+    }
+    
+    path_ref.to_path_buf()
+}
 
 fn apply_security_headers(builder: http::response::Builder) -> http::response::Builder {
     builder
@@ -23,8 +40,24 @@ fn apply_security_headers(builder: http::response::Builder) -> http::response::B
 }
 
 /// Delivers an HTML page with proper headers (Default OK status)
-pub fn deliver_html_page(html: &str) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    deliver_html_page_with_status(html, StatusCode::OK)
+pub fn deliver_html_page<S: AsRef<str>>(html: S) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    deliver_html_page_with_status(html.as_ref(), StatusCode::OK)
+}
+
+/// Read an HTML file from disk and deliver it
+pub fn deliver_html_file<P: AsRef<Path>>(
+    file_path: P,
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    let expanded_path: PathBuf = expand_tilde(file_path);
+    
+    debug!("Reading HTML file from: {}", expanded_path.display());
+    
+    let html_content: String = std::fs::read_to_string(&expanded_path)
+        .with_context(|| format!("Failed to read HTML file: {}", expanded_path.display()))?;
+    
+    debug!("Successfully read {} bytes from {}", html_content.len(), expanded_path.display());
+    
+    deliver_html_page_with_status(html_content, StatusCode::OK)
 }
 
 /// Delivers a page with a custom status code
@@ -32,67 +65,83 @@ pub fn deliver_html_page_with_status<T: AsRef<[u8]>>(
     html: T,
     status: StatusCode,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    let bytes_string = Bytes::copy_from_slice(html.as_ref());
-    let bytes_vec: Vec<Bytes> = vec![bytes_string.clone()];
+    let html_bytes: &[u8] = html.as_ref();
+    let bytes_string: Bytes = Bytes::copy_from_slice(html_bytes);
+    
     debug!(
         "Delivering HTML page with status: {}, size: {} bytes",
         status,
-        bytes_vec.len()
+        bytes_string.len()
     );
 
-    apply_security_headers(Response::builder())
+    let response: Response<BoxBody<Bytes, Infallible>> = apply_security_headers(Response::builder())
         .status(status)
         .body(full(bytes_string))
-        .map_err(|e| {
+        .map_err(|e: http::Error| {
             error!("Failed to build HTML response: {}", e);
             anyhow!("Failed to build HTML response: {}", e)
-        })
+        })?;
+    
+    Ok(response)
 }
 
 /// Delivers a JSON response
 pub fn deliver_json<T: Into<Bytes>>(json: T) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    let bytes_string = json.into();
-    let bytes_vec: Vec<Bytes> = vec![bytes_string.clone()];
-    debug!("Delivering JSON response, size: {} bytes", bytes_vec.len());
+    let bytes_string: Bytes = json.into();
+    
+    debug!(
+        "Delivering JSON response, size: {} bytes",
+        bytes_string.len()
+    );
 
-    Response::builder()
+    let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "application/json")
         .body(full(bytes_string))
-        .map_err(|e| {
+        .map_err(|e: http::Error| {
             error!("Failed to build JSON response: {}", e);
             anyhow!("Failed to build JSON response: {}", e)
-        })
+        })?;
+    
+    Ok(response)
 }
 
 /// Delivers a redirect response
 pub fn deliver_redirect(location: &str) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     debug!("Delivering redirect to: {}", location);
 
-    Response::builder()
+    let empty_bytes: Bytes = Bytes::from("");
+    let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()
         .status(StatusCode::FOUND)
         .header(header::LOCATION, location)
-        .body(full(""))
-        .map_err(|e| {
+        .body(full(empty_bytes))
+        .map_err(|e: http::Error| {
             error!("Failed to build redirect response to {}: {}", location, e);
             anyhow!("Failed to build redirect response: {}", e)
-        })
+        })?;
+    
+    Ok(response)
 }
 
 /// Delivers a plain text response
 pub fn deliver_text<T: Into<Bytes>>(text: T) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    let bytes_string = text.into();
-    let bytes_vec: Vec<Bytes> = vec![bytes_string.clone()];
-    debug!("Delivering text response, size: {} bytes", bytes_vec.len());
+    let bytes_string: Bytes = text.into();
+    
+    debug!(
+        "Delivering text response, size: {} bytes",
+        bytes_string.len()
+    );
 
-    Response::builder()
+    let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
         .body(full(bytes_string))
-        .map_err(|e| {
+        .map_err(|e: http::Error| {
             error!("Failed to build text response: {}", e);
             anyhow!("Failed to build text response: {}", e)
-        })
+        })?;
+    
+    Ok(response)
 }
 
 /// Delivers an error page with appropriate status code
@@ -102,7 +151,8 @@ pub fn deliver_error_page(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     error!("Delivering error page: {} - {}", status, message);
 
-    let html = format!(
+    let status_code: u16 = status.as_u16();
+    let html: String = format!(
         r#"<!DOCTYPE html>
 <html>
 <head>
@@ -137,8 +187,8 @@ pub fn deliver_error_page(
     </div>
 </body>
 </html>"#,
-        status.as_u16(),
-        status.as_u16(),
+        status_code,
+        status_code,
         message
     );
 
@@ -151,6 +201,9 @@ pub fn empty() -> BoxBody<Bytes, Infallible> {
 }
 
 /// Helper function to create a full body from various types
-fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, Infallible> {
-    Full::new(chunk.into()).boxed()
+/// Made public for use in error handling
+pub fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, Infallible> {
+    let bytes: Bytes = chunk.into();
+    let full_body: Full<Bytes> = Full::new(bytes);
+    full_body.boxed()
 }

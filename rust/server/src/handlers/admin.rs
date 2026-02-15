@@ -1,38 +1,76 @@
+use std::future::Future;
 use std::net::SocketAddr;
+use std::pin::Pin;
 
 use anyhow::{Context, Result};
 use bytes::Bytes;
 use http_body_util::Full;
-use hyper::{Method, Request, Response, StatusCode, body::Incoming};
-use serde::Serialize;
+use hyper::body::Incoming as IncomingBody;
+use hyper::service::Service;
+use hyper::{Method, Request, Response, StatusCode};
 use tracing::{error, info, warn};
 
 use crate::AppState;
+use crate::handlers::utils::error_response::deliver_error_json;
 
-/// Standard error response
-#[derive(Serialize)]
-struct ErrorResponse {
-    status: String,
-    code: String,
-    message: String,
+/// Admin service implementation
+#[derive(Clone, Debug)]
+pub struct AdminService {
+    state: AppState,
+    addr: SocketAddr,
 }
 
-impl ErrorResponse {
-    fn new(code: &str, message: &str) -> Self {
-        Self {
-            status: "error".to_string(),
-            code: code.to_string(),
-            message: message.to_string(),
-        }
+impl AdminService {
+    pub fn new(state: AppState, addr: SocketAddr) -> Self {
+        Self { state, addr }
+    }
+}
+
+impl Service<Request<IncomingBody>> for AdminService {
+    type Response = Response<Full<Bytes>>;
+    type Error = hyper::Error;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn call(&self, req: Request<IncomingBody>) -> Self::Future {
+        let state = self.state.clone();
+        let addr = self.addr;
+
+        Box::pin(async move {
+            match admin_conn(req, addr, state).await {
+                Ok(response) => Ok(response),
+                Err(e) => {
+                    error!("Admin handler error: {:?}", e);
+                    // Fallback error response
+                    match deliver_error_json(
+                        "INTERNAL_ERROR",
+                        "Internal Server Error",
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                    ) {
+                        Ok(err_response) => Ok(err_response),
+                        Err(delivery_err) => {
+                            error!("Failed to deliver error response: {:?}", delivery_err);
+                            // Last resort fallback
+                            Ok(Response::builder()
+                                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                                .header("content-type", "application/json")
+                                .body(Full::new(Bytes::from(
+                                    r#"{"status":"error","code":"INTERNAL_ERROR","message":"Internal Server Error"}"#
+                                )))
+                                .expect("Failed to build fallback error response"))
+                        }
+                    }
+                }
+            }
+        })
     }
 }
 
 /// Main admin connection handler
-pub async fn admin_conn(
-    req: Request<Incoming>,
+async fn admin_conn(
+    req: Request<IncomingBody>,
     addr: SocketAddr,
     state: AppState,
-) -> Result<Response<Full<Bytes>>, hyper::Error> {
+) -> Result<Response<Full<Bytes>>> {
     info!(
         "Admin request from {}: {} {}",
         addr,
@@ -41,10 +79,10 @@ pub async fn admin_conn(
     );
 
     // Clone path to avoid borrow issues
-    let path = req.uri().path().to_string();
+    let path: String = req.uri().path().to_string();
 
     // Route admin requests - wrap in error handler
-    let result = route_admin_request(req, addr, state, &path).await;
+    let result: Result<Response<Full<Bytes>>> = route_admin_request(req, addr, state, &path).await;
 
     match result {
         Ok(response) => Ok(response),
@@ -55,13 +93,14 @@ pub async fn admin_conn(
                 "Internal Server Error",
                 StatusCode::INTERNAL_SERVER_ERROR,
             )
+            .context("Failed to deliver INTERNAL_ERROR response")
         }
     }
 }
 
 /// Route admin requests
 async fn route_admin_request(
-    req: Request<Incoming>,
+    req: Request<IncomingBody>,
     _addr: SocketAddr,
     state: AppState,
     path: &str,
@@ -70,49 +109,70 @@ async fn route_admin_request(
         (&Method::GET, "/") | (&Method::GET, "/dashboard") => {
             info!("Serving admin dashboard");
 
+            let total_users: u32 = 42;
+            let active_sessions: u32 = 7;
+            let banned_users: u32 = 2;
+
             let dashboard_json = serde_json::json!({
                 "status": "success",
                 "data": {
                     "title": "Admin Dashboard",
                     "stats": {
-                        "total_users": 42,
-                        "active_sessions": 7,
-                        "banned_users": 2
+                        "total_users": total_users,
+                        "active_sessions": active_sessions,
+                        "banned_users": banned_users
                     }
                 }
             });
 
-            Ok(Response::builder()
+            let json_string: String = dashboard_json.to_string();
+            let json_bytes: Bytes = Bytes::from(json_string);
+
+            let response: Response<Full<Bytes>> = Response::builder()
                 .status(StatusCode::OK)
                 .header("content-type", "application/json")
-                .body(Full::new(Bytes::from(dashboard_json.to_string())))
-                .context("Failed to build dashboard response")?)
+                .body(Full::new(json_bytes))
+                .context("Failed to build dashboard response")?;
+
+            Ok(response)
         }
 
         (&Method::GET, "/api/stats") | (&Method::GET, "/stats") => {
             info!("Serving admin stats");
 
+            let max_connections: usize = state.config.server.max_connections;
+            let bind: &String = &state.config.server.bind;
+            let port_client: Option<u32> = state.config.server.port_client;
+            let port_admin: Option<u32> = state.config.server.port_admin;
+            let token_expiry: u64 = state.config.auth.token_expiry_minutes;
+            let email_required: bool = state.config.auth.email_required;
+
             let stats_json = serde_json::json!({
                 "status": "success",
                 "data": {
                     "server": {
-                        "max_connections": state.config.server.max_connections,
-                        "bind": state.config.server.bind,
-                        "port_client": state.config.server.port_client,
-                        "port_admin": state.config.server.port_admin
+                        "max_connections": max_connections,
+                        "bind": bind,
+                        "port_client": port_client,
+                        "port_admin": port_admin
                     },
                     "auth": {
-                        "token_expiry_minutes": state.config.auth.token_expiry_minutes,
-                        "email_required": state.config.auth.email_required
+                        "token_expiry_minutes": token_expiry,
+                        "email_required": email_required
                     }
                 }
             });
 
-            Ok(Response::builder()
+            let json_string: String = stats_json.to_string();
+            let json_bytes: Bytes = Bytes::from(json_string);
+
+            let response: Response<Full<Bytes>> = Response::builder()
                 .status(StatusCode::OK)
                 .header("content-type", "application/json")
-                .body(Full::new(Bytes::from(stats_json.to_string())))
-                .context("Failed to build stats response")?)
+                .body(Full::new(json_bytes))
+                .context("Failed to build stats response")?;
+
+            Ok(response)
         }
 
         (&Method::GET, "/api/users") | (&Method::GET, "/users") => {
@@ -138,7 +198,7 @@ async fn route_admin_request(
         _ => {
             warn!("Admin 404: {}", path);
             deliver_error_json("NOT_FOUND", "Endpoint not found", StatusCode::NOT_FOUND)
-                .map_err(|e| anyhow::anyhow!("Failed to deliver 404: {:?}", e))
+                .context("Failed to deliver 404 response")
         }
     }
 }
@@ -146,61 +206,42 @@ async fn route_admin_request(
 /// Handle get users list
 async fn handle_get_users(_state: AppState) -> Result<Response<Full<Bytes>>> {
     // TODO: Fetch actual users from database
-    let users_json = serde_json::json!({
-        "status": "success",
-        "data": {
-            "users": [
-                {
-                    "id": 1,
-                    "username": "admin",
-                    "email": "admin@example.com",
-                    "banned": false,
-                    "created_at": "2024-01-01T00:00:00Z"
-                },
-                {
-                    "id": 2,
-                    "username": "demo",
-                    "email": "demo@example.com",
-                    "banned": false,
-                    "created_at": "2024-01-15T00:00:00Z"
-                }
-            ],
-            "total": 2
-        }
-    });
+    let users_json = serde_json::json!({});
 
-    Ok(Response::builder()
+    let json_string: String = users_json.to_string();
+    let json_bytes: Bytes = Bytes::from(json_string);
+
+    let response: Response<Full<Bytes>> = Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "application/json")
-        .body(Full::new(Bytes::from(users_json.to_string())))
-        .context("Failed to build users response")?)
+        .body(Full::new(json_bytes))
+        .context("Failed to build users response")?;
+
+    Ok(response)
 }
 
 /// Handle ban user request
 async fn handle_ban_user(
-    req: Request<Incoming>,
+    req: Request<IncomingBody>,
     _state: AppState,
 ) -> Result<Response<Full<Bytes>>> {
     use http_body_util::BodyExt;
     use std::collections::HashMap;
 
     // Parse request body
-    let body = req
-        .collect()
-        .await
-        .context("Failed to read request body")?
-        .to_bytes();
+    let collected_body = req.collect().await.context("Failed to read request body")?;
 
-    let params = form_urlencoded::parse(body.as_ref())
-        .into_owned()
-        .collect::<HashMap<String, String>>();
+    let body: Bytes = collected_body.to_bytes();
 
-    let user_id = params
+    let params: HashMap<String, String> =
+        form_urlencoded::parse(body.as_ref()).into_owned().collect();
+
+    let user_id: i64 = params
         .get("user_id")
         .and_then(|id| id.parse::<i64>().ok())
         .ok_or_else(|| anyhow::anyhow!("Invalid user_id"))?;
 
-    let reason = params
+    let reason: String = params
         .get("reason")
         .map(|s| s.to_string())
         .unwrap_or_else(|| "No reason provided".to_string());
@@ -210,9 +251,10 @@ async fn handle_ban_user(
     // TODO: Implement actual ban in database
     // crate::database::ban::ban_user(user_id, reason).await?;
 
+    let message: String = format!("User {} has been banned", user_id);
     let response_json = serde_json::json!({
         "status": "success",
-        "message": format!("User {} has been banned", user_id),
+        "message": message,
         "data": {
             "user_id": user_id,
             "banned": true,
@@ -220,32 +262,34 @@ async fn handle_ban_user(
         }
     });
 
-    Ok(Response::builder()
+    let json_string: String = response_json.to_string();
+    let json_bytes: Bytes = Bytes::from(json_string);
+
+    let response: Response<Full<Bytes>> = Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "application/json")
-        .body(Full::new(Bytes::from(response_json.to_string())))
-        .context("Failed to build ban response")?)
+        .body(Full::new(json_bytes))
+        .context("Failed to build ban response")?;
+
+    Ok(response)
 }
 
 /// Handle unban user request
 async fn handle_unban_user(
-    req: Request<Incoming>,
+    req: Request<IncomingBody>,
     _state: AppState,
 ) -> Result<Response<Full<Bytes>>> {
     use http_body_util::BodyExt;
     use std::collections::HashMap;
 
-    let body = req
-        .collect()
-        .await
-        .context("Failed to read request body")?
-        .to_bytes();
+    let collected_body = req.collect().await.context("Failed to read request body")?;
 
-    let params = form_urlencoded::parse(body.as_ref())
-        .into_owned()
-        .collect::<HashMap<String, String>>();
+    let body: Bytes = collected_body.to_bytes();
 
-    let user_id = params
+    let params: HashMap<String, String> =
+        form_urlencoded::parse(body.as_ref()).into_owned().collect();
+
+    let user_id: i64 = params
         .get("user_id")
         .and_then(|id| id.parse::<i64>().ok())
         .ok_or_else(|| anyhow::anyhow!("Invalid user_id"))?;
@@ -255,62 +299,55 @@ async fn handle_unban_user(
     // TODO: Implement actual unban in database
     // crate::database::ban::unban_user(user_id).await?;
 
+    let message: String = format!("User {} has been unbanned", user_id);
     let response_json = serde_json::json!({
         "status": "success",
-        "message": format!("User {} has been unbanned", user_id),
+        "message": message,
         "data": {
             "user_id": user_id,
             "banned": false
         }
     });
 
-    Ok(Response::builder()
+    let json_string: String = response_json.to_string();
+    let json_bytes: Bytes = Bytes::from(json_string);
+
+    let response: Response<Full<Bytes>> = Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "application/json")
-        .body(Full::new(Bytes::from(response_json.to_string())))
-        .context("Failed to build unban response")?)
+        .body(Full::new(json_bytes))
+        .context("Failed to build unban response")?;
+
+    Ok(response)
 }
 
 /// Handle delete user request
 async fn handle_delete_user(
-    _req: Request<Incoming>,
+    _req: Request<IncomingBody>,
     _state: AppState,
 ) -> Result<Response<Full<Bytes>>> {
     // Extract user ID from path (simplified - in production use a proper router)
-    let user_id = 123; // Placeholder
+    let user_id: i64 = 123; // Placeholder
 
     info!("Deleting user {}", user_id);
 
     // TODO: Implement actual deletion in database
     // crate::database::users::delete_user(user_id).await?;
 
+    let message: String = format!("User {} has been deleted", user_id);
     let response_json = serde_json::json!({
         "status": "success",
-        "message": format!("User {} has been deleted", user_id)
+        "message": message
     });
 
-    Ok(Response::builder()
+    let json_string: String = response_json.to_string();
+    let json_bytes: Bytes = Bytes::from(json_string);
+
+    let response: Response<Full<Bytes>> = Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "application/json")
-        .body(Full::new(Bytes::from(response_json.to_string())))
-        .context("Failed to build delete response")?)
-}
+        .body(Full::new(json_bytes))
+        .context("Failed to build delete response")?;
 
-/// Deliver JSON error response
-fn deliver_error_json(
-    code: &str,
-    message: &str,
-    status: StatusCode,
-) -> Result<Response<Full<Bytes>>, hyper::Error> {
-    let error = ErrorResponse::new(code, message);
-    let json = serde_json::to_string(&error).unwrap_or_else(|_| {
-        r#"{"status":"error","code":"INTERNAL_ERROR","message":"Failed to serialize error"}"#
-            .to_string()
-    });
-
-    Ok(Response::builder()
-        .status(status)
-        .header("content-type", "application/json")
-        .body(Full::new(Bytes::from(json)))
-        .unwrap())
+    Ok(response)
 }

@@ -1,6 +1,5 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 use bytes::Bytes;
-use form_urlencoded;
 use http_body_util::BodyExt;
 use hyper::{Request, Response, StatusCode};
 use serde::{Deserialize, Serialize};
@@ -8,7 +7,6 @@ use std::collections::HashMap;
 use tracing::{error, info, warn};
 
 use crate::AppState;
-use crate::handlers::utils;
 
 /// Registration request data
 #[derive(Debug, Clone, Deserialize)]
@@ -189,7 +187,7 @@ async fn parse_and_validate_registration(
 
     // Validate email format if provided
     if let Some(ref email_str) = email {
-        if !is_valid_email(&email_str) {
+        if !is_valid_email(email_str) {
             return Err(RegistrationError::InvalidEmail);
         }
     }
@@ -235,9 +233,8 @@ fn validate_password(password: &str) -> std::result::Result<(), RegistrationErro
 }
 
 /// Basic email validation
-fn is_valid_email(email: &String) -> bool {
-    let mut email_c = email.clone();
-    let parts: Vec<&str> = email_c.as_mut_str().split('@').collect();
+fn is_valid_email(email: &str) -> bool {
+    let parts: Vec<&str> = email.split('@').collect();
     if parts.len() != 2 {
         return false;
     }
@@ -277,9 +274,6 @@ async fn attempt_registration(
         "Simulating registration for user: {} with email: {:?}",
         data.username, data.email
     );
-
-    // Simulate database call with error handling
-    // In real implementation, handle database errors properly
 
     // Check if username exists (simulated)
     if data.username == "admin" || data.username == "test" {

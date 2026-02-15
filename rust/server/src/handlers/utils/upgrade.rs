@@ -1,11 +1,30 @@
+use anyhow::{Result, anyhow};
 use bytes::Bytes;
 use http_body_util::Empty;
 use hyper::header::{HeaderValue, UPGRADE};
 use hyper::upgrade::Upgraded;
 use hyper::{Request, Response, StatusCode};
+use serde::Serialize;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use anyhow::{anyhow, Result};
-use tracing::{debug, info, warn, error};
+use tracing::{debug, error, info, warn};
+
+/// Standard error response
+#[derive(Serialize)]
+struct ErrorResponse {
+    status: String,
+    code: String,
+    message: String,
+}
+
+impl ErrorResponse {
+    fn new(code: &str, message: &str) -> Self {
+        Self {
+            status: "error".to_string(),
+            code: code.to_string(),
+            message: message.to_string(),
+        }
+    }
+}
 
 /// Check if a request contains an upgrade header
 pub fn is_upgrade_request(req: &Request<hyper::body::Incoming>) -> bool {
@@ -56,7 +75,10 @@ pub async fn handle_websocket_upgrade(
 
     let protocol = get_upgrade_protocol(&req);
     if protocol.as_deref() != Some("websocket") {
-        warn!("WebSocket upgrade requested but protocol mismatch: {:?}", protocol);
+        warn!(
+            "WebSocket upgrade requested but protocol mismatch: {:?}",
+            protocol
+        );
         return Ok(reject_upgrade());
     }
 
@@ -82,13 +104,13 @@ pub async fn handle_websocket_upgrade(
 async fn websocket_io(upgraded: Upgraded) -> Result<()> {
     // Note: In your actual implementation, wrap upgraded with TokioIo from support
     // For example: let mut upgraded = TokioIo::new(upgraded);
-    
+
     // Simple echo server for WebSocket frames
     // This is a simplified version - actual WebSocket implementation
     // requires proper frame handling
-    
+
     debug!("WebSocket I/O handler started");
-    
+
     // Placeholder - you'll need to implement proper WebSocket protocol
     Ok(())
 }
@@ -97,7 +119,9 @@ async fn websocket_io(upgraded: Upgraded) -> Result<()> {
 pub async fn handle_custom_upgrade(
     mut req: Request<hyper::body::Incoming>,
     protocol: &'static str,
-    handler: fn(Upgraded) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>>,
+    handler: fn(
+        Upgraded,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>>,
 ) -> Result<Response<Empty<Bytes>>> {
     if !is_upgrade_request(&req) {
         return Ok(reject_upgrade());
@@ -105,7 +129,10 @@ pub async fn handle_custom_upgrade(
 
     let req_protocol = get_upgrade_protocol(&req);
     if req_protocol.as_deref() != Some(protocol) {
-        warn!("Custom upgrade requested for {} but got: {:?}", protocol, req_protocol);
+        warn!(
+            "Custom upgrade requested for {} but got: {:?}",
+            protocol, req_protocol
+        );
         return Ok(reject_upgrade());
     }
 

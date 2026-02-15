@@ -1,12 +1,16 @@
 pub mod deliver_page;
+pub mod error_response;
 pub mod headers;
 pub mod upgrade;
 
-// Re-export delivery functions (now return Result types)
+// Re-export delivery functions
 pub use deliver_page::{
-    deliver_error_page, deliver_html_page, deliver_html_page_with_status, deliver_json,
-    deliver_redirect, deliver_text,
+    deliver_error_page, deliver_html_page, deliver_html_file, deliver_html_page_with_status, deliver_json,
+    deliver_redirect, deliver_text, empty,
 };
+
+// Re-export error response utilities
+pub use error_response::{ErrorResponse, deliver_error_json};
 
 // Re-export header utilities
 pub use headers::{
