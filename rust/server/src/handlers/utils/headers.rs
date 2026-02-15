@@ -182,6 +182,123 @@ pub fn add_security_headers<T>(mut res: hyper::Response<T>) -> hyper::Response<T
     res
 }
 
+/// Add cache headers for static files (1 year cache with immutable)
+pub fn add_static_cache_headers<T>(mut res: hyper::Response<T>) -> hyper::Response<T> {
+    let headers = res.headers_mut();
+
+    headers.insert(
+        "cache-control",
+        HeaderValue::from_static("public, max-age=31536000, immutable"),
+    );
+    headers.insert(
+        "x-content-type-options",
+        HeaderValue::from_static("nosniff"),
+    );
+
+    debug!("Added static cache headers (1 year, immutable)");
+    res
+}
+
+/// Add no-cache headers for non-static files
+pub fn add_no_cache_headers<T>(mut res: hyper::Response<T>) -> hyper::Response<T> {
+    let headers = res.headers_mut();
+
+    headers.insert(
+        "cache-control",
+        HeaderValue::from_static("no-cache, no-store, must-revalidate"),
+    );
+    headers.insert("pragma", HeaderValue::from_static("no-cache"));
+    headers.insert("expires", HeaderValue::from_static("0"));
+    headers.insert(
+        "x-content-type-options",
+        HeaderValue::from_static("nosniff"),
+    );
+
+    debug!("Added no-cache headers");
+    res
+}
+
+/// Add custom cache headers with specified max-age
+pub fn add_cache_headers_with_max_age<T>(
+    mut res: hyper::Response<T>,
+    max_age_seconds: u64,
+) -> hyper::Response<T> {
+    let headers = res.headers_mut();
+
+    let cache_control = format!("public, max-age={}", max_age_seconds);
+    headers.insert(
+        "cache-control",
+        HeaderValue::from_str(&cache_control).unwrap_or_else(|_| {
+            HeaderValue::from_static("public, max-age=3600")
+        }),
+    );
+    headers.insert(
+        "x-content-type-options",
+        HeaderValue::from_static("nosniff"),
+    );
+
+    debug!("Added cache headers with max-age: {} seconds", max_age_seconds);
+    res
+}
+
+/// Add ETag header for cache validation
+pub fn add_etag_header<T>(mut res: hyper::Response<T>, etag: &str) -> hyper::Response<T> {
+    let headers = res.headers_mut();
+
+    if let Ok(etag_value) = HeaderValue::from_str(etag) {
+        headers.insert("etag", etag_value);
+        debug!("Added ETag header: {}", etag);
+    } else {
+        warn!("Failed to add invalid ETag: {}", etag);
+    }
+
+    res
+}
+
+/// Check if request has matching ETag (for 304 Not Modified responses)
+pub fn check_etag_match(req: &Request<hyper::body::Incoming>, etag: &str) -> bool {
+    if let Some(if_none_match) = get_header_value(req.headers(), "if-none-match") {
+        let matches = if_none_match == etag;
+        if matches {
+            debug!("ETag match found: {}", etag);
+        }
+        return matches;
+    }
+    false
+}
+
+/// Add Last-Modified header
+pub fn add_last_modified_header<T>(
+    mut res: hyper::Response<T>,
+    last_modified: &str,
+) -> hyper::Response<T> {
+    let headers = res.headers_mut();
+
+    if let Ok(last_modified_value) = HeaderValue::from_str(last_modified) {
+        headers.insert("last-modified", last_modified_value);
+        debug!("Added Last-Modified header: {}", last_modified);
+    } else {
+        warn!("Failed to add invalid Last-Modified: {}", last_modified);
+    }
+
+    res
+}
+
+/// Check if request has If-Modified-Since header (for 304 responses)
+pub fn check_if_modified_since(
+    req: &Request<hyper::body::Incoming>,
+    last_modified_timestamp: u64,
+) -> bool {
+    if let Some(if_modified_since) = get_header_value(req.headers(), "if-modified-since") {
+        // Parse the If-Modified-Since header and compare with last_modified_timestamp
+        // This is a simplified version - proper implementation would parse HTTP date format
+        debug!("Checking If-Modified-Since: {}", if_modified_since);
+        // For now, return true to indicate modification (always serve)
+        return true;
+    }
+    true
+}
+
 /// Extract bearer token from Authorization header
 pub fn get_bearer_token(req: &Request<hyper::body::Incoming>) -> Option<String> {
     get_header_value(req.headers(), "authorization").and_then(|auth| {

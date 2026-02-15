@@ -130,6 +130,14 @@ async fn user_conn(
     }
 }
 
+/// Serve a static file with appropriate caching headers
+fn deliver_static_file(
+    file_path: &str,
+    cache: bool,
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    crate::handlers::utils::deliver_static_page_with_status(file_path, StatusCode::OK, cache)
+}
+
 /// Route requests to appropriate handlers
 async fn route_request(
     req: Request<IncomingBody>,
@@ -151,6 +159,28 @@ async fn route_request(
         (&Method::GET, "/health") => {
             deliver_json(Bytes::from(r#"{"status":"success","health":"ok"}"#))
                 .context("Failed to deliver health check response")
+        }
+
+        // Serve any .html file from the frontend directory
+        (&Method::GET, path) if path.ends_with(".html") => {
+            let file_path: String = format!("{}{}", web_dir, path);
+            info!("Serving HTML file: {}", file_path);
+            crate::handlers::utils::deliver_page::deliver_html_file(&file_path)
+                .context("Failed to deliver HTML file")
+        }
+
+        // Static files - cached (1 year)
+        (&Method::GET, path) if path.starts_with("/static/") => {
+            let file_path: String = format!("{}{}", web_dir, path);
+            info!("Serving static file (cached): {}", file_path);
+            deliver_static_file(&file_path, true).context("Failed to deliver static file")
+        }
+
+        // Non-static files - not cached
+        (&Method::GET, path) if path.starts_with("/non-static/") => {
+            let file_path: String = format!("{}{}", web_dir, path);
+            info!("Serving non-static file (no cache): {}", file_path);
+            deliver_static_file(&file_path, false).context("Failed to deliver non-static file")
         }
 
         // Authentication endpoints
