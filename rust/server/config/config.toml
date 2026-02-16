@@ -7,8 +7,8 @@ max_connections = 1000  # Maximum concurrent connections
 
 # Path configuration
 [paths]
-web_dir = "~/Documents/messaging-client-and-server/frontend"  # Directory for serving static files
-icons = "./static/icons"  # Optional: Directory for user icons/avatars
+web_dir = "~/Documents/messaging-client-and-server/frontend/"  # Directory for serving static files
+icons = "static/icons/favicons/"  # Optional: Directory for user icons/avatars
 blocked_paths = [  # Paths that should return 403
     "/admin",
     "/.git",

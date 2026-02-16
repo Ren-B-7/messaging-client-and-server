@@ -3,58 +3,110 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
+use http::header::ACCESS_CONTROL_ALLOW_METHODS;
 use tokio::net::TcpListener;
-use tokio::pin;
+use tower::ServiceBuilder;
+
+// CORS and Compression imports
+use hyper::Method;
+use hyper::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderValue};
+use tower_http::compression::{CompressionLayer, CompressionLevel};
+use tower_http::cors::{Any, CorsLayer};
 
 use hyper::server::conn::http1;
 use hyper_util::rt::{TokioIo, TokioTimer};
+use hyper_util::service::TowerToHyperService;
 
-// Error tracing
 use anyhow::Context;
 use tracing::{error, info};
 
 mod database;
 mod handlers;
+mod security;
+mod tower_middle;
 
 use shared::config::{self, Config};
+use tokio_rusqlite::Connection;
 
 use handlers::{admin::AdminService, user::UserService};
+use security::{IpFilter, Metrics, RateLimiter};
 
-/// Shared application state that will be passed to all handlers
-/// Clone is cheap because Config is wrapped in Arc
+// Import Tower middleware
+use tower_middle::{HyperToTowerAdapter, IpFilterLayer, MetricsLayer, RateLimiterLayer};
+
+use crate::database::create;
+
+/// Shared application state
 #[derive(Clone, Debug)]
 pub struct AppState {
+    pub db: Arc<Connection>,
     pub config: Arc<Config>,
+    pub ip_filter: IpFilter,
+    pub rate_limiter: RateLimiter,
+    pub metrics: Metrics,
 }
 
 impl AppState {
-    fn new(config: Config) -> Self {
+    fn new(config: Config, db: Connection) -> Self {
+        let rate_limiter = RateLimiter::new(100, 200);
+
         Self {
+            db: Arc::new(db),
             config: Arc::new(config),
+            ip_filter: IpFilter::new(),
+            rate_limiter,
+            metrics: Metrics::new(),
         }
+    }
+}
+
+/// Create CORS layer based on environment
+fn create_cors_layer() -> CorsLayer {
+    if cfg!(debug_assertions) {
+        // Development: permissive CORS
+        info!("Using permissive CORS (development mode)");
+        CorsLayer::permissive()
+    } else {
+        // Production: restrictive CORS
+        info!("Using restrictive CORS (production mode)");
+        CorsLayer::new()
+            // Allow multiple origins if needed
+            .allow_origin([
+                "http://127.0.0.1:1337".parse::<HeaderValue>().unwrap(),
+                "http://127.0.0.1:1338".parse::<HeaderValue>().unwrap(),
+            ])
+            .allow_methods([
+                Method::GET,
+                Method::POST,
+                Method::PUT,
+                Method::DELETE,
+                Method::HEAD,
+                Method::OPTIONS,
+            ])
+            .allow_headers([AUTHORIZATION, CONTENT_TYPE, ACCEPT])
+            .allow_credentials(true)
+            .max_age(Duration::from_secs(3600))
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Initialize tracing
     tracing_subscriber::fmt().init();
 
-    // Read config file location from command line
     let args: Vec<String> = env::args().collect();
-
     if args.len() < 2 {
         error!("Usage: {} <config_path>", args[0]);
         return Err("Missing config path argument".into());
     }
 
-    // Load config and wrap in AppState
+    let db: Connection = database::create::open_database("messaging.db").await?;
     let config = config::load_config(&args[1]).context("Failed to load configuration")?;
-    let state = AppState::new(config);
+    let state = AppState::new(config, db);
 
-    // Use config values for socket addresses
-    let user_port = state.config.server.port_client.unwrap_or(137) as u16;
-    let admin_port = state.config.server.port_admin.unwrap_or(138) as u16;
+    info!("IP filter configured");
+
+    let user_port = state.config.server.port_client.unwrap_or(1337) as u16;
+    let admin_port = state.config.server.port_admin.unwrap_or(1338) as u16;
 
     let user_sock: SocketAddr = ([127, 0, 0, 1], user_port).into();
     let admin_sock: SocketAddr = ([127, 0, 0, 1], admin_port).into();
@@ -64,14 +116,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         user_sock, admin_sock
     );
 
-    let connection_timeouts = vec![Duration::from_secs(30), Duration::from_secs(2)];
-
     // Clone state for each server
     let user_state = state.clone();
-    let admin_state = state;
+    let admin_state = state.clone();
+    let metrics_state = state.clone();
 
-    let user_timeouts = connection_timeouts.clone();
-    let admin_timeouts = connection_timeouts;
+    // Create CORS and Compression layers
+
+    // Background tasks
+    let cleanup_state = user_state.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+            cleanup_state.rate_limiter.cleanup().await;
+            info!("Rate limiter cleanup completed");
+        }
+    });
+
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+            let snapshot = metrics_state.metrics.snapshot().await;
+            info!("{}", snapshot.format());
+        }
+    });
 
     let user_server = async move {
         let listener = TcpListener::bind(user_sock)
@@ -83,32 +153,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         loop {
             let (stream, addr) = listener.accept().await.unwrap();
-            let io = TokioIo::new(stream);
-            let connection_timeouts_clone = user_timeouts.clone();
 
-            // Create service instance for this connection
-            let svc = UserService::new(user_state.clone(), addr);
+            // Step 1: Create Hyper service
+            let user_tower_service = UserService::new(user_state.clone(), user_sock);
+
+            // Step 3: Apply Tower middleware stack
+            // Order matters! Outer layers run last on request, first on response
+            let tower_service = ServiceBuilder::new()
+                .layer(CompressionLayer::new().quality(CompressionLevel::Default))
+                // CORS (adds headers to response)
+                .layer(create_cors_layer())
+                // Metrics tracking
+                .layer(MetricsLayer::new(user_state.metrics.clone()))
+                // Rate limiting (blocks excessive requests)
+                .layer(RateLimiterLayer::new(user_state.rate_limiter.clone()))
+                // IP filtering (blocks banned IPs)
+                .layer(IpFilterLayer::new(user_state.ip_filter.clone()))
+                .service(user_tower_service);
+
+            // Step 4: Convert Tower → Hyper
+            let final_service = TowerToHyperService::new(tower_service);
+
+            let io = TokioIo::new(stream);
 
             tokio::task::spawn(async move {
                 let conn = http1::Builder::new()
                     .timer(TokioTimer::new())
-                    .serve_connection(io, svc);
-                pin!(conn);
+                    .serve_connection(io, final_service);
 
-                for sleep_duration in connection_timeouts_clone {
-                    tokio::select! {
-                        res = &mut conn => {
-                            match res {
-                                Ok(()) => info!("User connection from {} closed normally", addr),
-                                Err(err) => error!(%err, "Connection error for {}:{}", addr.ip(), addr.port()),
-                            }
-                            return;
-                        }
-                        _ = tokio::time::sleep(sleep_duration) => {
-                            info!("User connection timeout for {}, graceful shutdown", addr);
-                            conn.as_mut().graceful_shutdown();
-                        }
-                    }
+                if let Err(err) = conn.await {
+                    error!("Connection error for {}: {:?}", addr, err);
                 }
             });
         }
@@ -124,38 +198,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         loop {
             let (stream, addr) = listener.accept().await.unwrap();
-            let io = TokioIo::new(stream);
-            let connection_timeouts_clone = admin_timeouts.clone();
 
-            // Create service instance for this connection
-            let svc = AdminService::new(admin_state.clone(), addr);
+            // Step 1: Create Hyper service
+            let admin_tower_service = AdminService::new(admin_state.clone(), admin_sock);
+
+            let tower_service = ServiceBuilder::new()
+                .layer(CompressionLayer::new().quality(CompressionLevel::Default))
+                .layer(create_cors_layer())
+                .layer(MetricsLayer::new(admin_state.metrics.clone()))
+                .layer(RateLimiterLayer::new(admin_state.rate_limiter.clone()))
+                .layer(IpFilterLayer::new(admin_state.ip_filter.clone()))
+                .service(admin_tower_service);
+
+            // Step 4: Convert Tower → Hyper
+            let final_service = TowerToHyperService::new(tower_service);
+
+            let io = TokioIo::new(stream);
 
             tokio::task::spawn(async move {
                 let conn = http1::Builder::new()
                     .timer(TokioTimer::new())
-                    .serve_connection(io, svc);
-                pin!(conn);
+                    .serve_connection(io, final_service);
 
-                for sleep_duration in connection_timeouts_clone {
-                    tokio::select! {
-                        res = &mut conn => {
-                            match res {
-                                Ok(()) => info!("Admin connection from {} closed normally", addr),
-                                Err(err) => error!(%err, "Connection error for {}:{}", addr.ip(), addr.port()),
-                            }
-                            return;
-                        }
-                        _ = tokio::time::sleep(sleep_duration) => {
-                            info!("Admin connection timeout for {}, graceful shutdown", addr);
-                            conn.as_mut().graceful_shutdown();
-                        }
-                    }
+                if let Err(err) = conn.await {
+                    error!("Admin connection error for {}: {:?}", addr, err);
                 }
             });
         }
     };
 
-    // Run both servers concurrently
     tokio::join!(user_server, admin_server);
     info!("Both servers closed!");
 

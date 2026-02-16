@@ -19,16 +19,16 @@ pub enum ConfigError {
 pub struct ServerConfig {
     pub bind: String,
     #[serde(default = "default_admin_port")]
-    pub port_admin: Option<u32>,
+    pub port_admin: Option<u16>,
     #[serde(default = "default_client_port")]
-    pub port_client: Option<u32>,
+    pub port_client: Option<u16>,
     #[serde(default = "default_max_connections")]
     pub max_connections: usize,
 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Paths {
-    pub icons: Option<String>,
+    pub icons: String,
     pub web_dir: String,
     #[serde(default)]
     pub blocked_paths: HashSet<String>,
@@ -50,11 +50,11 @@ pub struct Config {
 }
 
 // Default value functions
-fn default_admin_port() -> Option<u32> {
+fn default_admin_port() -> Option<u16> {
     Some(1338)
 }
 
-fn default_client_port() -> Option<u32> {
+fn default_client_port() -> Option<u16> {
     Some(1337)
 }
 

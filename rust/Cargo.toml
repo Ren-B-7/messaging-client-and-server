@@ -21,7 +21,7 @@ hyper = { version = "1.2", features = ["full"] }
 http = "1"
 
 # Hyper dependencies
-hyper-util = { version = "0.1", features = ["full"] }
+hyper-util = { version = "0.1", features = ["full", "tokio", "service"] }
 http-body-util = "0.1"
 form_urlencoded = "1.2.2"
 
