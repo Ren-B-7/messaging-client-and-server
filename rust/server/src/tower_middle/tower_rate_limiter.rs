@@ -1,13 +1,11 @@
-use std::task::{Context, Poll};
-use std::future::Future;
-use std::pin::Pin;
-use tower::{Layer, Service};
 use hyper::{Request, Response, StatusCode};
-use http_body_util::Full;
-use bytes::Bytes;
+use std::future::Future;
 use std::net::SocketAddr;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use tower::{Layer, Service};
 
-use crate::security::RateLimiter;
+use crate::tower_middle::security::RateLimiter;
 
 /// Tower layer for rate limiting
 ///
@@ -68,7 +66,7 @@ where
             if let Some(ip) = client_ip {
                 if !limiter.check(ip).await {
                     tracing::warn!("Connection from {} rate limited", ip);
-                    
+
                     // Return 429 Too Many Requests
                     let response = Response::builder()
                         .status(StatusCode::TOO_MANY_REQUESTS)
@@ -76,7 +74,7 @@ where
                         .header("retry-after", "1") // Retry after 1 second
                         .body(ResBody::default())
                         .unwrap();
-                    
+
                     return Ok(response);
                 }
             }

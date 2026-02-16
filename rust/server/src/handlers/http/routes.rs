@@ -174,7 +174,6 @@ impl Router {
             // Static files - cached (1 year)
             path if path.starts_with("/static/") => {
                 let file_path = format!("{}{}", web_dir, path);
-                info!("Serving static file (cached): {}", file_path);
                 Ok(Some(
                     deliver_page_with_status(&file_path, StatusCode::OK, true)
                         .context("Failed to deliver static file")?,
@@ -193,7 +192,6 @@ impl Router {
             | "/site.webmanifest" => {
                 let filename = path.trim_start_matches('/');
                 let file_path = format!("{}{}{}", web_dir, icons, filename);
-                info!("Serving browser-requested icon: {}", filename);
                 Ok(Some(
                     deliver_page_with_status(&file_path, StatusCode::OK, true)
                         .context("Failed to deliver browser icon")?,
@@ -203,7 +201,6 @@ impl Router {
             // Non-static files - not cached
             path if path.starts_with("/non-static/") => {
                 let file_path = format!("{}{}", web_dir, path);
-                info!("Serving non-static file (no cache): {}", file_path);
                 Ok(Some(
                     deliver_page_with_status(&file_path, StatusCode::OK, false)
                         .context("Failed to deliver non-static file")?,
@@ -213,7 +210,6 @@ impl Router {
             // Any .html file from the frontend directory
             path if path.ends_with(".html") => {
                 let file_path = format!("{}{}", web_dir, path);
-                info!("Serving HTML file: {}", file_path);
                 Ok(Some(
                     crate::handlers::http::utils::deliver_page::deliver_html_page(&file_path)
                         .context("Failed to deliver HTML file")?,
@@ -245,109 +241,89 @@ pub fn build_user_router_with_config(web_dir: Option<String>, icons_dir: Option<
     router
         // Auth endpoints
         .get("/login", |_req, state| async move {
-            info!("Serving login page");
             let file_path = format!("{}index.html", state.config.paths.web_dir);
             crate::handlers::http::utils::deliver_page::deliver_html_page(&file_path)
                 .context("Failed to deliver login page")
         })
         .get("/", |_req, state| async move {
-            info!("Serving login page");
             let file_path = format!("{}index.html", state.config.paths.web_dir);
             crate::handlers::http::utils::deliver_page::deliver_html_page(&file_path)
                 .context("Failed to deliver login page")
         })
         .get("/index", |_req, state| async move {
-            info!("Serving login page");
             let file_path = format!("{}index.html", state.config.paths.web_dir);
             crate::handlers::http::utils::deliver_page::deliver_html_page(&file_path)
                 .context("Failed to deliver login page")
         })
         .get("/register", |_req, state| async move {
-            info!("Serving register page");
             let file_path = format!("{}register.html", state.config.paths.web_dir);
             crate::handlers::http::utils::deliver_page::deliver_html_page(&file_path)
                 .context("Failed to deliver register page")
         })
         .get("/settings", |_req, state| async move {
-            info!("Serving register page");
             let file_path = format!("{}settings.html", state.config.paths.web_dir);
             crate::handlers::http::utils::deliver_page::deliver_html_page(&file_path)
                 .context("Failed to deliver register page")
         })
         .get("/chat", |_req, state| async move {
-            info!("Serving register page");
             let file_path = format!("{}chat.html", state.config.paths.web_dir);
             crate::handlers::http::utils::deliver_page::deliver_html_page(&file_path)
                 .context("Failed to deliver register page")
         })
         .post("/api/register", |req, state| async move {
-            info!("API: Processing registration");
             convert_result_body(auth::handle_register(req, state).await).context("Register failed")
         })
         .post("/api/login", |req, state| async move {
-            info!("API: Processing login");
             convert_result_body(auth::handle_login(req, state).await)
                 .context("Login attempt failed")
         })
         .post("/api/logout", |req, state| async move {
-            info!("API: Processing logout");
             convert_result_body(auth::handle_logout(req, state).await).context("Logout failed")
         })
         // Profile & Settings
         .post("/api/profile/update", |req, state| async move {
-            info!("API: Updating profile");
             convert_result_body(profile::handle_update_profile(req, state).await)
                 .context("Profile update failed")
         })
         .post("/api/settings/password", |req, state| async move {
-            info!("API: Changing password");
             convert_result_body(profile::handle_change_password(req, state).await)
                 .context("Password change failed")
         })
         .post("/api/settings/logout-all", |req, state| async move {
-            info!("API: Logging out all sessions");
             convert_result_body(profile::handle_logout_all(req, state).await)
                 .context("Logout attempt failed")
         })
         .get("/api/profile", |req, state| async move {
-            info!("API: Fetching profile");
             convert_result_body(profile::handle_get_profile(req, state).await)
                 .context("Profile get failed")
         })
         // Messaging & Chats
         .post("/api/messages/send", |req, state| async move {
-            info!("API: Sending message");
             convert_result_body(messaging::handle_send_message(req, state).await)
                 .context("Message send failed")
         })
         .get("/api/messages", |req, state| async move {
-            info!("API: Fetching messages");
             convert_result_body(messaging::handle_get_messages(req, state).await)
                 .context("Message get attempt failed")
         })
         .post("/api/chats", |req, state| async move {
-            info!("API: Creating chat");
             convert_result_body(messaging::handle_create_chat(req, state).await)
                 .context("Create chat failed")
         })
         .get("/api/chats", |req, state| async move {
-            info!("API: Fetching chats");
             convert_result_body(messaging::handle_get_chats(req, state).await)
                 .context("Chat get attempt failed")
         })
         .post("/api/groups", |req, state| async move {
-            info!("API: Creating group");
             convert_result_body(messaging::handle_create_group(req, state).await)
                 .context("Create group failed")
         })
         .get("/api/groups", |req, state| async move {
-            info!("API: Fetching groups");
             convert_result_body(messaging::handle_get_groups(req, state).await)
                 .context("Group chat get attempt failed")
         })
         // Config & Health
         .get("/api/config", |_req, state| async move {
-            info!("API: Fetching config");
             let config_json = serde_json::json!({
                 "status": "success",
                 "data": {

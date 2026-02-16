@@ -1,11 +1,11 @@
-use std::task::{Context, Poll};
+use hyper::{Request, Response};
 use std::future::Future;
 use std::pin::Pin;
+use std::task::{Context, Poll};
 use std::time::Instant;
 use tower::{Layer, Service};
-use hyper::{Request, Response};
 
-use crate::security::Metrics;
+use crate::tower_middle::security::Metrics;
 
 /// Tower layer for metrics tracking
 ///

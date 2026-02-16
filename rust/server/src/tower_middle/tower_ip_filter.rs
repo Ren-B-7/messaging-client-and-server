@@ -1,16 +1,16 @@
-use std::task::{Context, Poll};
-use std::future::Future;
-use std::pin::Pin;
-use tower::{Layer, Service};
-use hyper::{Request, Response, StatusCode};
-use http_body_util::Full;
 use bytes::Bytes;
+use http_body_util::Full;
+use hyper::{Request, Response, StatusCode};
+use std::future::Future;
 use std::net::SocketAddr;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use tower::{Layer, Service};
 
-use crate::security::IpFilter;
+use crate::tower_middle::security::IpFilter;
 
 /// Tower layer for IP filtering
-/// 
+///
 /// This wraps any service and checks the client IP against the filter
 /// before allowing the request through.
 #[derive(Clone)]
@@ -69,14 +69,14 @@ where
             if let Some(ip) = client_ip {
                 if !filter.is_allowed(ip).await {
                     tracing::warn!("Connection from {} blocked by IP filter", ip);
-                    
+
                     // Return 403 Forbidden
                     let response = Response::builder()
                         .status(StatusCode::FORBIDDEN)
                         .header("content-type", "application/json")
                         .body(ResBody::default())
                         .unwrap();
-                    
+
                     return Ok(response);
                 }
             }

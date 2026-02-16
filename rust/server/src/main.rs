@@ -3,6 +3,9 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::Context;
+use tracing::{error, info};
+
 use http::header::ACCESS_CONTROL_ALLOW_METHODS;
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
@@ -10,29 +13,25 @@ use tower::ServiceBuilder;
 // CORS and Compression imports
 use hyper::Method;
 use hyper::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderValue};
-use tower_http::compression::{CompressionLayer, CompressionLevel};
-use tower_http::cors::{Any, CorsLayer};
-
 use hyper::server::conn::http1;
 use hyper_util::rt::{TokioIo, TokioTimer};
 use hyper_util::service::TowerToHyperService;
-
-use anyhow::Context;
-use tracing::{error, info};
+use tower::load_shed::LoadShedLayer;
+use tower_http::compression::{CompressionLayer, CompressionLevel};
+use tower_http::cors::{Any, CorsLayer};
 
 mod database;
 mod handlers;
-mod security;
 mod tower_middle;
 
 use shared::config::{self, Config};
 use tokio_rusqlite::Connection;
 
 use handlers::{admin::AdminService, user::UserService};
-use security::{IpFilter, Metrics, RateLimiter};
+use tower_middle::security::{IpFilter, Metrics, RateLimiter};
 
 // Import Tower middleware
-use tower_middle::{HyperToTowerAdapter, IpFilterLayer, MetricsLayer, RateLimiterLayer};
+use tower_middle::{IpFilterLayer, MetricsLayer, RateLimiterLayer, TimeoutLayer};
 
 use crate::database::create;
 
@@ -44,6 +43,7 @@ pub struct AppState {
     pub ip_filter: IpFilter,
     pub rate_limiter: RateLimiter,
     pub metrics: Metrics,
+    pub timeout: Duration,
 }
 
 impl AppState {
@@ -56,6 +56,7 @@ impl AppState {
             ip_filter: IpFilter::new(),
             rate_limiter,
             metrics: Metrics::new(),
+            timeout: Duration::new(10, 0),
         }
     }
 }
@@ -121,8 +122,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let admin_state = state.clone();
     let metrics_state = state.clone();
 
-    // Create CORS and Compression layers
-
     // Background tasks
     let cleanup_state = user_state.clone();
     tokio::spawn(async move {
@@ -154,24 +153,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         loop {
             let (stream, addr) = listener.accept().await.unwrap();
 
-            // Step 1: Create Hyper service
             let user_tower_service = UserService::new(user_state.clone(), user_sock);
 
-            // Step 3: Apply Tower middleware stack
             // Order matters! Outer layers run last on request, first on response
             let tower_service = ServiceBuilder::new()
-                .layer(CompressionLayer::new().quality(CompressionLevel::Default))
-                // CORS (adds headers to response)
-                .layer(create_cors_layer())
-                // Metrics tracking
-                .layer(MetricsLayer::new(user_state.metrics.clone()))
-                // Rate limiting (blocks excessive requests)
-                .layer(RateLimiterLayer::new(user_state.rate_limiter.clone()))
-                // IP filtering (blocks banned IPs)
+                .layer(LoadShedLayer::new())
                 .layer(IpFilterLayer::new(user_state.ip_filter.clone()))
+                .layer(RateLimiterLayer::new(user_state.rate_limiter.clone()))
+                .layer(TimeoutLayer::new(Duration::from_secs(10)))
+                .layer(MetricsLayer::new(user_state.metrics.clone()))
+                .layer(create_cors_layer())
+                .layer(CompressionLayer::new().quality(CompressionLevel::Default))
                 .service(user_tower_service);
 
-            // Step 4: Convert Tower → Hyper
             let final_service = TowerToHyperService::new(tower_service);
 
             let io = TokioIo::new(stream);
@@ -203,11 +197,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let admin_tower_service = AdminService::new(admin_state.clone(), admin_sock);
 
             let tower_service = ServiceBuilder::new()
-                .layer(CompressionLayer::new().quality(CompressionLevel::Default))
-                .layer(create_cors_layer())
-                .layer(MetricsLayer::new(admin_state.metrics.clone()))
-                .layer(RateLimiterLayer::new(admin_state.rate_limiter.clone()))
+                .layer(LoadShedLayer::new())
                 .layer(IpFilterLayer::new(admin_state.ip_filter.clone()))
+                .layer(RateLimiterLayer::new(admin_state.rate_limiter.clone()))
+                .layer(TimeoutLayer::new(Duration::from_secs(10)))
+                .layer(MetricsLayer::new(admin_state.metrics.clone()))
+                .layer(create_cors_layer())
+                .layer(CompressionLayer::new().quality(CompressionLevel::Default))
                 .service(admin_tower_service);
 
             // Step 4: Convert Tower → Hyper
