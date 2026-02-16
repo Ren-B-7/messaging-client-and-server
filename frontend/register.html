@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Create Account - Chat App</title>
+
+    <!-- Core Variables -->
+    <link rel="stylesheet" href="/static/css/var.css" />
+
+    <!-- Theme Manager -->
+    <script src="/static/js/utils/theme_manager.js"></script>
+    <script src="/static/js/utils/loading.js"></script>
+    <script src="/static/js/config/platform.config.js"></script>
+    <script src="/static/js/config/route.config.js"></script>
+
+    <!-- Initialize theme early -->
+    <script>
+      const theme =
+        localStorage.getItem("theme") ||
+        (window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light");
+      document.documentElement.setAttribute("data-theme", theme);
+    </script>
+  </head>
+  <body>
+    <div id="loading">Loading...</div>
+    <div class="auth-page">
+      <div class="auth-container">
+        <div class="auth-card">
+          <div class="auth-header">
+            <div class="auth-logo">💬</div>
+            <h1 class="auth-title">Create Account</h1>
+            <p class="auth-subtitle">Join our community today</p>
+          </div>
+
+          <!-- Progress steps -->
+          <div class="steps-container">
+            <div class="step active" data-step="1">
+              <div class="step-circle">1</div>
+              <span class="step-label">Account</span>
+            </div>
+            <div class="step-connector"></div>
+            <div class="step" data-step="2">
+              <div class="step-circle">2</div>
+              <span class="step-label">Profile</span>
+            </div>
+            <div class="step-connector"></div>
+            <div class="step" data-step="3">
+              <div class="step-circle">3</div>
+              <span class="step-label">Verify</span>
+            </div>
+          </div>
+
+          <form id="registerForm" class="auth-form" novalidate>
+            <!-- Step 1: Account Details -->
+            <div class="form-step active" data-step="1">
+              <div class="form-group">
+                <label class="form-label" for="regEmail">Email Address</label>
+                <input
+                  type="email"
+                  id="regEmail"
+                  name="email"
+                  class="form-input"
+                  placeholder="name@example.com"
+                  required
+                  autocomplete="email"
+                />
+                <div class="form-error" id="regEmailError"></div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="regPassword">Password</label>
+                <div class="password-input-wrapper">
+                  <input
+                    type="password"
+                    id="regPassword"
+                    name="password"
+                    class="form-input"
+                    placeholder="Create a strong password"
+                    required
+                    autocomplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    class="password-toggle"
+                    aria-label="Toggle password visibility"
+                  >
+                    <img
+                      src="/static/icons/icons/eye.svg"
+                      alt=""
+                      width="20"
+                      height="20"
+                    />
+                  </button>
+                </div>
+                <div class="password-strength">
+                  <div class="strength-bar">
+                    <div class="strength-fill" id="strengthFill"></div>
+                  </div>
+                  <span class="strength-text" id="strengthText"
+                    >Password strength: Weak</span
+                  >
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="regConfirmPassword"
+                  >Confirm Password</label
+                >
+                <div class="password-input-wrapper">
+                  <input
+                    type="password"
+                    id="regConfirmPassword"
+                    name="confirmPassword"
+                    class="form-input"
+                    placeholder="Re-enter your password"
+                    required
+                    autocomplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    class="password-toggle"
+                    aria-label="Toggle password visibility"
+                  >
+                    <img
+                      src="/static/icons/icons/eye.svg"
+                      alt=""
+                      width="20"
+                      height="20"
+                    />
+                  </button>
+                </div>
+                <div class="form-error" id="confirmPasswordError"></div>
+              </div>
+
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="nextBtn1"
+              >
+                Continue
+              </button>
+            </div>
+
+            <!-- Step 2: Profile Info -->
+            <div class="form-step" data-step="2">
+              <div class="avatar-upload">
+                <div class="avatar-preview" id="avatarPreview">📷</div>
+                <input
+                  type="file"
+                  class="avatar-input"
+                  id="avatarInput"
+                  accept="image/*"
+                />
+                <small class="form-hint"
+                  >Click to upload profile picture (optional)</small
+                >
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="fullName">Full Name</label>
+                <input
+                  type="text"
+                  id="fullName"
+                  name="fullName"
+                  class="form-input"
+                  placeholder="John Doe"
+                  required
+                  autocomplete="name"
+                />
+                <div class="form-error" id="fullNameError"></div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="username">Username</label>
+                <input
+                  type="text"
+                  id="username"
+                  name="username"
+                  class="form-input"
+                  placeholder="johndoe"
+                  required
+                  autocomplete="username"
+                />
+                <small class="form-hint">Your unique username</small>
+                <div class="form-error" id="usernameError"></div>
+              </div>
+
+              <div class="form-actions">
+                <button type="button" class="btn btn-secondary" id="prevBtn2">
+                  Back
+                </button>
+                <button type="button" class="btn btn-primary" id="nextBtn2">
+                  Continue
+                </button>
+              </div>
+            </div>
+
+            <!-- Step 3: Terms & Verification -->
+            <div class="form-step" data-step="3">
+              <div class="form-group">
+                <h3 style="margin-bottom: var(--space-4)">
+                  Review Your Information
+                </h3>
+                <div
+                  style="
+                    background: var(--bg-secondary);
+                    padding: var(--space-4);
+                    border-radius: var(--radius-lg);
+                    margin-bottom: var(--space-6);
+                  "
+                >
+                  <p><strong>Email:</strong> <span id="reviewEmail">-</span></p>
+                  <p>
+                    <strong>Full Name:</strong> <span id="reviewName">-</span>
+                  </p>
+                  <p>
+                    <strong>Username:</strong>
+                    <span id="reviewUsername">-</span>
+                  </p>
+                </div>
+              </div>
+
+              <label class="form-checkbox">
+                <input
+                  type="checkbox"
+                  name="terms"
+                  id="termsCheckbox"
+                  required
+                />
+                <span class="checkbox-label">
+                  I agree to the
+                  <a href="/terms" target="_blank">Terms of Service</a> and
+                  <a href="/privacy" target="_blank">Privacy Policy</a>
+                </span>
+              </label>
+
+              <div class="form-actions">
+                <button type="button" class="btn btn-secondary" id="prevBtn3">
+                  Back
+                </button>
+                <button type="submit" class="btn btn-primary" id="submitBtn">
+                  Create Account
+                </button>
+              </div>
+            </div>
+          </form>
+
+          <div class="auth-link-text">
+            Already have an account? <a href="/">Sign in</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Load auth module and theme -->
+    <script>
+      window.addEventListener("DOMContentLoaded", () => {
+        themeManager.init(["base", "auth"]);
+      });
+    </script>
+    <script defer src="/non-static/utils.js"></script>
+    <script defer src="/non-static/auth.js"></script>
+  </body>
+</html>

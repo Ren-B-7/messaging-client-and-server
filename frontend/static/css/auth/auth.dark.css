@@ -1,0 +1,32 @@
+/**
+ * Auth Dark Theme
+ * Authentication pages styling in dark mode
+ */
+
+:root[data-theme="dark"] {
+  --auth-bg: #0f1419;
+  --auth-card-bg: #1c2127;
+  --auth-logo-bg: var(--accent);
+  --auth-input-bg: #0f1419;
+}
+
+/* Dark mode specific adjustments */
+:root[data-theme="dark"] .auth-card {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+:root[data-theme="dark"] .avatar-preview:hover {
+  background: var(--accent-light);
+  border-color: var(--accent);
+}
+
+:root[data-theme="dark"] .social-btn {
+  background: var(--bg-tertiary);
+}
+
+:root[data-theme="dark"] .social-btn:hover {
+  background: var(--bg-primary);
+}
+
+/* All other styles inherit from auth.light.css structure */
+/* Only color variables are overridden in dark theme */

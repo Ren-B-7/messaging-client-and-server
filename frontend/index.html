@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sign In - Chat App</title>
+
+    <!-- Core Variables -->
+    <link rel="stylesheet" href="/static/css/var.css" />
+
+    <!-- Theme Manager -->
+    <script src="/static/js/utils/theme_manager.js"></script>
+    <script src="/static/js/utils/loading.js"></script>
+    <script src="/static/js/config/platform.config.js"></script>
+    <script src="/static/js/config/route.config.js"></script>
+
+    <!-- Initialize theme early to prevent flash -->
+    <script>
+      const theme =
+        localStorage.getItem("theme") ||
+        (window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light");
+      document.documentElement.setAttribute("data-theme", theme);
+    </script>
+  </head>
+  <body>
+    <div id="loading">Loading...</div>
+    <div class="auth-page">
+      <div class="auth-container">
+        <div class="auth-card">
+          <div class="auth-header">
+            <div class="auth-logo">💬</div>
+            <h1 class="auth-title">Welcome Back</h1>
+            <p class="auth-subtitle">Sign in to continue to your account</p>
+          </div>
+
+          <form id="loginForm" class="auth-form" novalidate>
+            <div class="form-group">
+              <label class="form-label" for="email">Email Address</label>
+              <input
+                type="email"
+                id="email"
+                name="email"
+                class="form-input"
+                placeholder="name@example.com"
+                required
+                autocomplete="email"
+                autofocus
+              />
+              <div class="form-error" id="emailError"></div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="password">Password</label>
+              <div class="password-input-wrapper">
+                <input
+                  type="password"
+                  id="password"
+                  name="password"
+                  class="form-input"
+                  placeholder="Enter your password"
+                  required
+                  autocomplete="current-password"
+                />
+                <button
+                  type="button"
+                  class="password-toggle"
+                  aria-label="Toggle password visibility"
+                >
+                  <img
+                    src="/static/icons/icons/eye.svg"
+                    alt=""
+                    width="20"
+                    height="20"
+                  />
+                </button>
+              </div>
+              <div class="form-error" id="passwordError"></div>
+            </div>
+
+            <label class="form-checkbox">
+              <input type="checkbox" name="remember" class="checkbox-input" />
+              <span class="checkbox-label">Remember me for 30 days</span>
+            </label>
+
+            <button type="submit" class="btn btn-primary btn-block btn-lg">
+              Sign In
+            </button>
+          </form>
+
+          <div class="auth-link-text">
+            Don't have an account? <a href="/register">Create account</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Load auth module and theme -->
+    <script>
+      // Initialize theme with auth module
+      window.addEventListener("DOMContentLoaded", () => {
+        themeManager.init(["base", "auth"]);
+      });
+    </script>
+    <script defer src="/non-static/utils.js"></script>
+    <script defer src="/non-static/auth.js"></script>
+  </body>
+</html>

@@ -1,0 +1,39 @@
+/**
+ * Settings Dark Theme
+ * Settings page styling in dark mode
+ */
+
+:root[data-theme="dark"] {
+  --settings-sidebar-bg: #1c2127;
+  --settings-content-bg: #0f1419;
+}
+
+/* Dark mode specific adjustments */
+:root[data-theme="dark"] .settings-section {
+  background: var(--bg-secondary);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+:root[data-theme="dark"] .setting-option {
+  background: var(--bg-tertiary);
+}
+
+:root[data-theme="dark"] .session-item {
+  background: var(--bg-tertiary);
+}
+
+:root[data-theme="dark"] .session-item.current {
+  background: var(--accent-light);
+}
+
+:root[data-theme="dark"] .toggle-slider::before {
+  background: #e6edf3;
+}
+
+:root[data-theme="dark"] .danger-zone {
+  background: rgba(248, 81, 73, 0.1);
+  border-color: var(--danger);
+}
+
+/* All other styles inherit from settings.light.css */
+/* Only color variables are overridden in dark theme */
