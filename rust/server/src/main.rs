@@ -173,6 +173,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             tokio::task::spawn(async move {
                 let conn = http1::Builder::new()
                     .timer(TokioTimer::new())
+                    .header_read_timeout(Duration::from_secs(2))
                     .serve_connection(io, final_service);
 
                 if let Err(err) = conn.await {
@@ -214,6 +215,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             tokio::task::spawn(async move {
                 let conn = http1::Builder::new()
                     .timer(TokioTimer::new())
+                    .header_read_timeout(Duration::from_secs(2))
                     .serve_connection(io, final_service);
 
                 if let Err(err) = conn.await {
