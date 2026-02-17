@@ -1,36 +1,38 @@
-use std::env;
-use std::net::SocketAddr;
-use std::sync::Arc;
-use std::time::Duration;
+use std::{env, net::SocketAddr, sync::Arc, time::Duration};
 
 use anyhow::Context;
-use tracing::{error, info};
+use tracing::{debug, error, info, warn};
 
 use tokio::net::TcpListener;
-use tower::ServiceBuilder;
+use tokio_rusqlite::Connection;
 
-// CORS and Compression imports
-use hyper::Method;
-use hyper::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderValue};
-use hyper::server::conn::http1;
-use hyper_util::rt::{TokioIo, TokioTimer};
-use hyper_util::service::TowerToHyperService;
+use hyper::{
+    Method,
+    header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderValue},
+    server::conn::http1,
+};
+use hyper_util::{
+    rt::{TokioIo, TokioTimer},
+    service::TowerToHyperService,
+};
+
+use tower::ServiceBuilder;
 use tower::load_shed::LoadShedLayer;
-use tower_http::compression::{CompressionLayer, CompressionLevel};
-use tower_http::cors::CorsLayer;
+use tower_http::{
+    compression::{CompressionLayer, CompressionLevel},
+    cors::CorsLayer,
+};
 
 mod database;
 mod handlers;
 mod tower_middle;
 
-use shared::config::{self, Config};
-use tokio_rusqlite::Connection;
-
 use handlers::{admin::AdminService, user::UserService};
-use tower_middle::security::{IpFilter, Metrics, RateLimiter};
-
-// Import Tower middleware
-use tower_middle::{IpFilterLayer, MetricsLayer, RateLimiterLayer, TimeoutLayer};
+use shared::config::{self, Config};
+use tower_middle::{
+    IpFilterLayer, MetricsLayer, RateLimiterLayer, TimeoutLayer,
+    security::{IpFilter, Metrics, RateLimiter},
+};
 
 use crate::database::create;
 
@@ -103,7 +105,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let config = config::load_config(&args[1]).context("Failed to load configuration")?;
     let state = AppState::new(config, db);
 
-    info!("IP filter configured");
+    let connection_timeouts = vec![Duration::from_secs(5), Duration::from_secs(2)];
+    let user_timeout = connection_timeouts.clone();
+    let admin_timeout = connection_timeouts.clone();
 
     let user_port = state.config.server.port_client.unwrap_or(1337) as u16;
     let admin_port = state.config.server.port_admin.unwrap_or(1338) as u16;
@@ -114,6 +118,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Clone state for each server
     let user_state = state.clone();
     let admin_state = state.clone();
+
     let metrics_state = state.clone();
 
     // Background tasks
@@ -163,15 +168,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let final_service = TowerToHyperService::new(tower_service);
 
             let io = TokioIo::new(stream);
+            let timeout = user_timeout.clone();
 
             tokio::task::spawn(async move {
                 let conn = http1::Builder::new()
                     .timer(TokioTimer::new())
                     .header_read_timeout(Duration::from_secs(2))
                     .serve_connection(io, final_service);
+                tokio::pin!(conn);
 
-                if let Err(err) = conn.await {
-                    error!("Connection error for {}: {:?}", addr, err);
+                for (iter, sleep) in timeout.iter().enumerate() {
+                    tokio::select! {
+                        res = conn.as_mut() => {
+                            match res {
+                                Ok(()) => debug!("Connection closed"),
+                                Err(e) => warn!("Error serving connection {:?}", e),
+                            };
+                            break;
+                        }
+                        _ = tokio::time::sleep(*sleep) => {
+                            info!(
+                                "iter = {} timeout elapsed, calling graceful_shutdown",
+                                iter
+                            );
+                            conn.as_mut().graceful_shutdown();
+                        }
+                    }
                 }
             });
         }
@@ -205,15 +227,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let final_service = TowerToHyperService::new(tower_service);
 
             let io = TokioIo::new(stream);
+            let timeout = admin_timeout.clone();
 
             tokio::task::spawn(async move {
                 let conn = http1::Builder::new()
                     .timer(TokioTimer::new())
                     .header_read_timeout(Duration::from_secs(2))
                     .serve_connection(io, final_service);
+                tokio::pin!(conn);
 
-                if let Err(err) = conn.await {
-                    error!("Admin connection error for {}: {:?}", addr, err);
+                for (iter, sleep) in timeout.iter().enumerate() {
+                    tokio::select! {
+                        res = conn.as_mut() => {
+                            match res {
+                                Ok(()) => debug!("Connection closed"),
+                                Err(e) => warn!("Error serving connection {:?}", e),
+                            };
+                            break;
+                        }
+                        _ = tokio::time::sleep(*sleep) => {
+                            info!(
+                                "iter = {} timeout elapsed, calling graceful_shutdown",
+                                iter
+                            );
+                            conn.as_mut().graceful_shutdown();
+                        }
+                    }
                 }
             });
         }
