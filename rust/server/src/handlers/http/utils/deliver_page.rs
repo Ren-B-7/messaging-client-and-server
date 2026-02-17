@@ -92,7 +92,7 @@ pub fn deliver_page_with_status<P: AsRef<Path>>(
     // Apply specific caching logic
     let response_with_cache = match cache {
         CacheStrategy::Yes => headers::add_cache_headers_with_max_age(response, None),
-        CacheStrategy::No => headers::add_cache_headers_with_max_age(response, Some(1)),
+        CacheStrategy::No => headers::add_cache_headers_with_max_age(response, Some(3600)),
         CacheStrategy::Explicit => headers::add_no_cache_headers(response),
     };
     Ok(response_with_cache)

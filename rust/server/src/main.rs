@@ -34,7 +34,7 @@ use tower_middle::{
     security::{IpFilter, Metrics, RateLimiter},
 };
 
-use crate::database::create;
+use database::create;
 
 /// Shared application state
 #[derive(Clone, Debug)]

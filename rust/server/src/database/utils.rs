@@ -146,8 +146,8 @@ mod tests {
 
     #[test]
     fn test_session_token() {
-        let token1 = generate_session_token();
-        let token2 = generate_session_token();
+        let token1 = generate_uuid_token();
+        let token2 = generate_uuid_token();
         assert_ne!(token1, token2);
         assert_eq!(token1.len(), 64); // 32 bytes as hex
     }

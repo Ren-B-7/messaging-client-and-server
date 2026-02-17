@@ -9,9 +9,9 @@ use std::convert::Infallible;
 use tracing::{error, info, warn};
 
 use crate::AppState;
-use crate::handlers::http::utils;
-use crate::handlers::http::utils::deliver_page::deliver_redirect;
-use crate::handlers::http::utils::deliver_serialized_json;
+use crate::handlers::http::utils::{
+    create_session_cookie, deliver_page, deliver_redirect, deliver_serialized_json,
+};
 
 /// Registration request data (supports both form-encoded and JSON)
 #[derive(Debug, Clone, Deserialize)]
@@ -153,7 +153,7 @@ pub async fn handle_register(
 
             // The session token is stored both in the cookie and returned in the JSON
             // body so the frontend can send it as a Bearer header on subsequent requests.
-            let instance_cookie = utils::create_session_cookie("instance_id", &session_token, true)
+            let instance_cookie = create_session_cookie("instance_id", &session_token, true)
                 .context("Failed to create instance cookie")?;
 
             if wants_json {
@@ -176,7 +176,7 @@ pub async fn handle_register(
                     .status(StatusCode::CREATED)
                     .header("content-type", "application/json")
                     .header("set-cookie", instance_cookie)
-                    .body(utils::deliver_page::full(Bytes::from(json)))
+                    .body(deliver_page::full(Bytes::from(json)))
                     .context("Failed to build response")?;
 
                 Ok(response)
@@ -186,7 +186,7 @@ pub async fn handle_register(
                     .status(StatusCode::FOUND)
                     .header("location", "/chat")
                     .header("set-cookie", instance_cookie)
-                    .body(utils::deliver_page::empty())
+                    .body(deliver_page::empty())
                     .context("Failed to build redirect response")?;
 
                 Ok(response)
