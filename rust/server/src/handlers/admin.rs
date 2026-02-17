@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::convert::Infallible;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -11,7 +12,6 @@ use http_body_util::Full;
 use http_body_util::combinators::BoxBody;
 use hyper::body::Incoming as IncomingBody;
 use hyper::{Request, Response, StatusCode};
-use std::convert::Infallible;
 use std::task::{Context as taskContext, Poll};
 use tower::Service;
 use tracing::{error, info, warn};
@@ -19,11 +19,7 @@ use tracing::{error, info, warn};
 use crate::AppState;
 use crate::database::ban as db_ban;
 use crate::handlers::http::routes::{Router, build_api_router_with_config};
-use crate::handlers::http::utils::deliver_html_page;
-use crate::handlers::http::utils::error_response::deliver_error_json;
-use crate::handlers::http::utils::response_conversion::{
-    convert_response_body, convert_result_body,
-};
+use crate::handlers::http::utils::*;
 
 /// Admin service implementation
 #[derive(Clone, Debug)]
@@ -75,7 +71,6 @@ impl Service<Request<IncomingBody>> for AdminService {
                         "Internal Server Error",
                         StatusCode::INTERNAL_SERVER_ERROR,
                     )
-                    .map(convert_response_body)
                     .unwrap_or_else(|delivery_err| {
                         error!(
                             "Failed to deliver error response: {:?}",
@@ -128,7 +123,7 @@ async fn admin_conn(
 async fn handle_stats(
     _req: Request<IncomingBody>,
     state: AppState,
-) -> Result<Response<http_body_util::Full<Bytes>>> {
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Serving admin stats");
 
     let stats_json = serde_json::json!({
@@ -150,9 +145,7 @@ async fn handle_stats(
     let response = Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "application/json")
-        .body(http_body_util::Full::new(Bytes::from(
-            stats_json.to_string(),
-        )))
+        .body(http_body_util::Full::new(Bytes::from(stats_json.to_string())).boxed())
         .context("Failed to build stats response")?;
 
     Ok(response)
@@ -162,7 +155,7 @@ async fn handle_stats(
 async fn handle_get_users(
     _req: Request<IncomingBody>,
     _state: AppState,
-) -> Result<Response<http_body_util::Full<Bytes>>> {
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Serving user list");
 
     let users_json = serde_json::json!({
@@ -177,9 +170,7 @@ async fn handle_get_users(
     let response = Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "application/json")
-        .body(http_body_util::Full::new(Bytes::from(
-            users_json.to_string(),
-        )))
+        .body(http_body_util::Full::new(Bytes::from(users_json.to_string())).boxed())
         .context("Failed to build users response")?;
 
     Ok(response)
@@ -189,7 +180,7 @@ async fn handle_get_users(
 async fn handle_ban_user(
     req: Request<IncomingBody>,
     state: AppState,
-) -> Result<Response<http_body_util::Full<Bytes>>> {
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     use crate::database::ban as db_ban;
     use std::collections::HashMap;
 
@@ -236,9 +227,7 @@ async fn handle_ban_user(
     let response = Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "application/json")
-        .body(http_body_util::Full::new(Bytes::from(
-            response_json.to_string(),
-        )))
+        .body(http_body_util::Full::new(Bytes::from(response_json.to_string())).boxed())
         .context("Failed to build ban response")?;
 
     Ok(response)
@@ -248,7 +237,7 @@ async fn handle_ban_user(
 async fn handle_unban_user(
     req: Request<IncomingBody>,
     state: AppState,
-) -> Result<Response<http_body_util::Full<Bytes>>> {
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing unban user request");
 
     let body: Bytes = req
@@ -283,9 +272,7 @@ async fn handle_unban_user(
     let response = Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "application/json")
-        .body(http_body_util::Full::new(Bytes::from(
-            response_json.to_string(),
-        )))
+        .body(http_body_util::Full::new(Bytes::from(response_json.to_string())).boxed())
         .context("Failed to build unban response")?;
 
     Ok(response)
@@ -294,7 +281,7 @@ async fn handle_unban_user(
 async fn handle_delete_user(
     req: Request<IncomingBody>,
     _state: AppState,
-) -> Result<Response<http_body_util::Full<Bytes>>> {
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     let path = req.uri().path();
 
     let user_id: i64 = path
@@ -322,9 +309,7 @@ async fn handle_delete_user(
     let response = Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "application/json")
-        .body(http_body_util::Full::new(Bytes::from(
-            response_json.to_string(),
-        )))
+        .body(http_body_util::Full::new(Bytes::from(response_json.to_string())).boxed())
         .context("Failed to build delete response")?;
 
     Ok(response)
@@ -373,37 +358,37 @@ pub fn build_admin_router_with_config(
         })
         // ── Stats ───────────────────────────────────────────────────────────
         .get("/admin/stats", |req, state| async move {
-            convert_result_body(handle_stats(req, state).await)
+            handle_stats(req, state).await
         })
         .get("/admin/api/stats", |req, state| async move {
-            convert_result_body(handle_stats(req, state).await)
+            handle_stats(req, state).await
         })
         // ── User list ────────────────────────────────────────────────────────
         .get("/admin/users", |req, state| async move {
-            convert_result_body(handle_get_users(req, state).await)
+            handle_get_users(req, state).await
         })
         .get("/admin/api/users", |req, state| async move {
-            convert_result_body(handle_get_users(req, state).await)
+            handle_get_users(req, state).await
         })
         // ── Ban / unban ──────────────────────────────────────────────────────
         .post("/admin/ban", |req, state| async move {
-            convert_result_body(handle_ban_user(req, state).await)
+            handle_ban_user(req, state).await
         })
         .post("/admin/api/users/ban", |req, state| async move {
-            convert_result_body(handle_ban_user(req, state).await)
+            handle_ban_user(req, state).await
         })
         .post("/admin/unban", |req, state| async move {
-            convert_result_body(handle_unban_user(req, state).await)
+            handle_unban_user(req, state).await
         })
         .post("/admin/api/users/unban", |req, state| async move {
-            convert_result_body(handle_unban_user(req, state).await)
+            handle_unban_user(req, state).await
         })
         // ── Delete user ──────────────────────────────────────────────────────
         .delete("/admin/users/:id", |req, state| async move {
-            convert_result_body(handle_delete_user(req, state).await)
+            handle_delete_user(req, state).await
         })
         .delete("/admin/api/users/:id", |req, state| async move {
-            convert_result_body(handle_delete_user(req, state).await)
+            handle_delete_user(req, state).await
         })
         // ── Health check ─────────────────────────────────────────────────────
         .get("/admin/health", |_req, _state| async move {
@@ -411,9 +396,9 @@ pub fn build_admin_router_with_config(
             let response = Response::builder()
                 .status(StatusCode::OK)
                 .header("content-type", "application/json")
-                .body(Full::new(Bytes::from(body)))
+                .body(Full::new(Bytes::from(body)).boxed())
                 .unwrap();
-            Ok(convert_response_body(response))
+            Ok(response)
         });
 
     router

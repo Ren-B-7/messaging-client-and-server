@@ -1,24 +1,27 @@
 use anyhow::{Context, Result};
 use bytes::Bytes;
-use http_body_util::Full;
+use http_body_util::combinators::BoxBody;
+use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming as IncomingBody;
 use hyper::{Request, Response, StatusCode};
+use std::convert::Infallible;
 use tracing::info;
 
 use crate::AppState;
+use crate::handlers::http::utils::deliver_error_json;
 
 /// Handle get profile (requires authentication)
 pub async fn handle_get_profile(
     req: Request<IncomingBody>,
     state: AppState,
-) -> Result<Response<Full<Bytes>>> {
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing get profile request");
 
     // Extract user_id from session
     let user_id = match extract_user_from_request(&req, &state).await {
         Ok(id) => id,
         Err(_err) => {
-            return deliver_error_response(
+            return deliver_error_json(
                 "UNAUTHORIZED",
                 "Authentication required",
                 StatusCode::UNAUTHORIZED,
@@ -49,7 +52,7 @@ pub async fn handle_get_profile(
     Ok(Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "application/json")
-        .body(Full::new(json_bytes))
+        .body(Full::new(json_bytes).boxed())
         .context("Failed to build profile response")?)
 }
 
@@ -80,22 +83,4 @@ async fn extract_user_from_request(req: &Request<IncomingBody>, state: &AppState
         .ok_or_else(|| anyhow::anyhow!("Session not found"))?;
 
     Ok(user_id)
-}
-
-fn deliver_error_response(
-    code: &str,
-    message: &str,
-    status: StatusCode,
-) -> Result<Response<Full<Bytes>>> {
-    let error_json = serde_json::json!({
-        "status": "error",
-        "code": code,
-        "message": message
-    });
-
-    Ok(Response::builder()
-        .status(status)
-        .header("content-type", "application/json")
-        .body(Full::new(Bytes::from(error_json.to_string())))
-        .context("Failed to build error response")?)
 }

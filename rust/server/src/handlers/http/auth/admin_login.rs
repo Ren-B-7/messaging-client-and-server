@@ -31,6 +31,7 @@ pub enum LoginResponse {
         token: String,
         expires_in: u64,
         message: String,
+        redirect: String,
     },
     Error {
         code: String,
@@ -79,12 +80,12 @@ impl LoginError {
     }
 }
 
-/// Main login handler
+/// Main admin login handler
 pub async fn handle_login(
     req: Request<hyper::body::Incoming>,
     state: AppState,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    info!("Processing login request");
+    info!("Processing admin login request");
 
     let content_type = req
         .headers()
@@ -96,7 +97,7 @@ pub async fn handle_login(
         match parse_login_json(req).await {
             Ok(data) => data,
             Err(e) => {
-                warn!("Login JSON parsing failed: {:?}", e.to_code());
+                warn!("Admin login JSON parsing failed: {:?}", e.to_code());
                 return deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST);
             }
         }
@@ -104,25 +105,26 @@ pub async fn handle_login(
         match parse_login_form(req).await {
             Ok(data) => data,
             Err(e) => {
-                warn!("Login form parsing failed: {:?}", e.to_code());
+                warn!("Admin login form parsing failed: {:?}", e.to_code());
                 return deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST);
             }
         }
     };
 
     if let Err(e) = validate_login(&login_data) {
-        warn!("Login validation failed: {:?}", e.to_code());
+        warn!("Admin login validation failed: {:?}", e.to_code());
         return deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST);
     }
 
     match attempt_login(&login_data, &state).await {
         Ok((user_id, username, token)) => {
             info!(
-                "User logged in successfully: {} (ID: {})",
+                "Admin logged in successfully: {} (ID: {})",
                 username, user_id
             );
 
             let token_expiry_secs = state.config.auth.token_expiry_minutes * 60;
+
 
             // The session token is stored both in the cookie and returned in the JSON
             // body so the frontend can send it as a Bearer header on subsequent requests.
@@ -140,23 +142,24 @@ pub async fn handle_login(
                 username,
                 token,
                 expires_in: token_expiry_secs,
-                message: "Login successful".to_string(),
+                message: "Admin login successful".to_string(),
+                redirect: "/admin".to_string(),
             };
 
             let json =
                 serde_json::to_string(&response_data).context("Failed to serialize response")?;
 
-            let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()
+            let response = Response::builder()
                 .status(StatusCode::OK)
                 .header("content-type", "application/json")
                 .header("set-cookie", instance_cookie)
-                .body(utils::deliver_page::full(Bytes::from(json)).boxed())
+                .body(utils::deliver_page::full(Bytes::from(json)))
                 .context("Failed to build response")?;
 
             Ok(response)
         }
         Err(e) => {
-            warn!("Login failed: {:?}", e.to_code());
+            warn!("Admin login failed: {:?}", e.to_code());
             deliver_serialized_json(&e.to_response(), StatusCode::UNAUTHORIZED)
         }
     }
@@ -173,7 +176,7 @@ async fn parse_login_json(
         .to_bytes();
 
     serde_json::from_slice::<LoginData>(&body).map_err(|e| {
-        error!("Failed to parse login JSON: {}", e);
+        error!("Failed to parse admin login JSON: {}", e);
         LoginError::InternalError
     })
 }
@@ -228,52 +231,51 @@ fn validate_login(data: &LoginData) -> std::result::Result<(), LoginError> {
     Ok(())
 }
 
-/// Attempt to log in the user using the database
+/// Attempt to log in the admin user using the database
 async fn attempt_login(
     data: &LoginData,
     state: &AppState,
 ) -> std::result::Result<(i64, String, String), LoginError> {
     use crate::database::login as db_login;
 
-    info!("Attempting login for user: {}", data.username);
+    info!("Attempting admin login for user: {}", data.username);
 
-    let user_auth = db_login::get_user_auth(&state.db, data.username.clone())
+    let admin_auth = db_login::get_admin_auth(&state.db, data.username.clone())
         .await
         .map_err(|e| {
-            error!("Database error getting user auth: {}", e);
+            error!("Database error getting admin auth: {}", e);
             LoginError::DatabaseError
         })?
         .ok_or_else(|| {
-            warn!("User not found: {}", data.username);
+            warn!("Admin not found: {}", data.username);
             LoginError::InvalidCredentials
         })?;
 
-    if user_auth.is_banned {
-        warn!("Banned user attempted login: {}", data.username);
+    if admin_auth.is_banned {
+        warn!("Banned admin attempted login: {}", data.username);
         return Err(LoginError::UserBanned);
     }
 
     let password_valid =
-        crate::database::utils::verify_password(&user_auth.password_hash, &data.password).map_err(
-            |e| {
+        crate::database::utils::verify_password(&admin_auth.password_hash, &data.password)
+            .map_err(|e| {
                 error!("Password verification error: {}", e);
                 LoginError::InternalError
-            },
-        )?;
+            })?;
 
     if !password_valid {
-        warn!("Invalid password for user: {}", data.username);
+        warn!("Invalid password for admin: {}", data.username);
         return Err(LoginError::InvalidCredentials);
     }
 
-    let token = crate::database::utils::generate_uuid_token();
+    let token = crate::database::utils::generate_session_token();
     let token_expiry_secs = state.config.auth.token_expiry_minutes * 60;
     let expires_at = crate::database::utils::calculate_expiry(token_expiry_secs as i64);
 
-    db_login::create_session(
+    db_login::create_admin_session(
         &state.db,
         db_login::NewSession {
-            user_id: user_auth.id,
+            user_id: admin_auth.id,
             session_token: token.clone(),
             expires_at,
             ip_address: None,
@@ -282,21 +284,21 @@ async fn attempt_login(
     )
     .await
     .map_err(|e| {
-        error!("Failed to create session: {}", e);
+        error!("Failed to create admin session: {}", e);
         LoginError::DatabaseError
     })?;
 
-    db_login::update_last_login(&state.db, user_auth.id)
+    db_login::update_admin_last_login(&state.db, admin_auth.id)
         .await
         .map_err(|e| {
-            error!("Failed to update last login: {}", e);
+            error!("Failed to update admin last login: {}", e);
         })
         .ok();
 
     info!(
-        "Login successful for user: {} (ID: {})",
-        user_auth.username, user_auth.id
+        "Admin login successful for user: {} (ID: {})",
+        admin_auth.username, admin_auth.id
     );
 
-    Ok((user_auth.id, user_auth.username, token))
+    Ok((admin_auth.id, admin_auth.username, token))
 }

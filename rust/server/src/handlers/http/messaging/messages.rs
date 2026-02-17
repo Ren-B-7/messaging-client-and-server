@@ -1,12 +1,15 @@
 use anyhow::{Context, Result};
 use bytes::Bytes;
 use http_body_util::BodyExt;
+use http_body_util::combinators::BoxBody;
 use hyper::{Request, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::convert::Infallible;
 use tracing::{error, info, warn};
 
 use crate::AppState;
+use crate::handlers::http::utils::deliver_serialized_json;
 
 /// Send message request data
 #[derive(Debug, Deserialize)]
@@ -127,7 +130,7 @@ impl MessageError {
 pub async fn handle_send_message(
     req: Request<hyper::body::Incoming>,
     state: AppState,
-) -> Result<Response<http_body_util::Full<Bytes>>> {
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing send message request");
 
     // Extract user_id from session (authenticated request)
@@ -135,7 +138,7 @@ pub async fn handle_send_message(
         Ok(id) => id,
         Err(err) => {
             warn!("Unauthorized message send attempt");
-            return deliver_send_response(err.to_send_response(), StatusCode::UNAUTHORIZED);
+            return deliver_serialized_json(&err.to_send_response(), StatusCode::UNAUTHORIZED);
         }
     };
 
@@ -144,14 +147,14 @@ pub async fn handle_send_message(
         Ok(data) => data,
         Err(err) => {
             warn!("Message parsing failed: {:?}", err.to_code());
-            return deliver_send_response(err.to_send_response(), StatusCode::BAD_REQUEST);
+            return deliver_serialized_json(&err.to_send_response(), StatusCode::BAD_REQUEST);
         }
     };
 
     // Validate message
     if let Err(err) = validate_message(&message_data) {
         warn!("Message validation failed: {:?}", err.to_code());
-        return deliver_send_response(err.to_send_response(), StatusCode::BAD_REQUEST);
+        return deliver_serialized_json(&err.to_send_response(), StatusCode::BAD_REQUEST);
     }
 
     // Send the message
@@ -165,11 +168,11 @@ pub async fn handle_send_message(
                 message: "Message sent successfully".to_string(),
             };
 
-            deliver_send_response(response, StatusCode::CREATED)
+            deliver_serialized_json(&response, StatusCode::CREATED)
         }
         Err(err) => {
             error!("Failed to send message: {:?}", err.to_code());
-            deliver_send_response(err.to_send_response(), StatusCode::INTERNAL_SERVER_ERROR)
+            deliver_serialized_json(&err.to_send_response(), StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
 }
@@ -178,7 +181,7 @@ pub async fn handle_send_message(
 pub async fn handle_get_messages(
     req: Request<hyper::body::Incoming>,
     state: AppState,
-) -> Result<Response<http_body_util::Full<Bytes>>> {
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing get messages request");
 
     // Extract user_id from session
@@ -186,7 +189,7 @@ pub async fn handle_get_messages(
         Ok(id) => id,
         Err(err) => {
             warn!("Unauthorized get messages attempt");
-            return deliver_list_response(err.to_list_response(), StatusCode::UNAUTHORIZED);
+            return deliver_serialized_json(&err.to_list_response(), StatusCode::UNAUTHORIZED);
         }
     };
 
@@ -203,11 +206,11 @@ pub async fn handle_get_messages(
                 messages,
             };
 
-            deliver_list_response(response, StatusCode::OK)
+            deliver_serialized_json(&response, StatusCode::OK)
         }
         Err(err) => {
             error!("Failed to retrieve messages: {:?}", err.to_code());
-            deliver_list_response(err.to_list_response(), StatusCode::INTERNAL_SERVER_ERROR)
+            deliver_serialized_json(&err.to_list_response(), StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
 }
@@ -217,14 +220,14 @@ pub async fn handle_mark_read(
     req: Request<hyper::body::Incoming>,
     state: AppState,
     message_id: i64,
-) -> Result<Response<http_body_util::Full<Bytes>>> {
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing mark as read request for message {}", message_id);
 
     // Extract user_id from session
     let _user_id = match extract_user_from_request(&req, &state).await {
         Ok(id) => id,
         Err(err) => {
-            return deliver_send_response(err.to_send_response(), StatusCode::UNAUTHORIZED);
+            return deliver_serialized_json(&err.to_send_response(), StatusCode::UNAUTHORIZED);
         }
     };
 
@@ -241,12 +244,12 @@ pub async fn handle_mark_read(
                 message: "Message marked as read".to_string(),
             };
 
-            deliver_send_response(response, StatusCode::OK)
+            deliver_serialized_json(&response, StatusCode::OK)
         }
         Err(e) => {
             error!("Failed to mark message as read: {}", e);
-            deliver_send_response(
-                MessageError::DatabaseError.to_send_response(),
+            deliver_serialized_json(
+                &MessageError::DatabaseError.to_send_response(),
                 StatusCode::INTERNAL_SERVER_ERROR,
             )
         }
@@ -457,36 +460,4 @@ async fn retrieve_messages(
     }
 
     Ok(responses)
-}
-
-/// Deliver send message JSON response
-fn deliver_send_response(
-    response: SendMessageResponse,
-    status: StatusCode,
-) -> Result<Response<http_body_util::Full<Bytes>>> {
-    let json = serde_json::to_string(&response).context("Failed to serialize response")?;
-
-    let response = Response::builder()
-        .status(status)
-        .header("content-type", "application/json")
-        .body(http_body_util::Full::new(Bytes::from(json)))
-        .context("Failed to build response")?;
-
-    Ok(response)
-}
-
-/// Deliver messages list JSON response
-fn deliver_list_response(
-    response: MessagesResponse,
-    status: StatusCode,
-) -> Result<Response<http_body_util::Full<Bytes>>> {
-    let json = serde_json::to_string(&response).context("Failed to serialize response")?;
-
-    let response = Response::builder()
-        .status(status)
-        .header("content-type", "application/json")
-        .body(http_body_util::Full::new(Bytes::from(json)))
-        .context("Failed to build response")?;
-
-    Ok(response)
 }

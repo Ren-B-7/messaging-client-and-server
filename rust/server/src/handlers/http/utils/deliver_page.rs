@@ -3,11 +3,10 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
 use bytes::Bytes;
-use http::response;
 use http_body_util::{BodyExt, Empty, Full, combinators::BoxBody};
 use hyper::{Response, StatusCode, header};
 use std::convert::Infallible;
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 use crate::handlers::http::utils::headers;
 
@@ -167,30 +166,9 @@ fn get_mime_type(path: &Path) -> &'static str {
     }
 }
 
-/// Delivers a JSON response
-pub fn deliver_json<T: Into<Bytes>>(json: T) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    let bytes_string: Bytes = json.into();
-
-    debug!(
-        "Delivering JSON response, size: {} bytes",
-        bytes_string.len()
-    );
-
-    let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(full(bytes_string))
-        .map_err(|e: http::Error| {
-            error!("Failed to build JSON response: {}", e);
-            anyhow!("Failed to build JSON response: {}", e)
-        })?;
-
-    Ok(response)
-}
-
 /// Delivers a redirect response
 pub fn deliver_redirect(location: &str) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    debug!("Delivering redirect to: {}", location);
+    info!("Delivering redirect to: {}", location);
 
     let empty_bytes: Bytes = Bytes::from("");
     let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()

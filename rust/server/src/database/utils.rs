@@ -12,13 +12,6 @@ pub fn get_timestamp() -> i64 {
         .as_secs() as i64
 }
 
-/// Generate a secure session token
-pub fn generate_session_token() -> String {
-    use rand::Rng;
-    let random_bytes: [u8; 32] = rand::thread_rng().r#gen();
-    hex::encode(random_bytes)
-}
-
 /// Generate a UUID-based session token
 pub fn generate_uuid_token() -> String {
     uuid::Uuid::new_v4().to_string()
@@ -124,7 +117,7 @@ pub fn is_expired(timestamp: i64) -> bool {
 
 /// Generate a password reset token (secure random)
 pub fn generate_reset_token() -> String {
-    generate_session_token()
+    generate_uuid_token()
 }
 
 /// Sanitize string for database (remove null bytes, trim)

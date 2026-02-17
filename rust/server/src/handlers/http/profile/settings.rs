@@ -1,12 +1,15 @@
 use anyhow::{Context, Result};
 use bytes::Bytes;
 use http_body_util::BodyExt;
+use http_body_util::combinators::BoxBody;
 use hyper::{Request, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::convert::Infallible;
 use tracing::{error, info, warn};
 
 use crate::AppState;
+use crate::handlers::http::utils::deliver_serialized_json;
 
 /// Change password request
 #[derive(Debug, Deserialize)]
@@ -83,7 +86,7 @@ impl SettingsError {
 pub async fn handle_change_password(
     req: Request<hyper::body::Incoming>,
     state: AppState,
-) -> Result<Response<http_body_util::Full<Bytes>>> {
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing change password request");
 
     // Extract user_id from session
@@ -91,7 +94,7 @@ pub async fn handle_change_password(
         Ok(id) => id,
         Err(err) => {
             warn!("Unauthorized password change attempt");
-            return deliver_response(err.to_response(), StatusCode::UNAUTHORIZED);
+            return deliver_serialized_json(&err.to_response(), StatusCode::UNAUTHORIZED);
         }
     };
 
@@ -100,14 +103,14 @@ pub async fn handle_change_password(
         Ok(data) => data,
         Err(err) => {
             warn!("Password change parsing failed: {:?}", err.to_code());
-            return deliver_response(err.to_response(), StatusCode::BAD_REQUEST);
+            return deliver_serialized_json(&err.to_response(), StatusCode::BAD_REQUEST);
         }
     };
 
     // Validate passwords
     if let Err(err) = validate_password_change(&password_data) {
         warn!("Password change validation failed: {:?}", err.to_code());
-        return deliver_response(err.to_response(), StatusCode::BAD_REQUEST);
+        return deliver_serialized_json(&err.to_response(), StatusCode::BAD_REQUEST);
     }
 
     // Attempt password change
@@ -119,11 +122,11 @@ pub async fn handle_change_password(
                 message: "Password changed successfully".to_string(),
             };
 
-            deliver_response(response, StatusCode::OK)
+            deliver_serialized_json(&response, StatusCode::OK)
         }
         Err(err) => {
             error!("Failed to change password: {:?}", err.to_code());
-            deliver_response(err.to_response(), StatusCode::BAD_REQUEST)
+            deliver_serialized_json(&err.to_response(), StatusCode::BAD_REQUEST)
         }
     }
 }
@@ -132,7 +135,7 @@ pub async fn handle_change_password(
 pub async fn handle_logout(
     req: Request<hyper::body::Incoming>,
     state: AppState,
-) -> Result<Response<http_body_util::Full<Bytes>>> {
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing logout request");
 
     // Extract token from request
@@ -140,8 +143,8 @@ pub async fn handle_logout(
         Some(t) => t,
         None => {
             warn!("Logout attempt without token");
-            return deliver_response(
-                SettingsResponse::Success {
+            return deliver_serialized_json(
+                &SettingsResponse::Success {
                     message: "Logged out".to_string(),
                 },
                 StatusCode::OK,
@@ -159,24 +162,25 @@ pub async fn handle_logout(
             // Create cookie to clear auth token
             let clear_cookie = "auth_token=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0";
 
-            let json = serde_json::to_string(&SettingsResponse::Success {
+            let response_body = SettingsResponse::Success {
                 message: "Logged out successfully".to_string(),
-            })
-            .context("Failed to serialize response")?;
+            };
+            let json =
+                serde_json::to_string(&response_body).context("Failed to serialize response")?;
 
             let response = Response::builder()
                 .status(StatusCode::OK)
                 .header("content-type", "application/json")
                 .header("set-cookie", clear_cookie)
-                .body(http_body_util::Full::new(Bytes::from(json)))
+                .body(http_body_util::Full::new(Bytes::from(json)).boxed())
                 .context("Failed to build response")?;
 
             Ok(response)
         }
         Err(e) => {
             error!("Failed to delete session: {}", e);
-            deliver_response(
-                SettingsError::DatabaseError.to_response(),
+            deliver_serialized_json(
+                &SettingsError::DatabaseError.to_response(),
                 StatusCode::INTERNAL_SERVER_ERROR,
             )
         }
@@ -187,7 +191,7 @@ pub async fn handle_logout(
 pub async fn handle_logout_all(
     req: Request<hyper::body::Incoming>,
     state: AppState,
-) -> Result<Response<http_body_util::Full<Bytes>>> {
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing logout all devices request");
 
     // Extract user_id from session
@@ -195,7 +199,7 @@ pub async fn handle_logout_all(
         Ok(id) => id,
         Err(err) => {
             warn!("Unauthorized logout all attempt");
-            return deliver_response(err.to_response(), StatusCode::UNAUTHORIZED);
+            return deliver_serialized_json(&err.to_response(), StatusCode::UNAUTHORIZED);
         }
     };
 
@@ -210,12 +214,12 @@ pub async fn handle_logout_all(
                 message: "Logged out from all devices".to_string(),
             };
 
-            deliver_response(response, StatusCode::OK)
+            deliver_serialized_json(&response, StatusCode::OK)
         }
         Err(e) => {
             error!("Failed to delete sessions: {}", e);
-            deliver_response(
-                SettingsError::DatabaseError.to_response(),
+            deliver_serialized_json(
+                &SettingsError::DatabaseError.to_response(),
                 StatusCode::INTERNAL_SERVER_ERROR,
             )
         }
@@ -365,20 +369,4 @@ async fn change_user_password(
     // db_login::delete_all_user_sessions(&state.db, user_id).await.ok();
 
     Ok(())
-}
-
-/// Deliver JSON response
-fn deliver_response(
-    response: SettingsResponse,
-    status: StatusCode,
-) -> Result<Response<http_body_util::Full<Bytes>>> {
-    let json = serde_json::to_string(&response).context("Failed to serialize response")?;
-
-    let response = Response::builder()
-        .status(status)
-        .header("content-type", "application/json")
-        .body(http_body_util::Full::new(Bytes::from(json)))
-        .context("Failed to build response")?;
-
-    Ok(response)
 }

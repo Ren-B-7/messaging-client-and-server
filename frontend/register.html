@@ -13,20 +13,40 @@
 
     <!-- Theme attr + dark overrides injected synchronously before first paint -->
     <script>
-      var t=localStorage.getItem("theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");
-      document.documentElement.setAttribute("data-theme",t);
-      if(t==="dark")["base","auth"].forEach(function(m){var l=document.createElement("link");l.rel="stylesheet";l.href="/static/css/"+m+"/"+m+".dark.css";document.head.appendChild(l);});
-      var ld=function(v){document.getElementById("loading").style.display=v;};
-      window.addEventListener("beforeunload",function(){ld("flex");});
-      window.addEventListener("load",function(){ld("none");});
-      window.addEventListener("pageshow",function(e){if(e.persisted)ld("none");});
+      var t =
+        localStorage.getItem("theme") ||
+        (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      document.documentElement.setAttribute("data-theme", t);
+      if (t === "dark")
+        ["base", "auth"].forEach(function (m) {
+          var l = document.createElement("link");
+          l.rel = "stylesheet";
+          l.href = "/static/css/" + m + "/" + m + ".dark.css";
+          document.head.appendChild(l);
+        });
+      var ld = function (v) {
+        document.getElementById("loading").style.display = v;
+      };
+      window.addEventListener("beforeunload", function () {
+        ld("flex");
+      });
+      window.addEventListener("load", function () {
+        ld("none");
+      });
+      window.addEventListener("pageshow", function (e) {
+        if (e.persisted) ld("none");
+      });
     </script>
 
     <link rel="preload" href="/static/js/utils/theme_manager.js" as="script" />
-    <link rel="preload" href="/static/js/config/platform.config.js" as="script" />
+    <link
+      rel="preload"
+      href="/static/js/config/platform.config.js"
+      as="script"
+    />
     <link rel="preload" href="/static/js/config/route.config.js" as="script" />
     <link rel="preload" href="/static/js/utils/utils.js" as="script" />
-    <link rel="preload" href="/non-static/auth/auth.password.js" as="script" />
+    <link rel="preload" href="/static/js/auth/auth.password.js" as="script" />
     <link rel="preload" href="/non-static/auth/auth.login.js" as="script" />
     <link rel="preload" href="/non-static/auth/auth.register.js" as="script" />
     <link rel="preload" href="/non-static/auth/auth.init.js" as="script" />
@@ -35,7 +55,7 @@
     <script defer src="/static/js/config/platform.config.js"></script>
     <script defer src="/static/js/config/route.config.js"></script>
     <script defer src="/static/js/utils/utils.js"></script>
-    <script defer src="/non-static/auth/auth.password.js"></script>
+    <script defer src="/static/js/auth/auth.password.js"></script>
     <script defer src="/non-static/auth/auth.login.js"></script>
     <script defer src="/non-static/auth/auth.register.js"></script>
     <script defer src="/non-static/auth/auth.init.js"></script>
@@ -98,20 +118,33 @@
                     required
                     autocomplete="new-password"
                   />
-                  <button type="button" class="password-toggle" aria-label="Toggle password visibility">
-                    <img src="/static/icons/icons/eye.svg" alt="" width="20" height="20" />
+                  <button
+                    type="button"
+                    class="password-toggle"
+                    aria-label="Toggle password visibility"
+                  >
+                    <img
+                      src="/static/icons/icons/eye.svg"
+                      alt=""
+                      width="20"
+                      height="20"
+                    />
                   </button>
                 </div>
                 <div class="password-strength">
                   <div class="strength-bar">
                     <div class="strength-fill" id="strengthFill"></div>
                   </div>
-                  <span class="strength-text" id="strengthText">Password strength: Weak</span>
+                  <span class="strength-text" id="strengthText"
+                    >Password strength: Weak</span
+                  >
                 </div>
               </div>
 
               <div class="form-group">
-                <label class="form-label" for="regConfirmPassword">Confirm Password</label>
+                <label class="form-label" for="regConfirmPassword"
+                  >Confirm Password</label
+                >
                 <div class="password-input-wrapper">
                   <input
                     type="password"
@@ -122,14 +155,27 @@
                     required
                     autocomplete="new-password"
                   />
-                  <button type="button" class="password-toggle" aria-label="Toggle password visibility">
-                    <img src="/static/icons/icons/eye.svg" alt="" width="20" height="20" />
+                  <button
+                    type="button"
+                    class="password-toggle"
+                    aria-label="Toggle password visibility"
+                  >
+                    <img
+                      src="/static/icons/icons/eye.svg"
+                      alt=""
+                      width="20"
+                      height="20"
+                    />
                   </button>
                 </div>
                 <div class="form-error" id="confirmPasswordError"></div>
               </div>
 
-              <button type="button" class="btn btn-primary btn-block" id="nextBtn1">
+              <button
+                type="button"
+                class="btn btn-primary btn-block"
+                id="nextBtn1"
+              >
                 Continue
               </button>
             </div>
@@ -138,8 +184,15 @@
             <div class="form-step" data-step="2">
               <div class="avatar-upload">
                 <div class="avatar-preview" id="avatarPreview">📷</div>
-                <input type="file" class="avatar-input" id="avatarInput" accept="image/*" />
-                <small class="form-hint">Click to upload profile picture (optional)</small>
+                <input
+                  type="file"
+                  class="avatar-input"
+                  id="avatarInput"
+                  accept="image/*"
+                />
+                <small class="form-hint"
+                  >Click to upload profile picture (optional)</small
+                >
               </div>
 
               <div class="form-group">
@@ -172,15 +225,21 @@
               </div>
 
               <div class="form-actions">
-                <button type="button" class="btn btn-secondary" id="prevBtn2">Back</button>
-                <button type="button" class="btn btn-primary" id="nextBtn2">Continue</button>
+                <button type="button" class="btn btn-secondary" id="prevBtn2">
+                  Back
+                </button>
+                <button type="button" class="btn btn-primary" id="nextBtn2">
+                  Continue
+                </button>
               </div>
             </div>
 
             <!-- Step 3: Terms & Verification -->
             <div class="form-step" data-step="3">
               <div class="form-group">
-                <h3 style="margin-bottom: var(--space-4)">Review Your Information</h3>
+                <h3 style="margin-bottom: var(--space-4)">
+                  Review Your Information
+                </h3>
                 <div
                   style="
                     background: var(--bg-secondary);
@@ -190,13 +249,23 @@
                   "
                 >
                   <p><strong>Email:</strong> <span id="reviewEmail">-</span></p>
-                  <p><strong>Full Name:</strong> <span id="reviewName">-</span></p>
-                  <p><strong>Username:</strong> <span id="reviewUsername">-</span></p>
+                  <p>
+                    <strong>Full Name:</strong> <span id="reviewName">-</span>
+                  </p>
+                  <p>
+                    <strong>Username:</strong>
+                    <span id="reviewUsername">-</span>
+                  </p>
                 </div>
               </div>
 
               <label class="form-checkbox">
-                <input type="checkbox" name="terms" id="termsCheckbox" required />
+                <input
+                  type="checkbox"
+                  name="terms"
+                  id="termsCheckbox"
+                  required
+                />
                 <span class="checkbox-label">
                   I agree to the
                   <a href="/terms" target="_blank">Terms of Service</a> and
@@ -205,8 +274,12 @@
               </label>
 
               <div class="form-actions">
-                <button type="button" class="btn btn-secondary" id="prevBtn3">Back</button>
-                <button type="submit" class="btn btn-primary" id="submitBtn">Create Account</button>
+                <button type="button" class="btn btn-secondary" id="prevBtn3">
+                  Back
+                </button>
+                <button type="submit" class="btn btn-primary" id="submitBtn">
+                  Create Account
+                </button>
               </div>
             </div>
           </form>

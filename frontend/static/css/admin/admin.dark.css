@@ -1,0 +1,71 @@
+/**
+ * Admin Dark Theme
+ * Admin panel styling in dark mode
+ */
+
+:root[data-theme="dark"] {
+  --admin-topbar-bg: #1c2127;
+  --admin-sidebar-bg: #1c2127;
+  --admin-content-bg: #0f1419;
+  --admin-panel-bg: #1c2127;
+  --admin-row-odd-bg: #2d333b;
+  --admin-status-dot: var(--success);
+  --admin-log-hover: var(--bg-tertiary);
+  --admin-modal-footer-bg: var(--bg-tertiary);
+  --admin-stat-amber: #f59e0b;
+  --admin-stat-red: var(--danger);
+  --admin-stat-green: var(--success);
+  --admin-stat-blue: var(--info);
+  --admin-badge-amber-bg: rgba(245, 158, 11, 0.15);
+  --admin-badge-amber-fg: #f59e0b;
+  --admin-badge-amber-border: rgba(245, 158, 11, 0.3);
+  --admin-badge-red-bg: rgba(248, 81, 73, 0.15);
+  --admin-badge-red-fg: var(--danger);
+  --admin-badge-red-border: rgba(248, 81, 73, 0.3);
+  --admin-badge-green-bg: rgba(63, 185, 80, 0.15);
+  --admin-badge-green-fg: var(--success);
+  --admin-badge-green-border: rgba(63, 185, 80, 0.3);
+  --admin-badge-muted-bg: var(--bg-tertiary);
+  --admin-badge-muted-fg: var(--fg-tertiary);
+  --admin-badge-muted-border: var(--border);
+  --admin-btn-amber-bg: rgba(245, 158, 11, 0.15);
+  --admin-btn-amber-fg: #f59e0b;
+  --admin-btn-amber-border: rgba(245, 158, 11, 0.3);
+  --admin-btn-amber-hover: rgba(245, 158, 11, 0.25);
+  --admin-btn-red-bg: rgba(248, 81, 73, 0.15);
+  --admin-btn-red-fg: var(--danger);
+  --admin-btn-red-border: rgba(248, 81, 73, 0.3);
+  --admin-btn-red-hover: rgba(248, 81, 73, 0.25);
+  --admin-btn-green-bg: rgba(63, 185, 80, 0.15);
+  --admin-btn-green-fg: var(--success);
+  --admin-btn-green-border: rgba(63, 185, 80, 0.3);
+  --admin-btn-green-hover: rgba(63, 185, 80, 0.25);
+}
+
+/* Dark mode specific adjustments */
+:root[data-theme="dark"] .topbar {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+:root[data-theme="dark"] .panel {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+:root[data-theme="dark"] .stat-card {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+:root[data-theme="dark"] .sidebar-item.active {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+:root[data-theme="dark"] tbody tr:hover {
+  background: var(--bg-tertiary);
+}
+
+:root[data-theme="dark"] #loading {
+  background: #0f1419;
+}
+
+/* All other styles inherit from admin.light.css */
+/* Only color variables are overridden in dark theme */

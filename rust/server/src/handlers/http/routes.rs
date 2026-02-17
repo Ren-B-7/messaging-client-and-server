@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use bytes::Bytes;
+use http_body_util::BodyExt;
 use http_body_util::combinators::BoxBody;
 use hyper::{Method, Request, Response, StatusCode};
 use std::convert::Infallible;
@@ -136,12 +137,8 @@ impl Router {
         }
 
         // No route or static file matched - return 404
-        convert_result_body(error_response::deliver_error_json(
-            "NOT_FOUND",
-            "Endpoint not found",
-            StatusCode::NOT_FOUND,
-        ))
-        .context("Failed to deliver 404 response")
+        json_response::deliver_error_json("NOT_FOUND", "Endpoint not found", StatusCode::NOT_FOUND)
+            .context("Failed to deliver 404 response")
     }
 
     /// Check if a route path matches the request path
@@ -234,55 +231,70 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
     router
         // Auth endpoints
         .post("/api/register", |req, state| async move {
-            convert_result_body(auth::handle_register(req, state).await).context("Register failed")
+            auth::handle_register(req, state)
+                .await
+                .context("Register failed")
         })
         .post("/api/login", |req, state| async move {
-            convert_result_body(auth::handle_login(req, state).await)
+            auth::handle_login(req, state)
+                .await
                 .context("Login attempt failed")
         })
         .post("/api/logout", |req, state| async move {
-            convert_result_body(auth::handle_logout(req, state).await).context("Logout failed")
+            auth::handle_logout(req, state)
+                .await
+                .context("Logout failed")
         })
         // Profile & Settings
         .post("/api/profile/update", |req, state| async move {
-            convert_result_body(profile::handle_update_profile(req, state).await)
+            profile::handle_update_profile(req, state)
+                .await
                 .context("Profile update failed")
         })
         .post("/api/settings/password", |req, state| async move {
-            convert_result_body(profile::handle_change_password(req, state).await)
+            profile::handle_change_password(req, state)
+                .await
                 .context("Password change failed")
         })
         .post("/api/settings/logout-all", |req, state| async move {
-            convert_result_body(profile::handle_logout_all(req, state).await)
+            profile::handle_logout_all(req, state)
+                .await
                 .context("Logout attempt failed")
         })
         .get("/api/profile", |req, state| async move {
-            convert_result_body(profile::handle_get_profile(req, state).await)
+            profile::handle_get_profile(req, state)
+                .await
                 .context("Profile get failed")
         })
         // Messaging & Chats
         .post("/api/messages/send", |req, state| async move {
-            convert_result_body(messaging::handle_send_message(req, state).await)
+            messaging::handle_send_message(req, state)
+                .await
                 .context("Message send failed")
         })
         .get("/api/messages", |req, state| async move {
-            convert_result_body(messaging::handle_get_messages(req, state).await)
+            messaging::handle_get_messages(req, state)
+                .await
                 .context("Message get attempt failed")
         })
         .post("/api/chats", |req, state| async move {
-            convert_result_body(messaging::handle_create_chat(req, state).await)
+            messaging::handle_create_chat(req, state)
+                .await
                 .context("Create chat failed")
         })
         .get("/api/chats", |req, state| async move {
-            convert_result_body(messaging::handle_get_chats(req, state).await)
+            messaging::handle_get_chats(req, state)
+                .await
                 .context("Chat get attempt failed")
         })
         .post("/api/groups", |req, state| async move {
-            convert_result_body(messaging::handle_create_group(req, state).await)
+            messaging::handle_create_group(req, state)
+                .await
                 .context("Create group failed")
         })
         .get("/api/groups", |req, state| async move {
-            convert_result_body(messaging::handle_get_groups(req, state).await)
+            messaging::handle_get_groups(req, state)
+                .await
                 .context("Group chat get attempt failed")
         })
         // Config & Health
@@ -297,20 +309,19 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
             let response = Response::builder()
                 .status(StatusCode::OK)
                 .header("content-type", "application/json")
-                .body(http_body_util::Full::new(Bytes::from(
-                    config_json.to_string(),
-                )))
+                .body(http_body_util::Full::new(Bytes::from(config_json.to_string())).boxed())
                 .context("Failed to build config response")?;
-            Ok(convert_response_body(response))
+            Ok(response)
         })
         .get("/health", |_req, _state| async move {
             let response = Response::builder()
                 .status(StatusCode::OK)
                 .header("content-type", "application/json")
-                .body(http_body_util::Full::new(Bytes::from(
-                    r#"{"status":"success","health":"ok"}"#,
-                )))
+                .body(
+                    http_body_util::Full::new(Bytes::from(r#"{"status":"success","health":"ok"}"#))
+                        .boxed(),
+                )
                 .unwrap();
-            Ok(convert_response_body(response))
+            Ok(response)
         })
 }

@@ -1,12 +1,15 @@
 use anyhow::{Context, Result};
 use bytes::Bytes;
 use http_body_util::BodyExt;
+use http_body_util::combinators::BoxBody;
 use hyper::{Request, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::convert::Infallible;
 use tracing::{error, info, warn};
 
 use crate::AppState;
+use crate::handlers::http::utils::deliver_serialized_json;
 
 /// Profile data
 #[derive(Debug, Serialize)]
@@ -111,7 +114,7 @@ impl ProfileError {
 pub async fn handle_get_profile(
     req: Request<hyper::body::Incoming>,
     state: AppState,
-) -> Result<Response<http_body_util::Full<Bytes>>> {
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing get profile request");
 
     // Extract user_id from session
@@ -119,7 +122,7 @@ pub async fn handle_get_profile(
         Ok(id) => id,
         Err(err) => {
             warn!("Unauthorized profile access attempt");
-            return deliver_profile_response(err.to_profile_response(), StatusCode::UNAUTHORIZED);
+            return deliver_serialized_json(&err.to_profile_response(), StatusCode::UNAUTHORIZED);
         }
     };
 
@@ -133,11 +136,14 @@ pub async fn handle_get_profile(
                 message: "Profile retrieved successfully".to_string(),
             };
 
-            deliver_profile_response(response, StatusCode::OK)
+            deliver_serialized_json(&response, StatusCode::OK)
         }
         Err(err) => {
             error!("Failed to get profile: {:?}", err.to_code());
-            deliver_profile_response(err.to_profile_response(), StatusCode::INTERNAL_SERVER_ERROR)
+            deliver_serialized_json(
+                &err.to_profile_response(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
         }
     }
 }
@@ -146,7 +152,7 @@ pub async fn handle_get_profile(
 pub async fn handle_update_profile(
     req: Request<hyper::body::Incoming>,
     state: AppState,
-) -> Result<Response<http_body_util::Full<Bytes>>> {
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing update profile request");
 
     // Extract user_id from session
@@ -154,7 +160,7 @@ pub async fn handle_update_profile(
         Ok(id) => id,
         Err(err) => {
             warn!("Unauthorized profile update attempt");
-            return deliver_update_response(err.to_update_response(), StatusCode::UNAUTHORIZED);
+            return deliver_serialized_json(&err.to_update_response(), StatusCode::UNAUTHORIZED);
         }
     };
 
@@ -163,7 +169,7 @@ pub async fn handle_update_profile(
         Ok(data) => data,
         Err(err) => {
             warn!("Profile update parsing failed: {:?}", err.to_code());
-            return deliver_update_response(err.to_update_response(), StatusCode::BAD_REQUEST);
+            return deliver_serialized_json(&err.to_update_response(), StatusCode::BAD_REQUEST);
         }
     };
 
@@ -176,11 +182,11 @@ pub async fn handle_update_profile(
                 message: "Profile updated successfully".to_string(),
             };
 
-            deliver_update_response(response, StatusCode::OK)
+            deliver_serialized_json(&response, StatusCode::OK)
         }
         Err(err) => {
             error!("Failed to update profile: {:?}", err.to_code());
-            deliver_update_response(err.to_update_response(), StatusCode::BAD_REQUEST)
+            deliver_serialized_json(&err.to_update_response(), StatusCode::BAD_REQUEST)
         }
     }
 }
@@ -235,7 +241,6 @@ async fn get_user_profile(
         })?
         .ok_or(ProfileError::UserNotFound)?;
 
-    // Get last login from users table (you might need to add this to the query)
     Ok(ProfileData {
         user_id: user.id,
         username: user.username,
@@ -340,36 +345,4 @@ async fn update_user_profile(
     }
 
     Ok(())
-}
-
-/// Deliver profile JSON response
-fn deliver_profile_response(
-    response: ProfileResponse,
-    status: StatusCode,
-) -> Result<Response<http_body_util::Full<Bytes>>> {
-    let json = serde_json::to_string(&response).context("Failed to serialize response")?;
-
-    let response = Response::builder()
-        .status(status)
-        .header("content-type", "application/json")
-        .body(http_body_util::Full::new(Bytes::from(json)))
-        .context("Failed to build response")?;
-
-    Ok(response)
-}
-
-/// Deliver update JSON response
-fn deliver_update_response(
-    response: UpdateResponse,
-    status: StatusCode,
-) -> Result<Response<http_body_util::Full<Bytes>>> {
-    let json = serde_json::to_string(&response).context("Failed to serialize response")?;
-
-    let response = Response::builder()
-        .status(status)
-        .header("content-type", "application/json")
-        .body(http_body_util::Full::new(Bytes::from(json)))
-        .context("Failed to build response")?;
-
-    Ok(response)
 }

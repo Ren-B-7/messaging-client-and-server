@@ -1,19 +1,28 @@
 use anyhow::{Context, Result};
 use bytes::Bytes;
 use http_body_util::BodyExt;
+use http_body_util::combinators::BoxBody;
 use hyper::{Request, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::convert::Infallible;
 use tracing::{error, info, warn};
 
 use crate::AppState;
+use crate::handlers::http::utils;
+use crate::handlers::http::utils::deliver_page::deliver_redirect;
+use crate::handlers::http::utils::deliver_serialized_json;
 
-/// Registration request data
+/// Registration request data (supports both form-encoded and JSON)
 #[derive(Debug, Clone, Deserialize)]
 pub struct RegistrationData {
     pub username: String,
     pub password: String,
     pub email: Option<String>,
+    #[serde(default)]
+    pub full_name: Option<String>,
+    #[serde(default)]
+    pub avatar: Option<String>,
 }
 
 /// Registration response codes
@@ -24,6 +33,8 @@ pub enum RegistrationResponse {
         user_id: i64,
         username: String,
         message: String,
+        redirect: String,
+        token: Option<String>,
     },
     Error {
         code: String,
@@ -90,27 +101,43 @@ impl RegistrationError {
     }
 }
 
-/// Main registration handler
+/// Main registration handler - supports both JSON and form submissions
 pub async fn handle_register(
     req: Request<hyper::body::Incoming>,
     state: AppState,
-) -> Result<Response<http_body_util::Full<Bytes>>> {
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing registration request");
 
-    // Parse and validate registration data
+    let content_type = req
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    let accept = req
+        .headers()
+        .get("accept")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    let wants_json =
+        content_type.contains("application/json") || accept.contains("application/json");
+
     let registration_data = match parse_and_validate_registration(req, &state).await {
         Ok(data) => data,
-        Err(reg_error) => {
-            warn!("Registration validation failed: {:?}", reg_error.to_code());
-            return deliver_json_response(reg_error.to_response(), StatusCode::BAD_REQUEST);
+        Err(e) => {
+            warn!("Registration validation failed: {:?}", e.to_code());
+            if wants_json {
+                return deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST);
+            } else {
+                return deliver_redirect("/register?error=validation_failed");
+            }
         }
     };
 
-    // Hash password
     let hashed_password =
         hash_password(&registration_data.password).context("Failed to hash password")?;
 
-    // Attempt to register user
     match attempt_registration(&registration_data, &hashed_password, &state).await {
         Ok((user_id, username)) => {
             info!(
@@ -118,85 +145,155 @@ pub async fn handle_register(
                 username, user_id
             );
 
-            let response = RegistrationResponse::Success {
-                user_id,
-                username,
-                message: "Registration successful".to_string(),
-            };
+            // Create a session for the new user so they are auto-logged-in.
+            let session_token = crate::database::utils::generate_uuid_token();
+            let session_created = create_session_for_new_user(user_id, &session_token, &state)
+                .await
+                .is_ok();
 
-            deliver_json_response(response, StatusCode::CREATED)
+            // The session token is stored both in the cookie and returned in the JSON
+            // body so the frontend can send it as a Bearer header on subsequent requests.
+            let instance_cookie = utils::create_session_cookie("instance_id", &session_token, true)
+                .context("Failed to create instance cookie")?;
+
+            if wants_json {
+                let response = RegistrationResponse::Success {
+                    user_id,
+                    username,
+                    message: "Registration successful".to_string(),
+                    redirect: "/chat".to_string(),
+                    token: if session_created {
+                        Some(session_token)
+                    } else {
+                        None
+                    },
+                };
+
+                let json =
+                    serde_json::to_string(&response).context("Failed to serialize response")?;
+
+                let response = Response::builder()
+                    .status(StatusCode::CREATED)
+                    .header("content-type", "application/json")
+                    .header("set-cookie", instance_cookie)
+                    .body(utils::deliver_page::full(Bytes::from(json)))
+                    .context("Failed to build response")?;
+
+                Ok(response)
+            } else {
+                // Form submission fallback — redirect with instance cookie set
+                let response = Response::builder()
+                    .status(StatusCode::FOUND)
+                    .header("location", "/chat")
+                    .header("set-cookie", instance_cookie)
+                    .body(utils::deliver_page::empty())
+                    .context("Failed to build redirect response")?;
+
+                Ok(response)
+            }
         }
-        Err(reg_error) => {
-            error!("Registration failed: {:?}", reg_error.to_code());
-            deliver_json_response(reg_error.to_response(), StatusCode::BAD_REQUEST)
+        Err(e) => {
+            error!("Registration failed: {:?}", e.to_code());
+            if wants_json {
+                deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST)
+            } else {
+                let error_code = match e {
+                    RegistrationError::UsernameTaken => "username_taken",
+                    RegistrationError::EmailTaken => "email_taken",
+                    _ => "registration_failed",
+                };
+                deliver_redirect(&format!("/register?error={}", error_code))
+            }
         }
     }
 }
 
-/// Parse and validate registration form data
+/// Parse and validate registration data from either JSON or form body
 async fn parse_and_validate_registration(
     req: Request<hyper::body::Incoming>,
     state: &AppState,
 ) -> std::result::Result<RegistrationData, RegistrationError> {
-    // Collect the request body
-    let body = req
-        .collect()
-        .await
-        .map_err(|_| RegistrationError::InternalError)?
-        .to_bytes();
+    let content_type = req
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
 
-    // Parse the form data
-    let params = form_urlencoded::parse(body.as_ref())
-        .into_owned()
-        .collect::<HashMap<String, String>>();
+    let data = if content_type.contains("application/json") {
+        let body = req
+            .collect()
+            .await
+            .map_err(|_| RegistrationError::InternalError)?
+            .to_bytes();
 
-    // Extract and validate username
-    let username = params
-        .get("username")
-        .ok_or(RegistrationError::MissingField("username".to_string()))?
-        .trim()
-        .to_string();
+        serde_json::from_slice::<RegistrationData>(&body).map_err(|e| {
+            error!("Failed to parse registration JSON: {}", e);
+            RegistrationError::InternalError
+        })?
+    } else {
+        let body = req
+            .collect()
+            .await
+            .map_err(|_| RegistrationError::InternalError)?
+            .to_bytes();
 
-    validate_username(&username)?;
+        let params = form_urlencoded::parse(body.as_ref())
+            .into_owned()
+            .collect::<HashMap<String, String>>();
 
-    // Extract and validate password
-    let password = params
-        .get("password")
-        .ok_or(RegistrationError::MissingField("password".to_string()))?
-        .to_string();
+        let username = params
+            .get("username")
+            .ok_or(RegistrationError::MissingField("username".to_string()))?
+            .trim()
+            .to_string();
 
-    validate_password(&password)?;
+        let password = params
+            .get("password")
+            .ok_or(RegistrationError::MissingField("password".to_string()))?
+            .to_string();
 
-    // Verify password confirmation if provided
-    if let Some(confirm) = params.get("password_confirm") {
-        if password != *confirm {
-            return Err(RegistrationError::PasswordMismatch);
+        if let Some(confirm) = params.get("password_confirm") {
+            if password != *confirm {
+                return Err(RegistrationError::PasswordMismatch);
+            }
         }
-    }
 
-    // Extract and validate email
-    let email = params
-        .get("email")
-        .map(|e| e.trim().to_string())
-        .filter(|e| !e.is_empty());
+        let email = params
+            .get("email")
+            .map(|e| e.trim().to_string())
+            .filter(|e| !e.is_empty());
 
-    // Check if email is required by config
-    if state.config.auth.email_required && email.is_none() {
+        let full_name = params
+            .get("full_name")
+            .or_else(|| params.get("fullName"))
+            .map(|n| n.trim().to_string())
+            .filter(|n| !n.is_empty());
+
+        let avatar = params.get("avatar").cloned();
+
+        RegistrationData {
+            username,
+            password,
+            email,
+            full_name,
+            avatar,
+        }
+    };
+
+    validate_username(&data.username)?;
+    validate_password(&data.password)?;
+
+    if state.config.auth.email_required && data.email.is_none() {
         return Err(RegistrationError::EmailRequired);
     }
 
-    // Validate email format if provided
-    if let Some(ref email_str) = email {
+    if let Some(ref email_str) = data.email {
         if !is_valid_email(email_str) {
             return Err(RegistrationError::InvalidEmail);
         }
     }
 
-    Ok(RegistrationData {
-        username,
-        password,
-        email,
-    })
+    Ok(data)
 }
 
 /// Validate username format
@@ -204,14 +301,12 @@ fn validate_username(username: &str) -> std::result::Result<(), RegistrationErro
     if username.is_empty() || username.len() < 3 || username.len() > 32 {
         return Err(RegistrationError::InvalidUsername);
     }
-
     if !username
         .chars()
         .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
     {
         return Err(RegistrationError::InvalidUsername);
     }
-
     Ok(())
 }
 
@@ -220,15 +315,12 @@ fn validate_password(password: &str) -> std::result::Result<(), RegistrationErro
     if password.is_empty() || password.len() < 8 || password.len() > 128 {
         return Err(RegistrationError::InvalidPassword);
     }
-
     if !password.chars().any(|c| c.is_numeric()) {
         return Err(RegistrationError::InvalidPassword);
     }
-
     if !password.chars().any(|c| c.is_alphabetic()) {
         return Err(RegistrationError::InvalidPassword);
     }
-
     Ok(())
 }
 
@@ -238,12 +330,10 @@ fn is_valid_email(email: &str) -> bool {
     if parts.len() != 2 {
         return false;
     }
-
     let domain_parts: Vec<&str> = parts[1].split('.').collect();
     if domain_parts.len() < 2 {
         return false;
     }
-
     !parts[0].is_empty() && !parts[1].is_empty() && domain_parts.iter().all(|p| !p.is_empty())
 }
 
@@ -262,7 +352,6 @@ async fn attempt_registration(
 
     info!("Attempting registration for user: {}", data.username);
 
-    // Check if username already exists
     let username_exists = db_register::username_exists(&state.db, data.username.clone())
         .await
         .map_err(|e| {
@@ -275,7 +364,6 @@ async fn attempt_registration(
         return Err(RegistrationError::UsernameTaken);
     }
 
-    // Check if email already exists (if provided)
     if let Some(ref email) = data.email {
         let email_exists = db_register::email_exists(&state.db, email.clone())
             .await
@@ -290,7 +378,6 @@ async fn attempt_registration(
         }
     }
 
-    // Register the user
     let user_id = db_register::register_user(
         &state.db,
         db_register::NewUser {
@@ -313,18 +400,23 @@ async fn attempt_registration(
     Ok((user_id, data.username.clone()))
 }
 
-/// Deliver JSON response
-fn deliver_json_response(
-    response: RegistrationResponse,
-    status: StatusCode,
-) -> Result<Response<http_body_util::Full<Bytes>>> {
-    let json = serde_json::to_string(&response).context("Failed to serialize response")?;
+/// Create a session for a newly registered user (for auto-login)
+async fn create_session_for_new_user(user_id: i64, token: &str, state: &AppState) -> Result<i64> {
+    use crate::database::login as db_login;
 
-    let response = Response::builder()
-        .status(status)
-        .header("content-type", "application/json")
-        .body(http_body_util::Full::new(Bytes::from(json)))
-        .context("Failed to build response")?;
+    let token_expiry_secs = state.config.auth.token_expiry_minutes * 60;
+    let expires_at = crate::database::utils::calculate_expiry(token_expiry_secs as i64);
 
-    Ok(response)
+    db_login::create_session(
+        &state.db,
+        db_login::NewSession {
+            user_id,
+            session_token: token.to_string(),
+            expires_at,
+            ip_address: None,
+            user_agent: None,
+        },
+    )
+    .await
+    .context("Failed to create session for new user")
 }

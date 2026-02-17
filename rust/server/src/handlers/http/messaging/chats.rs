@@ -1,10 +1,12 @@
 use anyhow::{Context, Result};
 use bytes::Bytes;
+use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming as IncomingBody;
 use hyper::{Request, Response, StatusCode};
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::convert::Infallible;
 use tracing::info;
 
 use crate::AppState;
@@ -21,7 +23,7 @@ pub struct CreateChatRequest {
 pub async fn handle_get_chats(
     _req: Request<IncomingBody>,
     _state: AppState,
-) -> Result<Response<Full<Bytes>>> {
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Fetching chats for user");
 
     // TODO: Fetch actual chats from database
@@ -52,10 +54,10 @@ pub async fn handle_get_chats(
     let json_string: String = chats_json.to_string();
     let json_bytes: Bytes = Bytes::from(json_string);
 
-    let response: Response<Full<Bytes>> = Response::builder()
+    let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "application/json")
-        .body(Full::new(json_bytes))
+        .body(Full::new(json_bytes).boxed())
         .context("Failed to build chats response")?;
 
     Ok(response)
@@ -65,7 +67,7 @@ pub async fn handle_get_chats(
 pub async fn handle_create_chat(
     req: Request<IncomingBody>,
     _state: AppState,
-) -> Result<Response<Full<Bytes>>> {
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Creating new chat");
 
     // Parse request body
@@ -111,10 +113,10 @@ pub async fn handle_create_chat(
     let json_string: String = response_json.to_string();
     let json_bytes: Bytes = Bytes::from(json_string);
 
-    let response: Response<Full<Bytes>> = Response::builder()
+    let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()
         .status(StatusCode::CREATED)
         .header("content-type", "application/json")
-        .body(Full::new(json_bytes))
+        .body(Full::new(json_bytes).boxed())
         .context("Failed to build response")?;
 
     Ok(response)
@@ -125,7 +127,7 @@ pub async fn handle_get_messages(
     _req: Request<IncomingBody>,
     _state: AppState,
     chat_id: i64,
-) -> Result<Response<Full<Bytes>>> {
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Fetching messages for chat {}", chat_id);
 
     // TODO: Fetch actual messages from database
@@ -155,10 +157,10 @@ pub async fn handle_get_messages(
     let json_string: String = messages_json.to_string();
     let json_bytes: Bytes = Bytes::from(json_string);
 
-    let response: Response<Full<Bytes>> = Response::builder()
+    let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "application/json")
-        .body(Full::new(json_bytes))
+        .body(Full::new(json_bytes).boxed())
         .context("Failed to build messages response")?;
 
     Ok(response)
@@ -169,7 +171,7 @@ pub async fn handle_send_message(
     req: Request<IncomingBody>,
     _state: AppState,
     chat_id: i64,
-) -> Result<Response<Full<Bytes>>> {
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Sending message to chat {}", chat_id);
 
     // Parse request body
@@ -208,10 +210,10 @@ pub async fn handle_send_message(
     let json_string: String = response_json.to_string();
     let json_bytes: Bytes = Bytes::from(json_string);
 
-    let response: Response<Full<Bytes>> = Response::builder()
+    let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()
         .status(StatusCode::CREATED)
         .header("content-type", "application/json")
-        .body(Full::new(json_bytes))
+        .body(Full::new(json_bytes).boxed())
         .context("Failed to build response")?;
 
     Ok(response)

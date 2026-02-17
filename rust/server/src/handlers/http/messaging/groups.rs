@@ -1,9 +1,11 @@
 use anyhow::{Context, Result};
 use bytes::Bytes;
+use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming as IncomingBody;
 use hyper::{Request, Response, StatusCode};
 use std::collections::HashMap;
+use std::convert::Infallible;
 use tracing::info;
 
 use crate::AppState;
@@ -13,7 +15,7 @@ use crate::handlers::http::utils::deliver_error_json;
 pub async fn handle_get_groups(
     _req: Request<IncomingBody>,
     _state: AppState,
-) -> Result<Response<Full<Bytes>>> {
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Fetching groups for user");
 
     // TODO: Fetch actual groups from database
@@ -42,10 +44,10 @@ pub async fn handle_get_groups(
     let json_string: String = groups_json.to_string();
     let json_bytes: Bytes = Bytes::from(json_string);
 
-    let response: Response<Full<Bytes>> = Response::builder()
+    let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "application/json")
-        .body(Full::new(json_bytes))
+        .body(Full::new(json_bytes).boxed())
         .context("Failed to build groups response")?;
 
     Ok(response)
@@ -55,7 +57,7 @@ pub async fn handle_get_groups(
 pub async fn handle_create_group(
     req: Request<IncomingBody>,
     _state: AppState,
-) -> Result<Response<Full<Bytes>>> {
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Creating new group");
 
     // Parse request body
@@ -96,10 +98,10 @@ pub async fn handle_create_group(
     let json_string: String = response_json.to_string();
     let json_bytes: Bytes = Bytes::from(json_string);
 
-    let response: Response<Full<Bytes>> = Response::builder()
+    let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()
         .status(StatusCode::CREATED)
         .header("content-type", "application/json")
-        .body(Full::new(json_bytes))
+        .body(Full::new(json_bytes).boxed())
         .context("Failed to build response")?;
 
     Ok(response)
@@ -110,7 +112,7 @@ pub async fn handle_get_members(
     _req: Request<IncomingBody>,
     _state: AppState,
     group_id: i64,
-) -> Result<Response<Full<Bytes>>> {
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Fetching members for group {}", group_id);
 
     // TODO: Fetch actual members from database
@@ -138,10 +140,10 @@ pub async fn handle_get_members(
     let json_string: String = members_json.to_string();
     let json_bytes: Bytes = Bytes::from(json_string);
 
-    let response: Response<Full<Bytes>> = Response::builder()
+    let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "application/json")
-        .body(Full::new(json_bytes))
+        .body(Full::new(json_bytes).boxed())
         .context("Failed to build members response")?;
 
     Ok(response)
@@ -152,7 +154,7 @@ pub async fn handle_add_member(
     req: Request<IncomingBody>,
     _state: AppState,
     group_id: i64,
-) -> Result<Response<Full<Bytes>>> {
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Adding member to group {}", group_id);
 
     // Parse request body
@@ -182,10 +184,10 @@ pub async fn handle_add_member(
     let json_string: String = response_json.to_string();
     let json_bytes: Bytes = Bytes::from(json_string);
 
-    let response: Response<Full<Bytes>> = Response::builder()
+    let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "application/json")
-        .body(Full::new(json_bytes))
+        .body(Full::new(json_bytes).boxed())
         .context("Failed to build response")?;
 
     Ok(response)
@@ -196,7 +198,7 @@ pub async fn handle_remove_member(
     req: Request<IncomingBody>,
     _state: AppState,
     group_id: i64,
-) -> Result<Response<Full<Bytes>>> {
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Removing member from group {}", group_id);
 
     // Parse request body
@@ -226,10 +228,10 @@ pub async fn handle_remove_member(
     let json_string: String = response_json.to_string();
     let json_bytes: Bytes = Bytes::from(json_string);
 
-    let response: Response<Full<Bytes>> = Response::builder()
+    let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "application/json")
-        .body(Full::new(json_bytes))
+        .body(Full::new(json_bytes).boxed())
         .context("Failed to build response")?;
 
     Ok(response)

@@ -16,11 +16,7 @@ use tracing::{error, info, warn};
 
 use crate::AppState;
 use crate::handlers::http::routes::{Router, build_api_router_with_config};
-use crate::handlers::http::utils::deliver_html_page;
-use crate::handlers::http::utils::error_response::deliver_error_json;
-use crate::handlers::http::utils::response_conversion::{
-    convert_response_body, convert_result_body,
-};
+use crate::handlers::http::utils::*;
 
 /// User service implementation
 #[derive(Clone, Debug)]
@@ -72,7 +68,6 @@ impl Service<Request<IncomingBody>> for UserService {
                         "Internal Server Error",
                         StatusCode::INTERNAL_SERVER_ERROR,
                     )
-                    .map(convert_response_body)
                     .unwrap_or_else(|delivery_err| {
                         error!(
                             "Failed to deliver error response: {:?}",
@@ -117,23 +112,15 @@ async fn user_conn(
             "Admin path access attempt from user service {}: {}",
             addr, path
         );
-        return convert_result_body(deliver_error_json(
-            "FORBIDDEN",
-            "Access Denied",
-            StatusCode::FORBIDDEN,
-        ))
-        .context("Failed to deliver FORBIDDEN error response");
+        return deliver_error_json("FORBIDDEN", "Access Denied", StatusCode::FORBIDDEN)
+            .context("Failed to deliver FORBIDDEN error response");
     }
 
     // Check if path is in the blocked paths list
     if blocked_paths.contains(&path) {
         warn!("Blocked path access attempt from {}: {}", addr, path);
-        return convert_result_body(deliver_error_json(
-            "FORBIDDEN",
-            "Access Denied",
-            StatusCode::FORBIDDEN,
-        ))
-        .context("Failed to deliver FORBIDDEN error response");
+        return deliver_error_json("FORBIDDEN", "Access Denied", StatusCode::FORBIDDEN)
+            .context("Failed to deliver FORBIDDEN error response");
     }
 
     // Route through the user router

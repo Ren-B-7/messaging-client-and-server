@@ -24,9 +24,9 @@ tower = { version = "0.4", features = ["full"] }
 tower-http = { version = "0.5", features = ["trace", "timeout", "cors",
 "compression-br", "compression-gzip", "compression-zstd", "compression-deflate"] }
 
-hyper = { version = "1.2", features = ["full"] }
 hyper-util = { version = "0.1", features = ["full", "tokio", "service"] }
 
+hyper = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

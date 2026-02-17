@@ -673,32 +673,11 @@ pip-selfcheck.json
 # gitignore template for Vue.js projects
 # Recommended template: Node.gitignore
 
-# TODO: where does this rule come from?
-docs/_book
-
-# TODO: where does this rule come from?
-test/
-
 ### Vuejs ###
 # Recommended template: Node.gitignore
 
 npm-debug.log
 yarn-error.log
-
-### Web ###
-*.asp
-*.cer
-*.csr
-*.css
-*.htm
-*.html
-*.js
-*.jsp
-*.php
-*.rss
-*.wasm
-*.wat
-*.xhtml
 
 ### WebMethods ###
 **/IntegrationServer/datastore/
