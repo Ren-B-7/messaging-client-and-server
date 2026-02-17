@@ -3,11 +3,10 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-use bytes::Bytes;
-use http_body_util::Full;
 use hyper::{Request, Response, StatusCode};
 use tokio::time;
 use tower::{Layer, Service};
+use tracing::warn;
 
 /// Tower layer for request timeouts
 ///
@@ -65,7 +64,7 @@ where
             match time::timeout(duration, inner.call(req)).await {
                 Ok(result) => result,
                 Err(_) => {
-                    tracing::warn!("Request timed out after {:?}", duration);
+                    warn!("Request timed out after {:?}", duration);
 
                     let response = Response::builder()
                         .status(StatusCode::REQUEST_TIMEOUT)

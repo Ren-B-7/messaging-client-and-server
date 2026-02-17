@@ -15,7 +15,8 @@ use tower::Service;
 use tracing::{error, info, warn};
 
 use crate::AppState;
-use crate::handlers::http::routes::{Router, build_user_router_with_config};
+use crate::handlers::http::routes::{Router, build_api_router_with_config};
+use crate::handlers::http::utils::deliver_html_page;
 use crate::handlers::http::utils::error_response::deliver_error_json;
 use crate::handlers::http::utils::response_conversion::{
     convert_response_body, convert_result_body,
@@ -31,20 +32,17 @@ pub struct UserService {
 
 impl UserService {
     pub fn new(state: AppState, addr: SocketAddr) -> Self {
-        // Build user router once and leak it to get 'static lifetime
-        // This is fine because the router is immutable and lives for the program lifetime
-        let web_dir = state.config.paths.web_dir.clone();
-        let icons_dir = state.config.paths.icons.clone();
+        let router = build_user_router_with_config(
+            Some(state.config.paths.web_dir.clone()),
+            Some(state.config.paths.icons.clone()),
+        );
 
-        let router = Box::leak(Box::new(build_user_router_with_config(
-            Some(web_dir),
-            Some(icons_dir),
-        )));
+        let router_ref: &'static Router = Box::leak(Box::new(router));
 
         Self {
             state,
             addr,
-            router,
+            router: router_ref,
         }
     }
 }
@@ -143,4 +141,46 @@ async fn user_conn(
         .route(req, state)
         .await
         .context("User routing failed")
+}
+
+pub fn build_user_router_with_config(
+    web_dir_static: Option<String>,
+    icons_dir_static: Option<String>,
+) -> Router {
+    // Leak paths for use in async closures that require 'static lifetime
+    let web_dir: &'static str = web_dir_static
+        .clone()
+        .map(|d| -> &'static str { Box::leak(d.into_boxed_str()) })
+        .unwrap_or("");
+
+    let mut router = build_api_router_with_config(web_dir_static, icons_dir_static);
+
+    router = router
+        // ── Dashboard / HTML shell ──────────────────────────────────────────
+        .get("/login", move |_req, _| async move {
+            let path = format!("{}/index.html", web_dir);
+            deliver_html_page(path).context("failed to deliver login page")
+        })
+        .get("/", move |_req, _| async move {
+            let path = format!("{}/index.html", web_dir);
+            deliver_html_page(path).context("failed to deliver home page")
+        })
+        .get("/index", move |_req, _| async move {
+            let path = format!("{}/index.html", web_dir);
+            deliver_html_page(path).context("failed to deliver index page")
+        })
+        .get("/register", move |_req, _| async move {
+            let path = format!("{}/register.html", web_dir);
+            deliver_html_page(path).context("failed to deliver register page")
+        })
+        .get("/settings", move |_req, _| async move {
+            let path = format!("{}/settings.html", web_dir);
+            deliver_html_page(path).context("failed to deliver settings page")
+        })
+        .get("/chat", move |_req, _| async move {
+            let path = format!("{}/chat.html", web_dir);
+            deliver_html_page(path).context("failed to deliver chat page")
+        });
+
+    router
 }

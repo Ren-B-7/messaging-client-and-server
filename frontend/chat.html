@@ -5,125 +5,87 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Chat - Messages</title>
 
-    <!-- Core Variables -->
     <link rel="stylesheet" href="/static/css/var.css" />
+    <link rel="stylesheet" href="/static/css/base/base.light.css" />
+    <link rel="stylesheet" href="/static/css/chat/chat.light.css" />
 
-    <!-- Theme Manager -->
-    <script src="/static/js/utils/theme_manager.js"></script>
-    <script src="/static/js/utils/loading.js"></script>
-    <script src="/static/js/config/platform.config.js"></script>
-    <script src="/static/js/config/route.config.js"></script>
-
-    <!-- Initialize theme early -->
     <script>
-      const theme =
-        localStorage.getItem("theme") ||
-        (window.matchMedia("(prefers-color-scheme: dark)").matches
-          ? "dark"
-          : "light");
-      document.documentElement.setAttribute("data-theme", theme);
+      var t=localStorage.getItem("theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");
+      document.documentElement.setAttribute("data-theme",t);
+      if(t==="dark")["base","chat"].forEach(function(m){var l=document.createElement("link");l.rel="stylesheet";l.href="/static/css/"+m+"/"+m+".dark.css";document.head.appendChild(l);});
+      var ld=function(v){document.getElementById("loading").style.display=v;};
+      window.addEventListener("beforeunload",function(){ld("flex");});
+      window.addEventListener("load",function(){ld("none");});
+      window.addEventListener("pageshow",function(e){if(e.persisted)ld("none");});
     </script>
-    <script defer src="/non-static/utils.js"></script>
-    <script defer src="/non-static/chat.js"></script>
+
+    <link rel="preload" href="/static/js/utils/theme_manager.js" as="script" />
+    <link rel="preload" href="/static/js/config/platform.config.js" as="script" />
+    <link rel="preload" href="/static/js/config/route.config.js" as="script" />
+    <link rel="preload" href="/static/js/utils/utils.js" as="script" />
+    <link rel="preload" href="/non-static/chat/chat.state.js" as="script" />
+    <link rel="preload" href="/non-static/chat/chat.ui.js" as="script" />
+    <link rel="preload" href="/non-static/chat/chat.messages.js" as="script" />
+    <link rel="preload" href="/non-static/chat/chat.conversations.js" as="script" />
+    <link rel="preload" href="/non-static/chat/chat.init.js" as="script" />
+
+    <script defer src="/static/js/utils/theme_manager.js"></script>
+    <script defer src="/static/js/config/platform.config.js"></script>
+    <script defer src="/static/js/config/route.config.js"></script>
+    <script defer src="/static/js/utils/utils.js"></script>
+    <script defer src="/non-static/chat/chat.state.js"></script>
+    <script defer src="/non-static/chat/chat.ui.js"></script>
+    <script defer src="/non-static/chat/chat.messages.js"></script>
+    <script defer src="/non-static/chat/chat.conversations.js"></script>
+    <script defer src="/non-static/chat/chat.init.js"></script>
   </head>
   <body>
     <div id="loading">Loading...</div>
-    <!-- Navbar -->
     <nav class="navbar">
       <a href="/chat" class="navbar-brand">
         <div class="navbar-logo">💬</div>
         <span>Chat</span>
       </a>
-
       <div class="navbar-menu">
         <a href="/chat" class="active">Messages</a>
         <a href="/contacts">Contacts</a>
       </div>
-
       <div class="navbar-end">
-        <button
-          class="btn btn-ghost btn-icon"
-          id="themeToggle"
-          title="Toggle theme"
-        >
-          <img
-            src="/static/icons/icons/sun.svg"
-            alt="Toggle theme"
-            width="20"
-            height="20"
-          />
+        <button class="btn btn-ghost btn-icon" id="themeToggle" title="Toggle theme">
+          <img src="/static/icons/icons/sun.svg" alt="Toggle theme" width="20" height="20" />
         </button>
-
         <a href="/settings" class="btn btn-ghost btn-icon" title="Settings">
-          <img
-            src="/static/icons/icons/settings.svg"
-            alt="Settings"
-            width="20"
-            height="20"
-          />
+          <img src="/static/icons/icons/settings.svg" alt="Settings" width="20" height="20" />
         </a>
-
         <div class="avatar avatar-sm" id="userInitials">U</div>
       </div>
     </nav>
 
-    <!-- Chat Container -->
     <div class="chat-container">
-      <!-- Conversations Sidebar -->
       <aside class="conversations-panel">
         <div class="panel-header">
           <h2>Messages</h2>
           <div class="panel-actions">
             <div class="search-box">
-              <img
-                src="/static/icons/icons/search.svg"
-                alt=""
-                class="search-icon"
-                width="16"
-                height="16"
-              />
-              <input
-                type="text"
-                class="search-input"
-                placeholder="Search..."
-                id="conversationSearch"
-              />
+              <img src="/static/icons/icons/search.svg" alt="" class="search-icon" width="16" height="16" />
+              <input type="text" class="search-input" placeholder="Search..." id="conversationSearch" />
             </div>
-            <button class="new-chat-btn" id="newChatBtn" title="New chat">
-              +
-            </button>
+            <button class="new-chat-btn" id="newChatBtn" title="New chat">+</button>
           </div>
         </div>
-
-        <div class="conversations-list" id="conversationsList">
-          <!-- Conversations will be loaded here -->
-        </div>
+        <div class="conversations-list" id="conversationsList"></div>
       </aside>
 
-      <!-- Chat Area -->
       <main class="chat-area">
-        <!-- Empty State -->
-        <div
-          id="emptyChatState"
-          style="
-            display: flex;
-            flex: 1;
-            align-items: center;
-            justify-content: center;
-          "
-        >
-          <div style="text-align: center; color: var(--fg-tertiary)">
-            <div style="font-size: 64px; margin-bottom: var(--space-4)">💬</div>
-            <h2 style="color: var(--fg-secondary)">Select a conversation</h2>
+        <div id="emptyChatState" style="display:flex;flex:1;align-items:center;justify-content:center;">
+          <div style="text-align:center;color:var(--fg-tertiary)">
+            <div style="font-size:64px;margin-bottom:var(--space-4)">💬</div>
+            <h2 style="color:var(--fg-secondary)">Select a conversation</h2>
             <p>Choose a conversation from the sidebar to start messaging</p>
           </div>
         </div>
 
-        <!-- Active Chat View -->
-        <div
-          id="activeChatView"
-          style="display: none; flex: 1; flex-direction: column"
-        >
+        <div id="activeChatView" style="display:none;flex:1;flex-direction:column">
           <div class="chat-header">
             <div class="chat-info">
               <div class="avatar" id="chatAvatar">U</div>
@@ -135,69 +97,28 @@
                 </div>
               </div>
             </div>
-
             <div class="chat-actions">
-              <button
-                class="chat-action-btn"
-                id="voiceCallBtn"
-                title="Voice call"
-              >
-                <img
-                  src="/static/icons/icons/phone.svg"
-                  alt="Voice call"
-                  width="20"
-                  height="20"
-                />
+              <button class="chat-action-btn" id="voiceCallBtn" title="Voice call">
+                <img src="/static/icons/icons/phone.svg" alt="Voice call" width="20" height="20" />
               </button>
-              <button
-                class="chat-action-btn"
-                id="videoCallBtn"
-                title="Video call"
-              >
-                <img
-                  src="/static/icons/icons/video.svg"
-                  alt="Video call"
-                  width="20"
-                  height="20"
-                />
+              <button class="chat-action-btn" id="videoCallBtn" title="Video call">
+                <img src="/static/icons/icons/video.svg" alt="Video call" width="20" height="20" />
               </button>
             </div>
           </div>
 
-          <div class="messages-container" id="messagesContainer">
-            <!-- Messages will be loaded here -->
-          </div>
+          <div class="messages-container" id="messagesContainer"></div>
 
           <div class="message-input-area">
             <div class="input-tools">
-              <button
-                class="input-tool-btn"
-                id="attachFileBtn"
-                title="Attach file"
-              >
-                <img
-                  src="/static/icons/icons/paperclip.svg"
-                  alt="Attach file"
-                  width="20"
-                  height="20"
-                />
+              <button class="input-tool-btn" id="attachFileBtn" title="Attach file">
+                <img src="/static/icons/icons/paperclip.svg" alt="Attach file" width="20" height="20" />
               </button>
             </div>
-
             <div class="message-input-wrapper">
-              <textarea
-                class="message-input"
-                id="messageInput"
-                placeholder="Type a message..."
-                rows="1"
-              ></textarea>
+              <textarea class="message-input" id="messageInput" placeholder="Type a message..." rows="1"></textarea>
               <button class="send-btn" id="sendBtn" disabled>
-                <img
-                  src="/static/icons/icons/send.svg"
-                  alt="Send"
-                  width="20"
-                  height="20"
-                />
+                <img src="/static/icons/icons/send.svg" alt="Send" width="20" height="20" />
               </button>
             </div>
           </div>
@@ -205,17 +126,10 @@
       </main>
     </div>
 
-    <!-- Initialize theme and load modules -->
     <script>
-      window.addEventListener("DOMContentLoaded", () => {
-        themeManager.init(["base", "chat"]);
-
-        // Setup theme toggle
-        document
-          .getElementById("themeToggle")
-          ?.addEventListener("click", () => {
-            themeManager.toggle();
-          });
+      window.addEventListener("DOMContentLoaded",function(){
+        themeManager.init(["base","chat"]);
+        document.getElementById("themeToggle").addEventListener("click",function(){themeManager.toggle();});
       });
     </script>
   </body>

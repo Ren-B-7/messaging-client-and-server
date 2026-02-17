@@ -28,6 +28,7 @@ pub enum LoginResponse {
         token: String,
         expires_in: u64,
         message: String,
+        redirect: String,
     },
     Error {
         code: String,
@@ -125,6 +126,7 @@ pub async fn handle_login(
                 token: token.clone(),
                 expires_in: token_expiry_secs,
                 message: "Login successful".to_string(),
+                redirect: "/chat".to_string(),
             };
 
             let json =

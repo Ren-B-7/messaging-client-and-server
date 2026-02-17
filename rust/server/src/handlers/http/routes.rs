@@ -8,7 +8,7 @@ use std::pin::Pin;
 use tracing::info;
 
 use crate::AppState;
-use crate::handlers::http::utils;
+use crate::handlers::http::utils::CacheStrategy;
 use crate::handlers::http::{auth, messaging, profile, utils::*};
 
 /// Type alias for route handler functions
@@ -136,7 +136,7 @@ impl Router {
         }
 
         // No route or static file matched - return 404
-        convert_result_body(utils::error_response::deliver_error_json(
+        convert_result_body(error_response::deliver_error_json(
             "NOT_FOUND",
             "Endpoint not found",
             StatusCode::NOT_FOUND,
@@ -166,8 +166,7 @@ impl Router {
             "/" | "/index.html" => {
                 let file_path = format!("{}/index.html", web_dir);
                 Ok(Some(
-                    crate::handlers::http::utils::deliver_page::deliver_html_page(&file_path)
-                        .context("Failed to deliver HTML page")?,
+                    deliver_html_page(&file_path).context("Failed to deliver HTML page")?,
                 ))
             }
 
@@ -175,7 +174,7 @@ impl Router {
             path if path.starts_with("/static/") => {
                 let file_path = format!("{}{}", web_dir, path);
                 Ok(Some(
-                    deliver_page_with_status(&file_path, StatusCode::OK, true)
+                    deliver_page_with_status(&file_path, StatusCode::OK, CacheStrategy::Yes)
                         .context("Failed to deliver static file")?,
                 ))
             }
@@ -193,7 +192,7 @@ impl Router {
                 let filename = path.trim_start_matches('/');
                 let file_path = format!("{}{}{}", web_dir, icons, filename);
                 Ok(Some(
-                    deliver_page_with_status(&file_path, StatusCode::OK, true)
+                    deliver_page_with_status(&file_path, StatusCode::OK, CacheStrategy::Yes)
                         .context("Failed to deliver browser icon")?,
                 ))
             }
@@ -202,7 +201,7 @@ impl Router {
             path if path.starts_with("/non-static/") => {
                 let file_path = format!("{}{}", web_dir, path);
                 Ok(Some(
-                    deliver_page_with_status(&file_path, StatusCode::OK, false)
+                    deliver_page_with_status(&file_path, StatusCode::OK, CacheStrategy::No)
                         .context("Failed to deliver non-static file")?,
                 ))
             }
@@ -211,8 +210,7 @@ impl Router {
             path if path.ends_with(".html") => {
                 let file_path = format!("{}{}", web_dir, path);
                 Ok(Some(
-                    crate::handlers::http::utils::deliver_page::deliver_html_page(&file_path)
-                        .context("Failed to deliver HTML file")?,
+                    deliver_html_page(&file_path).context("Failed to deliver HTML file")?,
                 ))
             }
 
@@ -221,13 +219,8 @@ impl Router {
     }
 }
 
-/// Build the user-facing API router
-pub fn build_user_router() -> Router {
-    build_user_router_with_config(None, None)
-}
-
 /// Build the user-facing API router with custom web_dir and icons_dir
-pub fn build_user_router_with_config(web_dir: Option<String>, icons_dir: Option<String>) -> Router {
+pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<String>) -> Router {
     let mut router = Router::new();
 
     // Set directories if provided
@@ -240,36 +233,6 @@ pub fn build_user_router_with_config(web_dir: Option<String>, icons_dir: Option<
 
     router
         // Auth endpoints
-        .get("/login", |_req, state| async move {
-            let file_path = format!("{}index.html", state.config.paths.web_dir);
-            crate::handlers::http::utils::deliver_page::deliver_html_page(&file_path)
-                .context("Failed to deliver login page")
-        })
-        .get("/", |_req, state| async move {
-            let file_path = format!("{}index.html", state.config.paths.web_dir);
-            crate::handlers::http::utils::deliver_page::deliver_html_page(&file_path)
-                .context("Failed to deliver login page")
-        })
-        .get("/index", |_req, state| async move {
-            let file_path = format!("{}index.html", state.config.paths.web_dir);
-            crate::handlers::http::utils::deliver_page::deliver_html_page(&file_path)
-                .context("Failed to deliver login page")
-        })
-        .get("/register", |_req, state| async move {
-            let file_path = format!("{}register.html", state.config.paths.web_dir);
-            crate::handlers::http::utils::deliver_page::deliver_html_page(&file_path)
-                .context("Failed to deliver register page")
-        })
-        .get("/settings", |_req, state| async move {
-            let file_path = format!("{}settings.html", state.config.paths.web_dir);
-            crate::handlers::http::utils::deliver_page::deliver_html_page(&file_path)
-                .context("Failed to deliver register page")
-        })
-        .get("/chat", |_req, state| async move {
-            let file_path = format!("{}chat.html", state.config.paths.web_dir);
-            crate::handlers::http::utils::deliver_page::deliver_html_page(&file_path)
-                .context("Failed to deliver register page")
-        })
         .post("/api/register", |req, state| async move {
             convert_result_body(auth::handle_register(req, state).await).context("Register failed")
         })

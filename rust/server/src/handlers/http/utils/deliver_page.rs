@@ -1,12 +1,32 @@
+use std::fmt;
+use std::path::{Path, PathBuf};
+
 use anyhow::{Context, Result, anyhow};
 use bytes::Bytes;
+use http::response;
 use http_body_util::{BodyExt, Empty, Full, combinators::BoxBody};
 use hyper::{Response, StatusCode, header};
 use std::convert::Infallible;
-use std::path::{Path, PathBuf};
 use tracing::{debug, error};
 
 use crate::handlers::http::utils::headers;
+
+#[derive(Debug, Clone, Copy)]
+pub enum CacheStrategy {
+    Yes,      // Default (1 year)
+    No,       // 1 hour cache
+    Explicit, // No cache at all
+}
+
+impl fmt::Display for CacheStrategy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CacheStrategy::Yes => write!(f, "Yes (1 year)"),
+            CacheStrategy::No => write!(f, "No (1 hour)"),
+            CacheStrategy::Explicit => write!(f, "Explicit (no-cache)"),
+        }
+    }
+}
 
 /// Expand tilde (~) in path to home directory
 fn expand_tilde<P: AsRef<Path>>(path: P) -> PathBuf {
@@ -28,51 +48,8 @@ fn expand_tilde<P: AsRef<Path>>(path: P) -> PathBuf {
 pub fn deliver_html_page<P: AsRef<Path>>(
     file_path: P,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    let expanded_path: PathBuf = expand_tilde(file_path);
-
-    debug!("Reading HTML file from: {}", expanded_path.display());
-
-    let html_content: String = std::fs::read_to_string(&expanded_path)
-        .with_context(|| format!("Failed to read HTML file: {}", expanded_path.display()))?;
-
-    debug!(
-        "Successfully read {} bytes from {}",
-        html_content.len(),
-        expanded_path.display()
-    );
-
-    deliver_html_page_with_status(html_content, StatusCode::OK)
-}
-
-/// Delivers HTML content with a custom status code and security headers
-/// Uses deliver_page_with_status internally for consistent handling
-pub fn deliver_html_page_with_status<T: AsRef<[u8]>>(
-    html: T,
-    status: StatusCode,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    let html_bytes: &[u8] = html.as_ref();
-    let bytes: Bytes = Bytes::copy_from_slice(html_bytes);
-
-    debug!(
-        "Delivering HTML page with status: {}, size: {} bytes",
-        status,
-        bytes.len()
-    );
-
-    // Build HTML response manually since we have content in memory, not a file path
-    let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()
-        .status(status)
-        .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-        .body(full(bytes))
-        .map_err(|e: http::Error| {
-            error!("Failed to build HTML response: {}", e);
-            anyhow!("Failed to build HTML response: {}", e)
-        })?;
-
-    // Apply security headers for HTML content
-    let response_with_security = headers::add_security_headers(response);
-
-    Ok(response_with_security)
+    // Just delegate everything to the core function
+    deliver_page_with_status(file_path, StatusCode::OK, CacheStrategy::Explicit)
 }
 
 /// Deliver a static page from a file path with caching headers
@@ -80,7 +57,7 @@ pub fn deliver_html_page_with_status<T: AsRef<[u8]>>(
 pub fn deliver_page_with_status<P: AsRef<Path>>(
     file_path: P,
     status: StatusCode,
-    cache: bool,
+    cache: CacheStrategy,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     let expanded_path: PathBuf = expand_tilde(file_path);
 
@@ -111,82 +88,34 @@ pub fn deliver_page_with_status<P: AsRef<Path>>(
         .status(status)
         .header(header::CONTENT_TYPE, mime_type)
         .body(full(content_bytes))
-        .map_err(|e: http::Error| {
-            error!("Failed to build static page response: {}", e);
-            anyhow!("Failed to build static page response: {}", e)
-        })?;
+        .map_err(|e| anyhow!("Failed to build response: {}", e))?;
 
-    // Apply appropriate cache headers using header utilities
-    let response_with_cache = if cache {
-        headers::add_static_cache_headers(response)
-    } else {
-        headers::add_no_cache_headers(response)
+    // Apply specific caching logic
+    let response_with_cache = match cache {
+        CacheStrategy::Yes => headers::add_cache_headers_with_max_age(response, None),
+        CacheStrategy::No => headers::add_cache_headers_with_max_age(response, Some(1)),
+        CacheStrategy::Explicit => headers::add_no_cache_headers(response),
     };
-
-    // Apply security headers for HTML content
-    let is_html = mime_type.starts_with("text/html");
-    let final_response = if is_html {
-        headers::add_security_headers(response_with_cache)
-    } else {
-        response_with_cache
-    };
-
-    Ok(final_response)
+    Ok(response_with_cache)
 }
-
 /// Deliver a static page with ETag support for efficient caching
 pub fn deliver_page_with_etag<P: AsRef<Path>>(
     file_path: P,
     status: StatusCode,
+    cache: CacheStrategy,
     etag: &str,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    let expanded_path: PathBuf = expand_tilde(file_path);
+    let expanded_path: PathBuf = expand_tilde(&file_path);
 
     debug!(
         "Reading static file with ETag from: {} (etag: {})",
         expanded_path.display(),
         etag
     );
+    let response = deliver_page_with_status(file_path, status, cache).unwrap();
+    let response_with_etag = headers::add_etag_header(response, etag);
 
-    let content: Vec<u8> = std::fs::read(&expanded_path)
-        .with_context(|| format!("Failed to read static file: {}", expanded_path.display()))?;
-
-    let content_bytes: Bytes = Bytes::from(content);
-
-    // Determine MIME type based on file extension
-    let mime_type: &str = get_mime_type(&expanded_path);
-
-    debug!(
-        "Delivering static page with ETag: status: {}, size: {} bytes, mime: {}, etag: {}",
-        status,
-        content_bytes.len(),
-        mime_type,
-        etag
-    );
-
-    // Build base response with content type
-    let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()
-        .status(status)
-        .header(header::CONTENT_TYPE, mime_type)
-        .body(full(content_bytes))
-        .map_err(|e: http::Error| {
-            error!("Failed to build static page response: {}", e);
-            anyhow!("Failed to build static page response: {}", e)
-        })?;
-
-    // Add static cache headers and ETag using headers.rs functions
-    let response_with_cache = headers::add_static_cache_headers(response);
-    let response_with_etag = headers::add_etag_header(response_with_cache, etag);
-
-    // Apply security headers for HTML content
-    let is_html = mime_type.starts_with("text/html");
-    let final_response = if is_html {
-        headers::add_security_headers(response_with_etag)
-    } else {
-        response_with_etag
-    };
-
-    Ok(final_response)
+    Ok(response_with_etag)
 }
 
 /// Helper function to determine MIME type from file extension

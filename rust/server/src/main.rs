@@ -6,7 +6,6 @@ use std::time::Duration;
 use anyhow::Context;
 use tracing::{error, info};
 
-use http::header::ACCESS_CONTROL_ALLOW_METHODS;
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 
@@ -18,7 +17,7 @@ use hyper_util::rt::{TokioIo, TokioTimer};
 use hyper_util::service::TowerToHyperService;
 use tower::load_shed::LoadShedLayer;
 use tower_http::compression::{CompressionLayer, CompressionLevel};
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 
 mod database;
 mod handlers;
@@ -112,11 +111,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let user_sock: SocketAddr = ([127, 0, 0, 1], user_port).into();
     let admin_sock: SocketAddr = ([127, 0, 0, 1], admin_port).into();
 
-    info!(
-        "Listening on http://{} (user) and http://{} (admin)",
-        user_sock, admin_sock
-    );
-
     // Clone state for each server
     let user_state = state.clone();
     let admin_state = state.clone();
@@ -148,7 +142,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             .context(format!("Failed to bind to {}", user_sock))
             .unwrap();
 
-        info!("User server listening on {}", user_sock);
+        info!("User server listening on http://{}", user_sock);
 
         loop {
             let (stream, addr) = listener.accept().await.unwrap();
@@ -189,7 +183,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             .context(format!("Failed to bind to {}", admin_sock))
             .unwrap();
 
-        info!("Admin server listening on {}", admin_sock);
+        info!("Admin server listening on http://{}", admin_sock);
 
         loop {
             let (stream, addr) = listener.accept().await.unwrap();

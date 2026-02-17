@@ -5,24 +5,43 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Settings - Chat App</title>
 
-    <!-- Core Variables -->
     <link rel="stylesheet" href="/static/css/var.css" />
 
-    <!-- Theme Manager -->
-    <script src="/static/js/utils/theme_manager.js"></script>
-    <script src="/static/js/utils/loading.js"></script>
-    <script src="/static/js/config/platform.config.js"></script>
-    <script src="/static/js/config/route.config.js"></script>
+    <!-- Static light CSS — fetched immediately by the preload scanner -->
+    <link rel="stylesheet" href="/static/css/base/base.light.css" />
+    <link rel="stylesheet" href="/static/css/chat/chat.light.css" />
+    <link rel="stylesheet" href="/static/css/settings/settings.light.css" />
 
-    <!-- Initialize theme early -->
+    <!-- Theme attr + dark overrides injected synchronously before first paint -->
     <script>
-      const theme =
-        localStorage.getItem("theme") ||
-        (window.matchMedia("(prefers-color-scheme: dark)").matches
-          ? "dark"
-          : "light");
-      document.documentElement.setAttribute("data-theme", theme);
+      var t=localStorage.getItem("theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");
+      document.documentElement.setAttribute("data-theme",t);
+      if(t==="dark")["base","chat","settings"].forEach(function(m){var l=document.createElement("link");l.rel="stylesheet";l.href="/static/css/"+m+"/"+m+".dark.css";document.head.appendChild(l);});
+      var ld=function(v){document.getElementById("loading").style.display=v;};
+      window.addEventListener("beforeunload",function(){ld("flex");});
+      window.addEventListener("load",function(){ld("none");});
+      window.addEventListener("pageshow",function(e){if(e.persisted)ld("none");});
     </script>
+
+    <link rel="preload" href="/static/js/utils/theme_manager.js" as="script" />
+    <link rel="preload" href="/static/js/config/platform.config.js" as="script" />
+    <link rel="preload" href="/static/js/config/route.config.js" as="script" />
+    <link rel="preload" href="/static/js/utils/utils.js" as="script" />
+    <link rel="preload" href="/non-static/settings/settings.nav.js" as="script" />
+    <link rel="preload" href="/non-static/settings/settings.profile.js" as="script" />
+    <link rel="preload" href="/non-static/settings/settings.account.js" as="script" />
+    <link rel="preload" href="/non-static/settings/settings.preferences.js" as="script" />
+    <link rel="preload" href="/non-static/settings/settings.init.js" as="script" />
+
+    <script defer src="/static/js/utils/theme_manager.js"></script>
+    <script defer src="/static/js/config/platform.config.js"></script>
+    <script defer src="/static/js/config/route.config.js"></script>
+    <script defer src="/static/js/utils/utils.js"></script>
+    <script defer src="/non-static/settings/settings.nav.js"></script>
+    <script defer src="/non-static/settings/settings.profile.js"></script>
+    <script defer src="/non-static/settings/settings.account.js"></script>
+    <script defer src="/non-static/settings/settings.preferences.js"></script>
+    <script defer src="/non-static/settings/settings.init.js"></script>
   </head>
   <body>
     <div id="loading">Loading...</div>
@@ -39,17 +58,8 @@
       </div>
 
       <div class="navbar-end">
-        <button
-          class="btn btn-ghost btn-icon"
-          id="themeToggle"
-          title="Toggle theme"
-        >
-          <img
-            src="/static/icons/icons/sun.svg"
-            alt="Toggle theme"
-            width="20"
-            height="20"
-          />
+        <button class="btn btn-ghost btn-icon" id="themeToggle" title="Toggle theme">
+          <img src="/static/icons/icons/sun.svg" alt="Toggle theme" width="20" height="20" />
         </button>
         <a href="/settings" class="avatar avatar-sm active" title="Settings">
           <span id="userInitials"></span>
@@ -62,74 +72,32 @@
       <!-- Settings Sidebar -->
       <div class="settings-sidebar">
         <span class="settings-section-title">Account</span>
-        <a
-          href="#profile"
-          class="settings-nav-item active"
-          data-tab="profileTab"
-        >
-          <img
-            src="/static/icons/icons/user.svg"
-            alt=""
-            width="20"
-            height="20"
-          />
+        <a href="#profile" class="settings-nav-item active" data-tab="profileTab">
+          <img src="/static/icons/icons/user.svg" alt="" width="20" height="20" />
           <span>Profile</span>
         </a>
         <a href="#account" class="settings-nav-item" data-tab="accountTab">
-          <img
-            src="/static/icons/icons/settings.svg"
-            alt=""
-            width="20"
-            height="20"
-          />
+          <img src="/static/icons/icons/settings.svg" alt="" width="20" height="20" />
           <span>Account</span>
         </a>
 
         <span class="settings-section-title">Preferences</span>
-        <a
-          href="#appearance"
-          class="settings-nav-item"
-          data-tab="appearanceTab"
-        >
-          <img
-            src="/static/icons/icons/sun.svg"
-            alt=""
-            width="20"
-            height="20"
-          />
+        <a href="#appearance" class="settings-nav-item" data-tab="appearanceTab">
+          <img src="/static/icons/icons/sun.svg" alt="" width="20" height="20" />
           <span>Appearance</span>
         </a>
-        <a
-          href="#notifications"
-          class="settings-nav-item"
-          data-tab="notificationsTab"
-        >
-          <img
-            src="/static/icons/icons/bell.svg"
-            alt=""
-            width="20"
-            height="20"
-          />
+        <a href="#notifications" class="settings-nav-item" data-tab="notificationsTab">
+          <img src="/static/icons/icons/bell.svg" alt="" width="20" height="20" />
           <span>Notifications</span>
         </a>
         <a href="#privacy" class="settings-nav-item" data-tab="privacyTab">
-          <img
-            src="/static/icons/icons/shield.svg"
-            alt=""
-            width="20"
-            height="20"
-          />
+          <img src="/static/icons/icons/shield.svg" alt="" width="20" height="20" />
           <span>Privacy</span>
         </a>
 
         <span class="settings-section-title">About</span>
         <a href="#help" class="settings-nav-item" data-tab="helpTab">
-          <img
-            src="/static/icons/icons/help-circle.svg"
-            alt=""
-            width="20"
-            height="20"
-          />
+          <img src="/static/icons/icons/help-circle.svg" alt="" width="20" height="20" />
           <span>Help</span>
         </a>
       </div>
@@ -147,17 +115,11 @@
             <div class="profile-header">
               <div class="profile-avatar-wrapper">
                 <div class="avatar avatar-xl" id="profileAvatar"></div>
-                <button
-                  class="avatar-edit-btn"
-                  id="avatarEditBtn"
-                  title="Change avatar"
-                >
-                  ✎
-                </button>
+                <button class="avatar-edit-btn" id="avatarEditBtn" title="Change avatar">✎</button>
               </div>
               <div class="profile-info">
                 <h2 id="profileName">User Name</h2>
-                <p id="profileEmail">user@example.com</p>
+                <p id="profileEmail"></p>
               </div>
             </div>
 
@@ -165,50 +127,24 @@
               <div class="form-row">
                 <div class="form-group">
                   <label class="form-label" for="firstName">First Name</label>
-                  <input
-                    type="text"
-                    id="firstName"
-                    name="firstName"
-                    class="form-input"
-                  />
+                  <input type="text" id="firstName" name="firstName" class="form-input" />
                 </div>
                 <div class="form-group">
                   <label class="form-label" for="lastName">Last Name</label>
-                  <input
-                    type="text"
-                    id="lastName"
-                    name="lastName"
-                    class="form-input"
-                  />
+                  <input type="text" id="lastName" name="lastName" class="form-input" />
                 </div>
               </div>
 
               <div class="form-row full">
                 <div class="form-group">
                   <label class="form-label" for="username">Username</label>
-                  <input
-                    type="text"
-                    id="username"
-                    name="username"
-                    class="form-input"
-                  />
+                  <input type="text" id="username" name="username" class="form-input" />
                 </div>
               </div>
 
               <div class="form-actions">
-                <button
-                  type="button"
-                  class="btn btn-secondary"
-                  id="cancelProfileBtn"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  class="btn btn-primary"
-                  id="saveProfileBtn"
-                  disabled
-                >
+                <button type="button" class="btn btn-secondary" id="cancelProfileBtn">Cancel</button>
+                <button type="submit" class="btn btn-primary" id="saveProfileBtn" disabled>
                   Save Changes
                 </button>
               </div>
@@ -234,11 +170,7 @@
               <input type="email" class="form-input" id="accountEmail" />
             </div>
 
-            <button
-              type="button"
-              class="btn btn-secondary"
-              id="changePasswordBtn"
-            >
+            <button type="button" class="btn btn-secondary" id="changePasswordBtn">
               Change Password
             </button>
           </div>
@@ -248,13 +180,8 @@
               <h2>Danger Zone</h2>
               <p>Irreversible account actions</p>
             </div>
-
             <div class="danger-actions">
-              <button
-                type="button"
-                class="btn btn-danger"
-                id="deleteAccountBtn"
-              >
+              <button type="button" class="btn btn-danger" id="deleteAccountBtn">
                 Delete Account
               </button>
             </div>
@@ -276,18 +203,11 @@
 
             <div class="theme-grid">
               <label class="theme-preview light">
-                <input
-                  type="radio"
-                  name="theme"
-                  value="light"
-                  id="lightTheme"
-                />
+                <input type="radio" name="theme" value="light" id="lightTheme" />
                 <div class="theme-preview-content">
                   <div style="padding: var(--space-3)">
                     <div style="font-weight: 600">Light</div>
-                    <div style="font-size: var(--text-sm); opacity: 0.7">
-                      A clean, bright interface
-                    </div>
+                    <div style="font-size: var(--text-sm); opacity: 0.7">A clean, bright interface</div>
                   </div>
                 </div>
               </label>
@@ -297,9 +217,7 @@
                 <div class="theme-preview-content">
                   <div style="padding: var(--space-3)">
                     <div style="font-weight: 600">Dark</div>
-                    <div style="font-size: var(--text-sm); opacity: 0.7">
-                      Easy on the eyes
-                    </div>
+                    <div style="font-size: var(--text-sm); opacity: 0.7">Easy on the eyes</div>
                   </div>
                 </div>
               </label>
@@ -326,11 +244,7 @@
                 <p>Receive push notifications for new messages</p>
               </div>
               <label class="toggle">
-                <input
-                  type="checkbox"
-                  class="toggle-input"
-                  id="pushNotifications"
-                />
+                <input type="checkbox" class="toggle-input" id="pushNotifications" />
                 <span class="toggle-slider"></span>
               </label>
             </div>
@@ -341,11 +255,7 @@
                 <p>Play a sound when receiving notifications</p>
               </div>
               <label class="toggle">
-                <input
-                  type="checkbox"
-                  class="toggle-input"
-                  id="notificationSound"
-                />
+                <input type="checkbox" class="toggle-input" id="notificationSound" />
                 <span class="toggle-slider"></span>
               </label>
             </div>
@@ -371,12 +281,7 @@
                 <p>Show when you were last active</p>
               </div>
               <label class="toggle">
-                <input
-                  type="checkbox"
-                  class="toggle-input"
-                  id="showLastSeen"
-                  checked
-                />
+                <input type="checkbox" class="toggle-input" id="showLastSeen" checked />
                 <span class="toggle-slider"></span>
               </label>
             </div>
@@ -387,12 +292,7 @@
                 <p>Allow everyone to see your profile photo</p>
               </div>
               <label class="toggle">
-                <input
-                  type="checkbox"
-                  class="toggle-input"
-                  id="showProfilePhoto"
-                  checked
-                />
+                <input type="checkbox" class="toggle-input" id="showProfilePhoto" checked />
                 <span class="toggle-slider"></span>
               </label>
             </div>
@@ -407,41 +307,16 @@
           </div>
 
           <div class="settings-section">
-            <div class="section-header">
-              <h2>Resources</h2>
-            </div>
-
-            <div
-              style="display: flex; flex-direction: column; gap: var(--space-3)"
-            >
-              <a
-                href="/help"
-                class="btn btn-secondary"
-                style="text-decoration: none"
-              >
-                Help Center
-              </a>
-              <a
-                href="/contact"
-                class="btn btn-secondary"
-                style="text-decoration: none"
-              >
-                Contact Support
-              </a>
-              <a
-                href="/feedback"
-                class="btn btn-secondary"
-                style="text-decoration: none"
-              >
-                Send Feedback
-              </a>
+            <div class="section-header"><h2>Resources</h2></div>
+            <div style="display: flex; flex-direction: column; gap: var(--space-3)">
+              <a href="/help" class="btn btn-secondary" style="text-decoration: none">Help Center</a>
+              <a href="/contact" class="btn btn-secondary" style="text-decoration: none">Contact Support</a>
+              <a href="/feedback" class="btn btn-secondary" style="text-decoration: none">Send Feedback</a>
             </div>
           </div>
 
           <div class="settings-section">
-            <div class="section-header">
-              <h2>About</h2>
-            </div>
+            <div class="section-header"><h2>About</h2></div>
             <p><strong>Version:</strong> 1.0.0</p>
             <p style="margin-top: var(--space-2)">
               <strong>Platform:</strong> <span id="platformInfo">Web</span>
@@ -451,27 +326,14 @@
       </div>
     </div>
 
-    <!-- Load settings module and theme -->
     <script>
-      window.addEventListener("DOMContentLoaded", () => {
+      window.addEventListener("DOMContentLoaded", function () {
         themeManager.init(["base", "chat", "settings"]);
 
-        // Theme toggle functionality
-        document
-          .getElementById("themeToggle")
-          ?.addEventListener("click", () => {
-            themeManager.toggle();
-          });
-
-        // Update platform info
-        if (window.PlatformConfig) {
-          document.getElementById("platformInfo").textContent =
-            PlatformConfig.platform.charAt(0).toUpperCase() +
-            PlatformConfig.platform.slice(1);
-        }
+        document.getElementById("themeToggle")?.addEventListener("click", function () {
+          themeManager.toggle();
+        });
       });
     </script>
-    <script defer src="/non-static/utils.js"></script>
-    <script defer src="/non-static/settings.js"></script>
   </body>
 </html>

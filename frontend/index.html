@@ -5,24 +5,51 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Sign In - Chat App</title>
 
-    <!-- Core Variables -->
     <link rel="stylesheet" href="/static/css/var.css" />
+    <link rel="stylesheet" href="/static/css/base/base.light.css" />
+    <link rel="stylesheet" href="/static/css/auth/auth.light.css" />
 
-    <!-- Theme Manager -->
-    <script src="/static/js/utils/theme_manager.js"></script>
-    <script src="/static/js/utils/loading.js"></script>
-    <script src="/static/js/config/platform.config.js"></script>
-    <script src="/static/js/config/route.config.js"></script>
-
-    <!-- Initialize theme early to prevent flash -->
     <script>
-      const theme =
+      var t =
         localStorage.getItem("theme") ||
-        (window.matchMedia("(prefers-color-scheme: dark)").matches
-          ? "dark"
-          : "light");
-      document.documentElement.setAttribute("data-theme", theme);
+        (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      document.documentElement.setAttribute("data-theme", t);
+      if (t === "dark")
+        ["base", "auth"].forEach(function (m) {
+          var l = document.createElement("link");
+          l.rel = "stylesheet";
+          l.href = "/static/css/" + m + "/" + m + ".dark.css";
+          document.head.appendChild(l);
+        });
+      var ld = function (v) {
+        document.getElementById("loading").style.display = v;
+      };
+      window.addEventListener("beforeunload", function () {
+        ld("flex");
+      });
+      window.addEventListener("load", function () {
+        ld("none");
+      });
+      window.addEventListener("pageshow", function (e) {
+        if (e.persisted) ld("none");
+      });
     </script>
+
+    <link rel="preload" href="/static/js/utils/theme_manager.js" as="script" />
+    <link rel="preload" href="/static/js/config/platform.config.js" as="script" />
+    <link rel="preload" href="/static/js/config/route.config.js" as="script" />
+    <link rel="preload" href="/static/js/utils/utils.js" as="script" />
+    <link rel="preload" href="/non-static/auth/auth.password.js" as="script" />
+    <link rel="preload" href="/non-static/auth/auth.login.js" as="script" />
+    <link rel="preload" href="/non-static/auth/auth.init.js" as="script" />
+
+    <script defer src="/static/js/utils/theme_manager.js"></script>
+    <script defer src="/static/js/config/platform.config.js"></script>
+    <script defer src="/static/js/config/route.config.js"></script>
+    <script defer src="/static/js/utils/utils.js"></script>
+    <script defer src="/non-static/auth/auth.password.js"></script>
+    <script defer src="/non-static/auth/auth.login.js"></script>
+    <script defer src="/non-static/auth/auth.init.js"></script>
   </head>
   <body>
     <div id="loading">Loading...</div>
@@ -96,14 +123,10 @@
       </div>
     </div>
 
-    <!-- Load auth module and theme -->
     <script>
-      // Initialize theme with auth module
-      window.addEventListener("DOMContentLoaded", () => {
+      window.addEventListener("DOMContentLoaded", function () {
         themeManager.init(["base", "auth"]);
       });
     </script>
-    <script defer src="/non-static/utils.js"></script>
-    <script defer src="/non-static/auth.js"></script>
   </body>
 </html>
