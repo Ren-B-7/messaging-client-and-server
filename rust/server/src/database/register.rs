@@ -1,5 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio_rusqlite::{Connection, OptionalExtension, Result, params, rusqlite};
+use tracing::info;
 
 #[derive(Debug, Clone)]
 pub struct NewUser {
@@ -26,8 +27,7 @@ pub async fn register_user(conn: &Connection, new_user: NewUser) -> Result<i64> 
 
     conn.call(move |conn: &mut rusqlite::Connection| {
         // If no users exist yet this is the bootstrap admin
-        let count: i64 =
-            conn.query_row("SELECT COUNT(*) FROM users", [], |r| r.get(0))?;
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM users", [], |r| r.get(0))?;
         let is_admin = if count == 0 { 1i64 } else { 0i64 };
 
         conn.execute(
@@ -41,6 +41,7 @@ pub async fn register_user(conn: &Connection, new_user: NewUser) -> Result<i64> 
                 is_admin,
             ],
         )?;
+        info!("New user made! {}", new_user.username);
 
         Ok(conn.last_insert_rowid())
     })
@@ -54,6 +55,7 @@ pub async fn promote_user(conn: &Connection, user_id: i64) -> Result<()> {
             "UPDATE users SET is_admin = 1 WHERE id = ?1",
             params![user_id],
         )?;
+        info!("User promoted! {}", user_id);
         Ok(())
     })
     .await
@@ -66,6 +68,7 @@ pub async fn demote_user(conn: &Connection, user_id: i64) -> Result<()> {
             "UPDATE users SET is_admin = 0 WHERE id = ?1",
             params![user_id],
         )?;
+        info!("User demoted! {}", user_id);
         Ok(())
     })
     .await
@@ -146,6 +149,10 @@ pub async fn update_username(conn: &Connection, user_id: i64, new_username: Stri
             "UPDATE users SET username = ?1 WHERE id = ?2",
             params![new_username, user_id],
         )?;
+        info!(
+            "Username updated! username:{} userid:{}",
+            new_username, user_id
+        );
         Ok(())
     })
     .await

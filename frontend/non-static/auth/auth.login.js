@@ -8,12 +8,12 @@ const AuthLogin = {
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
 
-      const email = document.getElementById("email")?.value.trim();
+      const username = document.getElementById("username")?.value.trim();
       const password = document.getElementById("password")?.value;
 
       AuthLogin.clearErrors();
 
-      if (!AuthLogin.validate(email, password)) return;
+      if (!AuthLogin.validate(username, password)) return;
 
       const submitBtn = form.querySelector('button[type="submit"]');
       AuthLogin._setLoading(submitBtn, true);
@@ -22,7 +22,7 @@ const AuthLogin = {
         const response = await fetch("/api/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username: email, password }),
+          body: JSON.stringify({ username: username, password }),
         });
 
         const data = await response.json();
@@ -34,7 +34,7 @@ const AuthLogin = {
       } catch (err) {
         // Network failure or non-JSON response
         AuthLogin.showError(
-          "email",
+          "username",
           "Could not reach the server. Please try again.",
         );
       } finally {
@@ -45,24 +45,22 @@ const AuthLogin = {
     this._checkUrlError();
   },
 
-  // ─── Server error → field mapping ───────────────────────────────────────────
-
   _handleServerError(data) {
     switch (data.code) {
       case "INVALID_CREDENTIALS":
-        AuthLogin.showError("email", data.message);
+        AuthLogin.showError("username", data.message);
         AuthLogin.showError("password", " "); // mark field red without duplicate text
         break;
       case "USER_BANNED":
-        AuthLogin.showError("email", data.message);
+        AuthLogin.showError("username", data.message);
         break;
       case "MISSING_FIELD":
       case "INVALID_INPUT":
-        AuthLogin.showError("email", data.message);
+        AuthLogin.showError("username", data.message);
         break;
       default:
         AuthLogin.showError(
-          "email",
+          "username",
           data.message ?? "An unexpected error occurred.",
         );
     }
@@ -73,24 +71,19 @@ const AuthLogin = {
   _checkUrlError() {
     const error = new URLSearchParams(window.location.search).get("error");
     if (error === "invalid_credentials") {
-      this.showError("email", "Invalid username or password");
+      this.showError("username", "Invalid username or password");
     } else if (error === "invalid_input") {
-      this.showError("email", "Please check your input");
+      this.showError("username", "Please check your input");
     } else if (error === "invalid_request") {
-      this.showError("email", "Invalid request. Please try again.");
+      this.showError("username", "Invalid request. Please try again.");
     }
   },
 
-  // ─── Validation ─────────────────────────────────────────────────────────────
-
-  validate(email, password) {
+  validate(username, password) {
     let valid = true;
 
-    if (!email) {
-      this.showError("email", "Email is required");
-      valid = false;
-    } else if (!Utils.isValidEmail(email)) {
-      this.showError("email", "Please enter a valid email");
+    if (!username) {
+      this.showError("username", "Username is required");
       valid = false;
     }
 

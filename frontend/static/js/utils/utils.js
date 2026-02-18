@@ -10,8 +10,8 @@ const Utils = {
    * @returns {string} Formatted time string
    */
   formatTime(date = new Date()) {
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, "0");
+    const minutes = String(date.getMinutes()).padStart(2, "0");
     return `${hours}:${minutes}`;
   },
 
@@ -24,7 +24,7 @@ const Utils = {
     const now = new Date();
     const seconds = Math.floor((now - date) / 1000);
 
-    if (seconds < 60) return 'Just now';
+    if (seconds < 60) return "Just now";
 
     const minutes = Math.floor(seconds / 60);
     if (minutes < 60) return `${minutes}m`;
@@ -58,7 +58,7 @@ const Utils = {
    * @returns {string} Escaped text
    */
   escapeHtml(text) {
-    const div = document.createElement('div');
+    const div = document.createElement("div");
     div.textContent = text;
     return div.innerHTML;
   },
@@ -69,11 +69,11 @@ const Utils = {
    * @returns {string} Initials (max 2 characters)
    */
   getInitials(name) {
-    if (!name) return '?';
+    if (!name) return "?";
     return name
-      .split(' ')
+      .split(" ")
       .map((n) => n[0])
-      .join('')
+      .join("")
       .toUpperCase()
       .slice(0, 2);
   },
@@ -84,16 +84,6 @@ const Utils = {
    */
   isOnline() {
     return navigator.onLine;
-  },
-
-  /**
-   * Validate email format
-   * @param {string} email - Email to validate
-   * @returns {boolean} Is valid email
-   */
-  isValidEmail(email) {
-    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return re.test(email);
   },
 
   /**
@@ -113,7 +103,7 @@ const Utils = {
     try {
       localStorage.setItem(key, JSON.stringify(value));
     } catch (error) {
-      console.error('Error saving to localStorage:', error);
+      console.error("Error saving to localStorage:", error);
     }
   },
 
@@ -127,7 +117,7 @@ const Utils = {
       const item = localStorage.getItem(key);
       return item ? JSON.parse(item) : null;
     } catch (error) {
-      console.error('Error reading from localStorage:', error);
+      console.error("Error reading from localStorage:", error);
       return null;
     }
   },
@@ -140,7 +130,7 @@ const Utils = {
     try {
       localStorage.removeItem(key);
     } catch (error) {
-      console.error('Error removing from localStorage:', error);
+      console.error("Error removing from localStorage:", error);
     }
   },
 
@@ -150,16 +140,16 @@ const Utils = {
    * @param {object} options - Notification options
    */
   async showNotification(title, options = {}) {
-    if (!('Notification' in window)) {
-      console.log('This browser does not support notifications');
+    if (!("Notification" in window)) {
+      console.log("This browser does not support notifications");
       return;
     }
 
-    if (Notification.permission === 'granted') {
+    if (Notification.permission === "granted") {
       new Notification(title, options);
-    } else if (Notification.permission !== 'denied') {
+    } else if (Notification.permission !== "denied") {
       const permission = await Notification.requestPermission();
-      if (permission === 'granted') {
+      if (permission === "granted") {
         new Notification(title, options);
       }
     }
@@ -175,7 +165,7 @@ const Utils = {
       await navigator.clipboard.writeText(text);
       return true;
     } catch (error) {
-      console.error('Failed to copy:', error);
+      console.error("Failed to copy:", error);
       return false;
     }
   },
@@ -186,17 +176,18 @@ const Utils = {
    * @returns {string} Formatted file size
    */
   formatFileSize(bytes) {
-    if (bytes === 0) return '0 Bytes';
+    if (bytes === 0) return "0 Bytes";
     const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const sizes = ["Bytes", "KB", "MB", "GB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
   },
 };
 
 // Export for use in modules
-if (typeof module !== 'undefined' && module.exports) {
+if (typeof module !== "undefined" && module.exports) {
   module.exports = Utils;
 } else {
   window.Utils = Utils;
 }
+
