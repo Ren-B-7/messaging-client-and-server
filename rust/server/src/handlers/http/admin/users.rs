@@ -11,10 +11,6 @@ use tracing::{error, info, warn};
 use crate::AppState;
 use crate::handlers::http::utils::deliver_serialized_json;
 
-// ---------------------------------------------------------------------------
-// Admin auth guard
-// ---------------------------------------------------------------------------
-
 /// Extract and validate an admin session token from the request.
 /// Returns the admin's user_id on success.
 pub async fn require_admin(
@@ -51,10 +47,6 @@ pub async fn require_admin(
         .flatten()
         .ok_or(())
 }
-
-// ---------------------------------------------------------------------------
-// User list
-// ---------------------------------------------------------------------------
 
 /// GET /admin/api/users
 pub async fn handle_get_users(
@@ -122,7 +114,10 @@ pub async fn handle_ban_user(
         .cloned()
         .unwrap_or_else(|| "No reason provided".to_string());
 
-    info!("Admin {} banning user {} — reason: {}", admin_id, user_id, reason);
+    info!(
+        "Admin {} banning user {} — reason: {}",
+        admin_id, user_id, reason
+    );
 
     db_ban::ban_user(&state.db, user_id, admin_id, Some(reason.clone()))
         .await
@@ -220,10 +215,6 @@ pub async fn handle_delete_user(
     )
 }
 
-// ---------------------------------------------------------------------------
-// Promote / Demote
-// ---------------------------------------------------------------------------
-
 /// POST /admin/api/users/promote
 /// Body: user_id=<id>  (form or JSON)
 pub async fn handle_promote_user(
@@ -274,7 +265,10 @@ pub async fn handle_promote_user(
         .await
         .map_err(|e| anyhow::anyhow!("DB error promoting user: {}", e))?;
 
-    info!("Admin {} promoted user {} ({})", admin_id, user.username, user_id);
+    info!(
+        "Admin {} promoted user {} ({})",
+        admin_id, user.username, user_id
+    );
 
     deliver_serialized_json(
         &serde_json::json!({
@@ -336,7 +330,10 @@ pub async fn handle_demote_user(
         .await
         .map_err(|e| anyhow::anyhow!("DB error demoting user: {}", e))?;
 
-    info!("Admin {} demoted user {} ({})", admin_id, user.username, user_id);
+    info!(
+        "Admin {} demoted user {} ({})",
+        admin_id, user.username, user_id
+    );
 
     deliver_serialized_json(
         &serde_json::json!({

@@ -20,7 +20,8 @@ tokio = { version = "1.37", default-features = false, features = [
     "net",
     "time",
     "sync",
-    "io-util"
+    "io-util",
+    "signal"
 ] }
 
 # HTTP

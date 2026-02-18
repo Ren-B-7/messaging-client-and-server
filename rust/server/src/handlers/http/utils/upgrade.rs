@@ -4,8 +4,6 @@ use http_body_util::Empty;
 use hyper::header::{HeaderValue, UPGRADE};
 use hyper::upgrade::Upgraded;
 use hyper::{Request, Response, StatusCode};
-use serde::Serialize;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::{debug, error, info, warn};
 
 /// Check if a request contains an upgrade header

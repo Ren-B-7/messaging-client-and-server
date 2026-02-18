@@ -1,7 +1,6 @@
 pub mod deliver_page;
 pub mod headers;
 pub mod json_response;
-pub mod upgrade;
 
 // Re-export commonly used utilities
 #[allow(unused_imports)]
@@ -10,5 +9,3 @@ pub use deliver_page::*;
 pub use headers::*;
 #[allow(unused_imports)]
 pub use json_response::*;
-#[allow(unused_imports)]
-pub use upgrade::*;

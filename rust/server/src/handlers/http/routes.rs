@@ -6,7 +6,6 @@ use hyper::{Method, Request, Response, StatusCode};
 use std::convert::Infallible;
 use std::future::Future;
 use std::pin::Pin;
-use tracing::info;
 
 use crate::AppState;
 use crate::handlers::http::utils::CacheStrategy;
@@ -131,7 +130,7 @@ impl Router {
 
         // If no route matched, try static file serving for GET requests
         if method == Method::GET {
-            if let Some(static_response) = self.try_serve_static(&path, &state)? {
+            if let Some(static_response) = self.try_serve_static(&path, &state).await? {
                 return Ok(static_response);
             }
         }
@@ -150,13 +149,14 @@ impl Router {
     }
 
     /// Try to serve static files for GET requests
-    fn try_serve_static(
+    async fn try_serve_static(
         &self,
         path: &str,
         state: &AppState,
     ) -> Result<Option<Response<BoxBody<Bytes, Infallible>>>> {
-        let web_dir = self.web_dir.as_ref().unwrap_or(&state.config.paths.web_dir);
-        let icons = self.icons_dir.as_ref().unwrap_or(&state.config.paths.icons);
+        let cfg = state.config.read().await.clone();
+        let web_dir = self.web_dir.as_ref().unwrap_or(&cfg.paths.web_dir);
+        let icons = self.icons_dir.as_ref().unwrap_or(&cfg.paths.icons);
 
         match path {
             // Home page
@@ -302,8 +302,8 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
             let config_json = serde_json::json!({
                 "status": "success",
                 "data": {
-                    "email_required": state.config.auth.email_required,
-                    "token_expiry_minutes": state.config.auth.token_expiry_minutes
+                    "email_required": state.config.read().await.auth.email_required,
+                    "token_expiry_minutes": state.config.read().await.auth.token_expiry_minutes
                 }
             });
             let response = Response::builder()

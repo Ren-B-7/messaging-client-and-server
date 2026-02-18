@@ -25,9 +25,6 @@ const AuthRegister = {
 
     AuthPassword.setupToggles();
     AuthPassword.setupStrengthMeter();
-    AuthPassword.setupAvatarUpload(dataUrl => {
-      this.formData.avatar = dataUrl;
-    });
 
     this._setupStepNavigation();
 
@@ -179,10 +176,6 @@ const AuthRegister = {
       username:  this.formData.username,
       full_name: this.formData.fullName,
     };
-
-    if (this.formData.avatar) {
-      payload.avatar = this.formData.avatar;
-    }
 
     try {
       const response = await fetch('/api/register', {

@@ -220,6 +220,49 @@ pub async fn update_last_login(conn: &Connection, user_id: i64) -> Result<()> {
     .await
 }
 
+/// Validate a session token and return the user_id only if the session belongs
+/// to an admin account (is_admin = 1). Used by the admin server auth guard.
+pub async fn validate_admin_session(
+    conn: &Connection,
+    session_token: String,
+) -> Result<Option<i64>> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+
+    conn.call(move |conn: &mut rusqlite::Connection| {
+        let mut stmt = conn.prepare(
+            "SELECT s.user_id, s.expires_at
+             FROM sessions s
+             INNER JOIN users u ON u.id = s.user_id
+             WHERE s.session_token = ?1
+               AND u.is_admin = 1
+               AND u.is_banned = 0",
+        )?;
+
+        let result = stmt
+            .query_row(params![session_token.clone()], |row: &rusqlite::Row| {
+                let user_id: i64 = row.get(0)?;
+                let expires_at: i64 = row.get(1)?;
+                Ok((user_id, expires_at))
+            })
+            .optional()?;
+
+        match result {
+            Some((user_id, expires_at)) if expires_at > now => {
+                conn.execute(
+                    "UPDATE sessions SET last_activity = ?1 WHERE session_token = ?2",
+                    params![now, session_token],
+                )?;
+                Ok(Some(user_id))
+            }
+            _ => Ok(None),
+        }
+    })
+    .await
+}
+
 /// Get all active sessions for a user
 pub async fn get_user_sessions(conn: &Connection, user_id: i64) -> Result<Vec<Session>> {
     let now = SystemTime::now()

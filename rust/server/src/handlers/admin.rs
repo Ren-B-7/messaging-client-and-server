@@ -27,11 +27,9 @@ pub struct AdminService {
 }
 
 impl AdminService {
-    pub fn new(state: AppState, addr: SocketAddr) -> Self {
-        let router = build_admin_router_with_config(
-            Some(state.config.paths.web_dir.clone()),
-            Some(state.config.paths.icons.clone()),
-        );
+    pub async fn new(state: AppState, addr: SocketAddr) -> Self {
+        let cfg = state.config.read().await.clone();
+        let router = build_admin_router_with_config(Some(cfg.paths.web_dir), Some(cfg.paths.icons));
 
         let router_ref: &'static Router = Box::leak(Box::new(router));
 
@@ -157,10 +155,10 @@ pub fn build_admin_router_with_config(
         })
         // ── Stats ───────────────────────────────────────────────────────────
         .get("/admin/stats", |req, state| async move {
-            handle_stats(req, state).await
+            handle_server_config(req, state).await
         })
         .get("/admin/api/stats", |req, state| async move {
-            handle_stats(req, state).await
+            handle_server_config(req, state).await
         })
         // ── User list ────────────────────────────────────────────────────────
         .get("/admin/users", |req, state| async move {

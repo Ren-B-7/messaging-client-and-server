@@ -16,7 +16,7 @@ use tracing::{error, info, warn};
 
 use crate::AppState;
 use crate::handlers::http::routes::{Router, build_api_router_with_config};
-use crate::handlers::http::utils::*;
+use crate::handlers::http::{admin::*, auth::*, utils::*};
 
 /// User service implementation
 #[derive(Clone, Debug)]
@@ -27,11 +27,9 @@ pub struct UserService {
 }
 
 impl UserService {
-    pub fn new(state: AppState, addr: SocketAddr) -> Self {
-        let router = build_user_router_with_config(
-            Some(state.config.paths.web_dir.clone()),
-            Some(state.config.paths.icons.clone()),
-        );
+    pub async fn new(state: AppState, addr: SocketAddr) -> Self {
+        let cfg = state.config.read().await.clone();
+        let router = build_user_router_with_config(Some(cfg.paths.web_dir), Some(cfg.paths.icons));
 
         let router_ref: &'static Router = Box::leak(Box::new(router));
 
@@ -103,7 +101,7 @@ async fn user_conn(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("User request from {}: {} {}", addr, req.method(), req.uri());
 
-    let blocked_paths: &HashSet<String> = &state.config.paths.blocked_paths;
+    let blocked_paths: &HashSet<String> = &state.config.read().await.paths.blocked_paths.clone();
     let path: String = req.uri().path().to_string();
 
     // CRITICAL: Block any /admin/* paths on the user service

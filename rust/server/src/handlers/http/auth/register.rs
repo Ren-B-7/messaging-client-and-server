@@ -1,10 +1,8 @@
 use anyhow::{Context, Result};
 use bytes::Bytes;
-use http::response;
 use http_body_util::BodyExt;
 use http_body_util::combinators::BoxBody;
 use hyper::{Request, Response, StatusCode};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::convert::Infallible;
 use tracing::{error, info, warn};
@@ -22,18 +20,6 @@ pub async fn handle_register(
     state: AppState,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing registration request");
-
-    let content_type = req
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-
-    let accept = req
-        .headers()
-        .get("accept")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
 
     let registration_data = match parse_and_validate_registration(req, &state).await {
         Ok(data) => data,
@@ -165,7 +151,7 @@ async fn parse_and_validate_registration(
     validate_username(&data.username)?;
     validate_password(&data.password)?;
 
-    if state.config.auth.email_required && data.email.is_none() {
+    if state.config.read().await.auth.email_required && data.email.is_none() {
         return Err(RegistrationError::EmailRequired);
     }
 
@@ -286,7 +272,7 @@ async fn attempt_registration(
 async fn create_session_for_new_user(user_id: i64, token: &str, state: &AppState) -> Result<i64> {
     use crate::database::login as db_login;
 
-    let token_expiry_secs = state.config.auth.token_expiry_minutes * 60;
+    let token_expiry_secs = state.config.read().await.auth.token_expiry_minutes * 60;
     let expires_at = crate::database::utils::calculate_expiry(token_expiry_secs as i64);
 
     db_login::create_session(

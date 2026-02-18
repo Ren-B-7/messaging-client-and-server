@@ -28,19 +28,21 @@ mod handlers;
 mod tower_middle;
 
 use handlers::{admin::AdminService, user::UserService};
-use shared::config::{self, Config};
+use shared::config::{self, LiveConfig};
 use tower_middle::{
     IpFilterLayer, MetricsLayer, RateLimiterLayer, TimeoutLayer,
     security::{IpFilter, Metrics, RateLimiter},
 };
 
-use database::create;
-
-/// Shared application state
+/// Shared application state.
+///
+/// `config` is a `LiveConfig` — a cheaply-cloneable `Arc<RwLock<AppConfig>>`
+/// wrapper. Every clone of `AppState` shares the **same** underlying config,
+/// so an admin-triggered reload or SIGHUP is visible everywhere immediately.
 #[derive(Clone, Debug)]
 pub struct AppState {
     pub db: Arc<Connection>,
-    pub config: Arc<Config>,
+    pub config: LiveConfig,
     pub ip_filter: IpFilter,
     pub rate_limiter: RateLimiter,
     pub metrics: Metrics,
@@ -48,12 +50,12 @@ pub struct AppState {
 }
 
 impl AppState {
-    fn new(config: Config, db: Connection) -> Self {
+    fn new(config: LiveConfig, db: Connection) -> Self {
         let rate_limiter = RateLimiter::new(100, 200);
 
         Self {
             db: Arc::new(db),
-            config: Arc::new(config),
+            config,
             ip_filter: IpFilter::new(),
             rate_limiter,
             metrics: Metrics::new(),
@@ -65,14 +67,11 @@ impl AppState {
 /// Create CORS layer based on environment
 fn create_cors_layer() -> CorsLayer {
     if cfg!(debug_assertions) {
-        // Development: permissive CORS
         info!("Using permissive CORS (development mode)");
         CorsLayer::permissive()
     } else {
-        // Production: restrictive CORS
         info!("Using restrictive CORS (production mode)");
         CorsLayer::new()
-            // Allow multiple origins if needed
             .allow_origin([
                 "http://127.0.0.1:1337".parse::<HeaderValue>().unwrap(),
                 "http://127.0.0.1:1338".parse::<HeaderValue>().unwrap(),
@@ -101,27 +100,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         return Err("Missing config path argument".into());
     }
 
+    let config_path = args[1].clone();
+
     let db: Connection = database::create::open_database("messaging.db").await?;
-    let config = config::load_config(&args[1]).context("Failed to load configuration")?;
-    let state = AppState::new(config, db);
+    let app_config = config::load_config(&config_path).context("Failed to load configuration")?;
+    let live_config = LiveConfig::new(app_config);
+    let state = AppState::new(live_config, db);
+
+    // Read the ports once at startup — these are fixed for the lifetime of the
+    // process (changing them requires a restart, not a hot-reload).
+    let (user_port, admin_port) = {
+        let cfg = state.config.read().await;
+        (
+            cfg.server.port_client.unwrap_or(1337),
+            cfg.server.port_admin.unwrap_or(1338),
+        )
+    };
 
     let connection_timeouts = vec![Duration::from_secs(5), Duration::from_secs(2)];
     let user_timeout = connection_timeouts.clone();
     let admin_timeout = connection_timeouts.clone();
 
-    let user_port = state.config.server.port_client.unwrap_or(1337) as u16;
-    let admin_port = state.config.server.port_admin.unwrap_or(1338) as u16;
-
     let user_sock: SocketAddr = ([127, 0, 0, 1], user_port).into();
     let admin_sock: SocketAddr = ([127, 0, 0, 1], admin_port).into();
 
-    // Clone state for each server
     let user_state = state.clone();
     let admin_state = state.clone();
-
     let metrics_state = state.clone();
 
-    // Background tasks
+    // ── Background task: rate-limiter cleanup ────────────────────────────────
     let cleanup_state = user_state.clone();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(60));
@@ -132,6 +139,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     });
 
+    // ── Background task: metrics snapshot ───────────────────────────────────
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(30));
         loop {
@@ -141,6 +149,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     });
 
+    // ── Background task: SIGHUP → hot-reload config ─────────────────────────
+    //
+    // Send `kill -HUP <pid>` to reload the config file without restarting.
+    // Ports are NOT re-read after a reload — only values accessed via
+    // `state.config.read().await` in handlers will reflect the new config.
+    {
+        let reload_handle = state.config.clone();
+        tokio::spawn(async move {
+            let mut signal =
+                match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup()) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        warn!("Could not install SIGHUP handler: {}", e);
+                        return;
+                    }
+                };
+
+            loop {
+                signal.recv().await;
+                info!("SIGHUP received — reloading config from {}", config_path);
+                match config::load_config(&config_path) {
+                    Ok(new_cfg) => {
+                        reload_handle.reload(new_cfg).await;
+                        info!("Config hot-reloaded successfully");
+                    }
+                    Err(e) => error!("Config reload failed, keeping current config: {}", e),
+                }
+            }
+        });
+    }
+
+    // ── User server ──────────────────────────────────────────────────────────
     let user_server = async move {
         let listener = TcpListener::bind(user_sock)
             .await
@@ -150,11 +190,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!("User server listening on http://{}", user_sock);
 
         loop {
-            let (stream, addr) = listener.accept().await.unwrap();
+            let (stream, _addr) = listener.accept().await.unwrap();
 
-            let user_tower_service = UserService::new(user_state.clone(), user_sock);
+            let user_tower_service = UserService::new(user_state.clone(), user_sock).await;
 
-            // Order matters! Outer layers run last on request, first on response
+            // Order matters: outer layers run last on request, first on response
             let tower_service = ServiceBuilder::new()
                 .layer(LoadShedLayer::new())
                 .layer(IpFilterLayer::new(user_state.ip_filter.clone()))
@@ -199,6 +239,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     };
 
+    // ── Admin server ─────────────────────────────────────────────────────────
     let admin_server = async move {
         let listener = TcpListener::bind(admin_sock)
             .await
@@ -208,10 +249,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!("Admin server listening on http://{}", admin_sock);
 
         loop {
-            let (stream, addr) = listener.accept().await.unwrap();
+            let (stream, _addr) = listener.accept().await.unwrap();
 
-            // Step 1: Create Hyper service
-            let admin_tower_service = AdminService::new(admin_state.clone(), admin_sock);
+            let admin_tower_service = AdminService::new(admin_state.clone(), admin_sock).await;
 
             let tower_service = ServiceBuilder::new()
                 .layer(LoadShedLayer::new())
@@ -223,7 +263,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .layer(CompressionLayer::new().quality(CompressionLevel::Default))
                 .service(admin_tower_service);
 
-            // Step 4: Convert Tower → Hyper
             let final_service = TowerToHyperService::new(tower_service);
 
             let io = TokioIo::new(stream);

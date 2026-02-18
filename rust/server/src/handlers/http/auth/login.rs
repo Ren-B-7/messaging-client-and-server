@@ -9,8 +9,8 @@ use tracing::{error, info, warn};
 
 use crate::AppState;
 use crate::handlers::http::utils::{
-    create_persistent_cookie, create_session_cookie, deliver_redirect,
-    deliver_redirect_with_cookie, deliver_serialized_json,
+    create_persistent_cookie, create_session_cookie, deliver_redirect_with_cookie,
+    deliver_serialized_json,
 };
 use shared::types::login::*;
 
@@ -58,7 +58,7 @@ pub async fn handle_login(
                 username, user_id
             );
 
-            let token_expiry_secs = state.config.auth.token_expiry_minutes * 60;
+            let token_expiry_secs = state.config.read().await.auth.token_expiry_minutes * 60;
 
             // The session token is stored in the cookie so the user is authenticated
             // on the /chat page they're being redirected to.
@@ -188,7 +188,7 @@ async fn attempt_login(
     }
 
     let token = crate::database::utils::generate_uuid_token();
-    let token_expiry_secs = state.config.auth.token_expiry_minutes * 60;
+    let token_expiry_secs = state.config.read().await.auth.token_expiry_minutes * 60;
     let expires_at = crate::database::utils::calculate_expiry(token_expiry_secs as i64);
 
     db_login::create_session(

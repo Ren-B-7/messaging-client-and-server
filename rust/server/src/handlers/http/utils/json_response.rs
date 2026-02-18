@@ -9,6 +9,8 @@ use serde_json::json;
 use std::convert::Infallible;
 use tracing::{debug, error};
 
+use crate::handlers::http::utils::deliver_page::full;
+
 /// Serialize any `Serialize` type and deliver it as a JSON response.
 /// This is the primary helper all handlers should use instead of
 /// writing their own one-off serialization + response-building blocks.
@@ -83,6 +85,56 @@ pub fn deliver_error_json(
         .map_err(|e: http::Error| {
             error!("Failed to build error JSON response: {}", e);
             anyhow!("Failed to build error JSON response: {}", e)
+        })?;
+
+    Ok(response)
+}
+
+/// Delivers a success JSON response with optional data.
+pub fn deliver_success_json<T: Serialize>(
+    data: Option<T>,
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    let response_body = match data {
+        Some(d) => json!({
+            "status": "success",
+            "data": d
+        }),
+        None => json!({
+            "status": "success"
+        }),
+    };
+
+    let json_string = response_body.to_string();
+
+    let response = Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Full::new(Bytes::from(json_string)).boxed())
+        .map_err(|e: http::Error| {
+            error!("Failed to build success JSON response: {}", e);
+            anyhow!("Failed to build success JSON response: {}", e)
+        })?;
+
+    Ok(response)
+}
+
+/// Delivers a JSON response from raw pre-serialized bytes.
+/// Prefer `deliver_serialized_json` when you have a typed value.
+pub fn deliver_json<T: Into<Bytes>>(
+    json: T,
+    status: StatusCode,
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    let bytes: Bytes = json.into();
+
+    debug!("Delivering raw JSON response, size: {} bytes", bytes.len());
+
+    let response = Response::builder()
+        .status(status)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(full(bytes))
+        .map_err(|e: http::Error| {
+            error!("Failed to build JSON response: {}", e);
+            anyhow!("Failed to build JSON response: {}", e)
         })?;
 
     Ok(response)
