@@ -129,3 +129,14 @@ const themeManager = {
 if (typeof module !== "undefined" && module.exports) {
   module.exports = themeManager;
 }
+
+window.addEventListener("DOMContentLoaded", function () {
+  if (typeof themeManager !== "undefined") {
+    themeManager.init(["base", "chat"]);
+    document
+      .getElementById("themeToggle")
+      .addEventListener("click", function () {
+        themeManager.toggle();
+      });
+  }
+});

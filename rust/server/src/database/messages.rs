@@ -32,7 +32,7 @@ pub async fn send_message(conn: &Connection, new_message: NewMessage) -> Result<
         .unwrap()
         .as_secs() as i64;
 
-    conn.call(move |conn| {
+    conn.call(move |conn: &mut rusqlite::Connection| {
         conn.execute(
             "INSERT INTO messages (sender_id, recipient_id, group_id, content, sent_at, is_encrypted, message_type) 
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -60,7 +60,7 @@ pub async fn get_direct_messages(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<Message>> {
-    conn.call(move |conn| {
+    conn.call(move |conn: &mut rusqlite::Connection| {
         let mut stmt = conn.prepare(
             "SELECT id, sender_id, recipient_id, group_id, content, sent_at, delivered_at, read_at, is_encrypted, message_type
              FROM messages 
@@ -97,7 +97,7 @@ pub async fn get_group_messages(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<Message>> {
-    conn.call(move |conn| {
+    conn.call(move |conn: &mut rusqlite::Connection| {
         let mut stmt = conn.prepare(
             "SELECT id, sender_id, recipient_id, group_id, content, sent_at, delivered_at, read_at, is_encrypted, message_type
              FROM messages 
@@ -134,7 +134,7 @@ pub async fn mark_delivered(conn: &Connection, message_id: i64) -> Result<()> {
         .unwrap()
         .as_secs() as i64;
 
-    conn.call(move |conn| {
+    conn.call(move |conn: &mut rusqlite::Connection| {
         conn.execute(
             "UPDATE messages SET delivered_at = ?1 WHERE id = ?2",
             params![now, message_id],
@@ -151,7 +151,7 @@ pub async fn mark_read(conn: &Connection, message_id: i64) -> Result<()> {
         .unwrap()
         .as_secs() as i64;
 
-    conn.call(move |conn| {
+    conn.call(move |conn: &mut rusqlite::Connection| {
         conn.execute(
             "UPDATE messages SET read_at = ?1 WHERE id = ?2",
             params![now, message_id],
@@ -163,10 +163,10 @@ pub async fn mark_read(conn: &Connection, message_id: i64) -> Result<()> {
 
 /// Get unread message count for a user
 pub async fn get_unread_count(conn: &Connection, user_id: i64) -> Result<i64> {
-    conn.call(move |conn| {
+    conn.call(move |conn: &mut rusqlite::Connection| {
         let mut stmt = conn
             .prepare("SELECT COUNT(*) FROM messages WHERE recipient_id = ?1 AND read_at IS NULL")?;
-        let count: i64 = stmt.query_row(params![user_id], |row| row.get(0))?;
+        let count: i64 = stmt.query_row(params![user_id], |row: &rusqlite::Row| row.get(0))?;
         Ok(count)
     })
     .await
@@ -174,7 +174,7 @@ pub async fn get_unread_count(conn: &Connection, user_id: i64) -> Result<i64> {
 
 /// Delete a message
 pub async fn delete_message(conn: &Connection, message_id: i64, user_id: i64) -> Result<bool> {
-    conn.call(move |conn| {
+    conn.call(move |conn: &mut rusqlite::Connection| {
         // Only allow sender to delete
         let count = conn.execute(
             "DELETE FROM messages WHERE id = ?1 AND sender_id = ?2",
@@ -191,7 +191,7 @@ pub async fn get_recent_conversations(
     user_id: i64,
     limit: i64,
 ) -> Result<Vec<(i64, i64)>> {
-    conn.call(move |conn| {
+    conn.call(move |conn: &mut rusqlite::Connection| {
         let mut stmt = conn.prepare(
             "SELECT DISTINCT 
                 CASE 

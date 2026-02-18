@@ -3,30 +3,53 @@ name = "server"
 version = "0.1.0"
 edition = "2024"
 authors = ["Renier Barnard"]
-description = "Low-level async messaging server with http and websockets"
+description = "Low-level async messaging server with HTTP and SSE"
 license = "MIT"
 
-
 [dependencies]
+# Ipfiltering
+ipnet = "2.11.0"
 
-# Unique IDs
-uuid = { version = "1", features = ["v4", "serde"] }
+# Password hashing
+argon2 = "0.5"
+
+# Randomness (for nonces + keys)
+rand = "0.8"
+
+# UUID generation
+uuid = { version = "1.0", features = ["v4"] }
+
+# Authenticated encryption (server-side at rest)
+chacha20poly1305 = { version = "0.10", features = ["std"] }
+
+# Compression
+flate2 = "1.0"
+
+# Tower
+tower = { version = "0.5.3", default-features = false, features = [
+    "util",
+    "load-shed",
+] }
+
+tower-http = { version = "0.6.8", default-features = false, features = [
+    "compression-gzip",
+    "compression-deflate",
+    "cors"
+] }
+
+# Hyper (HTTP + SSE)
+hyper = { version = "1.2", default-features = false, features = [
+    "http1",
+    "server"
+] }
+
+hyper-util = { version = "0.1", default-features = false, features = [
+    "tokio",
+    "service"
+] }
+
 tokio-rusqlite = "0.7.0"
 
-argon2 = "0.5"
-rand = "0.8"
-aes-gcm = "0.10"
-flate2 = "1.0"
-hex = "0.4"
-ipnet = "2"
-
-tower = { version = "0.4", features = ["full"] }
-tower-http = { version = "0.5", features = ["trace", "timeout", "cors",
-"compression-br", "compression-gzip", "compression-zstd", "compression-deflate"] }
-
-hyper-util = { version = "0.1", features = ["full", "tokio", "service"] }
-
-hyper = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -35,10 +58,8 @@ http-body-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
-tokio-tungstenite = { workspace = true }
 bytes = { workspace = true }
 form_urlencoded = { workspace = true }
-
 
 # Shared lib
 shared = { path = "../shared" }

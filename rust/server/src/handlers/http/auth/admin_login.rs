@@ -98,7 +98,7 @@ pub async fn handle_login(
             Ok(data) => data,
             Err(e) => {
                 warn!("Admin login JSON parsing failed: {:?}", e.to_code());
-                return deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST, None);
+                return deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST);
             }
         }
     } else {
@@ -106,14 +106,14 @@ pub async fn handle_login(
             Ok(data) => data,
             Err(e) => {
                 warn!("Admin login form parsing failed: {:?}", e.to_code());
-                return deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST, None);
+                return deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST);
             }
         }
     };
 
     if let Err(e) = validate_login(&login_data) {
         warn!("Admin login validation failed: {:?}", e.to_code());
-        return deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST, None);
+        return deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST);
     }
 
     match attempt_login(&login_data, &state).await {
@@ -159,7 +159,7 @@ pub async fn handle_login(
         }
         Err(e) => {
             warn!("Admin login failed: {:?}", e.to_code());
-            deliver_serialized_json(&e.to_response(), StatusCode::UNAUTHORIZED, None)
+            deliver_serialized_json(&e.to_response(), StatusCode::UNAUTHORIZED)
         }
     }
 }

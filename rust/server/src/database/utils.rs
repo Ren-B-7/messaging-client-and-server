@@ -1,8 +1,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use hex;
 use rand;
-use uuid;
+use uuid::Uuid;
 
 /// Get current Unix timestamp in seconds
 pub fn get_timestamp() -> i64 {
@@ -14,7 +13,12 @@ pub fn get_timestamp() -> i64 {
 
 /// Generate a UUID-based session token
 pub fn generate_uuid_token() -> String {
-    uuid::Uuid::new_v4().to_string()
+    Uuid::new_v4().to_string()
+}
+
+/// Alias used by admin_login — same as generate_uuid_token
+pub fn generate_session_token() -> String {
+    generate_uuid_token()
 }
 
 /// Hash a password using Argon2id (recommended for production)

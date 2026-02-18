@@ -2,7 +2,15 @@ pub mod json_error;
 pub mod login;
 pub mod message;
 pub mod register;
+pub mod update;
 
+#[allow(unused_imports)]
 pub use self::json_error::ErrorResponse;
+#[allow(unused_imports)]
 pub use self::login::{LoginData, LoginError, LoginResponse};
+#[allow(unused_imports)]
 pub use self::register::{RegistrationData, RegistrationError, RegistrationResponse};
+#[allow(unused_imports)]
+pub use self::update::{
+    ProfileData, ProfileError, ProfileResponse, UpdateProfileData, UpdateResponse,
+};

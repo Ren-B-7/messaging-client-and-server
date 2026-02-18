@@ -1,5 +1,5 @@
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio_rusqlite::{Connection, OptionalExtension, Result, params};
+use tokio_rusqlite::{Connection, OptionalExtension, Result, params, rusqlite};
 
 #[derive(Debug, Clone)]
 pub struct PasswordResetToken {
@@ -17,7 +17,7 @@ pub async fn change_password(
     user_id: i64,
     new_password_hash: String,
 ) -> Result<()> {
-    conn.call(move |conn| {
+    conn.call(move |conn: &mut rusqlite::Connection| {
         conn.execute(
             "UPDATE users SET password_hash = ?1 WHERE id = ?2",
             params![new_password_hash, user_id],
@@ -29,10 +29,10 @@ pub async fn change_password(
 
 /// Get current password hash for verification
 pub async fn get_password_hash(conn: &Connection, user_id: i64) -> Result<Option<String>> {
-    conn.call(move |conn| {
+    conn.call(move |conn: &mut rusqlite::Connection| {
         let mut stmt = conn.prepare("SELECT password_hash FROM users WHERE id = ?1")?;
         let hash = stmt
-            .query_row(params![user_id], |row| row.get(0))
+            .query_row(params![user_id], |row: &rusqlite::Row| row.get(0))
             .optional()?;
         Ok(hash)
     })
@@ -53,7 +53,7 @@ pub async fn create_reset_token(
 
     let expires_at = now + valid_duration_secs;
 
-    conn.call(move |conn| {
+    conn.call(move |conn: &mut rusqlite::Connection| {
         conn.execute(
             "INSERT INTO password_reset_tokens (user_id, token, created_at, expires_at) 
              VALUES (?1, ?2, ?3, ?4)",
@@ -72,13 +72,13 @@ pub async fn validate_reset_token(conn: &Connection, token: String) -> Result<Op
         .unwrap()
         .as_secs() as i64;
 
-    conn.call(move |conn| {
+    conn.call(move |conn: &mut rusqlite::Connection| {
         let mut stmt = conn.prepare(
             "SELECT user_id, expires_at, used FROM password_reset_tokens WHERE token = ?1",
         )?;
 
         let result = stmt
-            .query_row(params![token.clone()], |row| {
+            .query_row(params![token.clone()], |row: &rusqlite::Row| {
                 let user_id: i64 = row.get(0)?;
                 let expires_at: i64 = row.get(1)?;
                 let used: i64 = row.get(2)?;
@@ -134,7 +134,7 @@ pub async fn cleanup_expired_reset_tokens(conn: &Connection) -> Result<usize> {
         .unwrap()
         .as_secs() as i64;
 
-    conn.call(move |conn| {
+    conn.call(move |conn: &mut rusqlite::Connection| {
         let count = conn.execute(
             "DELETE FROM password_reset_tokens WHERE expires_at < ?1 OR used = 1",
             params![now],
@@ -146,7 +146,7 @@ pub async fn cleanup_expired_reset_tokens(conn: &Connection) -> Result<usize> {
 
 /// Delete all reset tokens for a user (e.g., after successful password change)
 pub async fn delete_user_reset_tokens(conn: &Connection, user_id: i64) -> Result<()> {
-    conn.call(move |conn| {
+    conn.call(move |conn: &mut rusqlite::Connection| {
         conn.execute(
             "DELETE FROM password_reset_tokens WHERE user_id = ?1",
             params![user_id],
@@ -158,10 +158,10 @@ pub async fn delete_user_reset_tokens(conn: &Connection, user_id: i64) -> Result
 
 /// Get user ID by email (for password reset)
 pub async fn get_user_id_by_email(conn: &Connection, email: String) -> Result<Option<i64>> {
-    conn.call(move |conn| {
+    conn.call(move |conn: &mut rusqlite::Connection| {
         let mut stmt = conn.prepare("SELECT id FROM users WHERE email = ?1")?;
         let user_id = stmt
-            .query_row(params![email], |row| row.get(0))
+            .query_row(params![email], |row: &rusqlite::Row| row.get(0))
             .optional()?;
         Ok(user_id)
     })

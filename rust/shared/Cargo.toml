@@ -5,9 +5,8 @@ edition = "2024"
 license = "MIT"
 description = "Common library for async server and tui client"
 
-
 [dependencies]
-thiserror = "1"
+thiserror = "2"
 toml = "0.8"
 
 serde = { workspace = true }

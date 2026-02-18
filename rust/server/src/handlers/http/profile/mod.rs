@@ -7,7 +7,7 @@ pub mod update;
 pub use get::handle_get_profile;
 
 #[allow(unused_imports)]
-pub use settings::{handle_change_password, handle_logout_all};
+pub use settings::{handle_change_password, handle_logout, handle_logout_all};
 
 #[allow(unused_imports)]
 pub use update::handle_update_profile;

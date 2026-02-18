@@ -1,9 +1,9 @@
-use tokio_rusqlite::{Connection, Result};
+use tokio_rusqlite::{Connection, Result, rusqlite};
 
 /// Initialize the database schema for the messaging service
 pub async fn create_tables(conn: &Connection) -> Result<()> {
-    conn.call(|conn| {
-        // Users table
+    conn.call(|conn: &mut rusqlite::Connection| {
+        // Users table — is_admin = 1 marks admin accounts (same table, separate server)
         conn.execute(
             "CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -12,6 +12,7 @@ pub async fn create_tables(conn: &Connection) -> Result<()> {
                 email TEXT UNIQUE,
                 created_at INTEGER NOT NULL,
                 last_login INTEGER,
+                is_admin INTEGER NOT NULL DEFAULT 0,
                 is_banned INTEGER NOT NULL DEFAULT 0,
                 ban_reason TEXT,
                 banned_at INTEGER,
@@ -107,6 +108,11 @@ pub async fn create_tables(conn: &Connection) -> Result<()> {
 
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)",
+            [],
+        )?;
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_users_is_admin ON users(is_admin)",
             [],
         )?;
 

@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-use std::collections::HashSet;
 use std::convert::Infallible;
 use std::future::Future;
 use std::net::SocketAddr;
@@ -17,9 +15,8 @@ use tower::Service;
 use tracing::{error, info, warn};
 
 use crate::AppState;
-use crate::database::ban as db_ban;
 use crate::handlers::http::routes::{Router, build_api_router_with_config};
-use crate::handlers::http::utils::*;
+use crate::handlers::http::{admin::*, auth::*, utils::*};
 
 /// Admin service implementation
 #[derive(Clone, Debug)]
@@ -117,204 +114,6 @@ async fn admin_conn(
         .context("Admin routing failed")
 }
 
-// ── Route handlers ──────────────────────────────────────────────────────────
-
-/// Serve server and auth configuration stats
-async fn handle_stats(
-    _req: Request<IncomingBody>,
-    state: AppState,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    info!("Serving admin stats");
-
-    let stats_json = serde_json::json!({
-        "status": "success",
-        "data": {
-            "server": {
-                "max_connections": state.config.server.max_connections,
-                "bind":            state.config.server.bind,
-                "port_client":     state.config.server.port_client,
-                "port_admin":      state.config.server.port_admin,
-            },
-            "auth": {
-                "token_expiry_minutes": state.config.auth.token_expiry_minutes,
-                "email_required":       state.config.auth.email_required,
-            }
-        }
-    });
-
-    let response = Response::builder()
-        .status(StatusCode::OK)
-        .header("content-type", "application/json")
-        .body(http_body_util::Full::new(Bytes::from(stats_json.to_string())).boxed())
-        .context("Failed to build stats response")?;
-
-    Ok(response)
-}
-
-/// Return the full user list
-async fn handle_get_users(
-    _req: Request<IncomingBody>,
-    _state: AppState,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    info!("Serving user list");
-
-    let users_json = serde_json::json!({
-        "status": "success",
-        "data": {
-            "users":   [],
-            "total":   0,
-            "message": "User list endpoint — database integration pending"
-        }
-    });
-
-    let response = Response::builder()
-        .status(StatusCode::OK)
-        .header("content-type", "application/json")
-        .body(http_body_util::Full::new(Bytes::from(users_json.to_string())).boxed())
-        .context("Failed to build users response")?;
-
-    Ok(response)
-}
-
-/// Ban a user by `user_id` (form-encoded body: `user_id`, `reason`)
-async fn handle_ban_user(
-    req: Request<IncomingBody>,
-    state: AppState,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    use crate::database::ban as db_ban;
-    use std::collections::HashMap;
-
-    info!("Processing ban user request");
-
-    let body: Bytes = req
-        .collect()
-        .await
-        .context("Failed to read request body")?
-        .to_bytes();
-
-    let params: HashMap<String, String> =
-        form_urlencoded::parse(body.as_ref()).into_owned().collect();
-
-    let user_id: i64 = params
-        .get("user_id")
-        .and_then(|id| id.parse::<i64>().ok())
-        .ok_or_else(|| anyhow::anyhow!("Invalid or missing user_id"))?;
-
-    let reason: String = params
-        .get("reason")
-        .cloned()
-        .unwrap_or_else(|| "No reason provided".to_string());
-
-    // TODO: replace placeholder with session-derived admin ID
-    let admin_id: i64 = 1;
-
-    info!("Banning user {} with reason: {}", user_id, reason);
-
-    db_ban::ban_user(&state.db, user_id, admin_id, Some(reason.clone()))
-        .await
-        .context("Failed to ban user in database")?;
-
-    let response_json = serde_json::json!({
-        "status": "success",
-        "message": format!("User {} has been banned", user_id),
-        "data": {
-            "user_id": user_id,
-            "banned":  true,
-            "reason":  reason,
-        }
-    });
-
-    let response = Response::builder()
-        .status(StatusCode::OK)
-        .header("content-type", "application/json")
-        .body(http_body_util::Full::new(Bytes::from(response_json.to_string())).boxed())
-        .context("Failed to build ban response")?;
-
-    Ok(response)
-}
-
-/// Unban a user by `user_id` (form-encoded body: `user_id`)
-async fn handle_unban_user(
-    req: Request<IncomingBody>,
-    state: AppState,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    info!("Processing unban user request");
-
-    let body: Bytes = req
-        .collect()
-        .await
-        .context("Failed to read request body")?
-        .to_bytes();
-
-    let params: HashMap<String, String> =
-        form_urlencoded::parse(body.as_ref()).into_owned().collect();
-
-    let user_id: i64 = params
-        .get("user_id")
-        .and_then(|id| id.parse::<i64>().ok())
-        .ok_or_else(|| anyhow::anyhow!("Invalid or missing user_id"))?;
-
-    info!("Unbanning user {}", user_id);
-
-    db_ban::unban_user(&state.db, user_id)
-        .await
-        .context("Failed to unban user in database")?;
-
-    let response_json = serde_json::json!({
-        "status": "success",
-        "message": format!("User {} has been unbanned", user_id),
-        "data": {
-            "user_id": user_id,
-            "banned":  false,
-        }
-    });
-
-    let response = Response::builder()
-        .status(StatusCode::OK)
-        .header("content-type", "application/json")
-        .body(http_body_util::Full::new(Bytes::from(response_json.to_string())).boxed())
-        .context("Failed to build unban response")?;
-
-    Ok(response)
-}
-
-async fn handle_delete_user(
-    req: Request<IncomingBody>,
-    _state: AppState,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    let path = req.uri().path();
-
-    let user_id: i64 = path
-        .trim_end_matches('/')
-        .split('/')
-        .last()
-        .filter(|s| *s != ":id")
-        .and_then(|s| s.parse::<i64>().ok())
-        .ok_or_else(|| anyhow::anyhow!("Invalid or missing user ID in path"))?;
-
-    info!("Deleting user {}", user_id);
-
-    // TODO: db integration
-    // crate::database::users::delete_user(&state.db, user_id).await?;
-
-    let response_json = serde_json::json!({
-        "status": "success",
-        "message": format!("User {} has been deleted", user_id),
-        "data": {
-            "user_id": user_id,
-            "deleted": true,
-        }
-    });
-
-    let response = Response::builder()
-        .status(StatusCode::OK)
-        .header("content-type", "application/json")
-        .body(http_body_util::Full::new(Bytes::from(response_json.to_string())).boxed())
-        .context("Failed to build delete response")?;
-
-    Ok(response)
-}
-
 pub fn build_admin_router_with_config(
     web_dir_static: Option<String>,
     icons_dir_static: Option<String>,
@@ -330,19 +129,19 @@ pub fn build_admin_router_with_config(
     router = router
         .get("/", move |_req, _state| async move {
             let path = format!("{}/index.html", web_dir);
-            deliver_html_page(path).context("failed to deliver admin dashboard page")
+            deliver_html_page(path).context("failed to deliver admin login page")
         })
         .get("/index.html", move |_req, _state| async move {
             let path = format!("{}/index.html", web_dir);
-            deliver_html_page(path).context("failed to deliver admin dashboard page")
+            deliver_html_page(path).context("failed to deliver admin login page")
         })
         .get("/index", move |_req, _state| async move {
             let path = format!("{}/index.html", web_dir);
-            deliver_html_page(path).context("failed to deliver admin dashboard page")
+            deliver_html_page(path).context("failed to deliver admin login page")
         })
         .get("/login", move |_req, _state| async move {
             let path = format!("{}/index.html", web_dir);
-            deliver_html_page(path).context("failed to deliver admin dashboard page")
+            deliver_html_page(path).context("failed to deliver admin login page")
         })
         .get("/admin", move |_req, _state| async move {
             let path = format!("{}/admin.html", web_dir);
@@ -389,6 +188,17 @@ pub fn build_admin_router_with_config(
         })
         .delete("/admin/api/users/:id", |req, state| async move {
             handle_delete_user(req, state).await
+        })
+        // ── Promote / demote ─────────────────────────────────────────────────
+        .post("/admin/api/users/promote", |req, state| async move {
+            handle_promote_user(req, state)
+                .await
+                .context("Promote failed")
+        })
+        .post("/admin/api/users/demote", |req, state| async move {
+            handle_demote_user(req, state)
+                .await
+                .context("Demote failed")
         })
         // ── Health check ─────────────────────────────────────────────────────
         .get("/admin/health", |_req, _state| async move {

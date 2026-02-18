@@ -33,7 +33,7 @@ pub async fn create_group(conn: &Connection, new_group: NewGroup) -> Result<i64>
         .unwrap()
         .as_secs() as i64;
 
-    let group_id = conn.call(move |conn| {
+    let group_id = conn.call(move |conn: &mut rusqlite::Connection| {
         conn.execute(
             "INSERT INTO groups (name, created_by, created_at, description) VALUES (?1, ?2, ?3, ?4)",
             params![
@@ -66,7 +66,7 @@ pub async fn add_group_member(
         .unwrap()
         .as_secs() as i64;
 
-    conn.call(move |conn| {
+    conn.call(move |conn: &mut rusqlite::Connection| {
         conn.execute(
             "INSERT INTO group_members (group_id, user_id, joined_at, role) VALUES (?1, ?2, ?3, ?4)",
             params![group_id, user_id, joined_at, role],
@@ -79,7 +79,7 @@ pub async fn add_group_member(
 
 /// Remove a member from a group
 pub async fn remove_group_member(conn: &Connection, group_id: i64, user_id: i64) -> Result<bool> {
-    conn.call(move |conn| {
+    conn.call(move |conn: &mut rusqlite::Connection| {
         let count = conn.execute(
             "DELETE FROM group_members WHERE group_id = ?1 AND user_id = ?2",
             params![group_id, user_id],
@@ -91,13 +91,13 @@ pub async fn remove_group_member(conn: &Connection, group_id: i64, user_id: i64)
 
 /// Get all members of a group
 pub async fn get_group_members(conn: &Connection, group_id: i64) -> Result<Vec<GroupMember>> {
-    conn.call(move |conn| {
+    conn.call(move |conn: &mut rusqlite::Connection| {
         let mut stmt = conn.prepare(
             "SELECT id, group_id, user_id, joined_at, role FROM group_members WHERE group_id = ?1",
         )?;
 
         let members = stmt
-            .query_map(params![group_id], |row| {
+            .query_map(params![group_id], |row: &rusqlite::Row| {
                 Ok(GroupMember {
                     id: row.get(0)?,
                     group_id: row.get(1)?,
@@ -115,7 +115,7 @@ pub async fn get_group_members(conn: &Connection, group_id: i64) -> Result<Vec<G
 
 /// Get all groups a user is a member of
 pub async fn get_user_groups(conn: &Connection, user_id: i64) -> Result<Vec<Group>> {
-    conn.call(move |conn| {
+    conn.call(move |conn: &mut rusqlite::Connection| {
         let mut stmt = conn.prepare(
             "SELECT g.id, g.name, g.created_by, g.created_at, g.description 
              FROM groups g
@@ -125,7 +125,7 @@ pub async fn get_user_groups(conn: &Connection, user_id: i64) -> Result<Vec<Grou
         )?;
 
         let groups = stmt
-            .query_map(params![user_id], |row| {
+            .query_map(params![user_id], |row: &rusqlite::Row| {
                 Ok(Group {
                     id: row.get(0)?,
                     name: row.get(1)?,
@@ -143,13 +143,13 @@ pub async fn get_user_groups(conn: &Connection, user_id: i64) -> Result<Vec<Grou
 
 /// Get group by ID
 pub async fn get_group(conn: &Connection, group_id: i64) -> Result<Option<Group>> {
-    conn.call(move |conn| {
+    conn.call(move |conn: &mut rusqlite::Connection| {
         let mut stmt = conn.prepare(
             "SELECT id, name, created_by, created_at, description FROM groups WHERE id = ?1",
         )?;
 
         let group = stmt
-            .query_row(params![group_id], |row| {
+            .query_row(params![group_id], |row: &rusqlite::Row| {
                 Ok(Group {
                     id: row.get(0)?,
                     name: row.get(1)?,
@@ -167,7 +167,7 @@ pub async fn get_group(conn: &Connection, group_id: i64) -> Result<Option<Group>
 
 /// Check if user is a member of a group
 pub async fn is_group_member(conn: &Connection, group_id: i64, user_id: i64) -> Result<bool> {
-    conn.call(move |conn| {
+    conn.call(move |conn: &mut rusqlite::Connection| {
         let mut stmt = conn
             .prepare("SELECT COUNT(*) FROM group_members WHERE group_id = ?1 AND user_id = ?2")?;
         let count: i64 = stmt.query_row(params![group_id, user_id], |row| row.get(0))?;
@@ -178,7 +178,7 @@ pub async fn is_group_member(conn: &Connection, group_id: i64, user_id: i64) -> 
 
 /// Check if user is admin of a group
 pub async fn is_group_admin(conn: &Connection, group_id: i64, user_id: i64) -> Result<bool> {
-    conn.call(move |conn| {
+    conn.call(move |conn: &mut rusqlite::Connection| {
         let mut stmt = conn.prepare(
             "SELECT COUNT(*) FROM group_members WHERE group_id = ?1 AND user_id = ?2 AND role = 'admin'"
         )?;
@@ -190,7 +190,7 @@ pub async fn is_group_admin(conn: &Connection, group_id: i64, user_id: i64) -> R
 
 /// Update group name
 pub async fn update_group_name(conn: &Connection, group_id: i64, new_name: String) -> Result<()> {
-    conn.call(move |conn| {
+    conn.call(move |conn: &mut rusqlite::Connection| {
         conn.execute(
             "UPDATE groups SET name = ?1 WHERE id = ?2",
             params![new_name, group_id],
@@ -206,7 +206,7 @@ pub async fn update_group_description(
     group_id: i64,
     new_description: String,
 ) -> Result<()> {
-    conn.call(move |conn| {
+    conn.call(move |conn: &mut rusqlite::Connection| {
         conn.execute(
             "UPDATE groups SET description = ?1 WHERE id = ?2",
             params![new_description, group_id],
@@ -218,7 +218,7 @@ pub async fn update_group_description(
 
 /// Delete a group
 pub async fn delete_group(conn: &Connection, group_id: i64) -> Result<()> {
-    conn.call(move |conn| {
+    conn.call(move |conn: &mut rusqlite::Connection| {
         // Delete all members first (cascade should handle this, but being explicit)
         conn.execute(
             "DELETE FROM group_members WHERE group_id = ?1",
@@ -240,7 +240,7 @@ pub async fn update_member_role(
     user_id: i64,
     new_role: String,
 ) -> Result<()> {
-    conn.call(move |conn| {
+    conn.call(move |conn: &mut rusqlite::Connection| {
         conn.execute(
             "UPDATE group_members SET role = ?1 WHERE group_id = ?2 AND user_id = ?3",
             params![new_role, group_id, user_id],
