@@ -10,16 +10,6 @@ description = "Common library for async server and tui client"
 thiserror = "1"
 toml = "0.8"
 
-tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-http = { workspace = true }
-http-body-util = { workspace = true }
-hyper = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
-anyhow = { workspace = true }
-tokio-tungstenite = { workspace = true }
-tungstenite = { workspace = true }
-bytes = { workspace = true }
-form_urlencoded = { workspace = true }

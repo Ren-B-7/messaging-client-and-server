@@ -1,32 +1,13 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use bytes::Bytes;
+use http::HeaderValue;
 use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full};
 use hyper::{Response, StatusCode, header};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::json;
 use std::convert::Infallible;
 use tracing::{debug, error};
-
-use crate::handlers::http::utils::deliver_page::full;
-
-/// Standard error response structure
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ErrorResponse {
-    pub status: String,
-    pub code: String,
-    pub message: String,
-}
-
-impl ErrorResponse {
-    pub fn new(code: &str, message: &str) -> Self {
-        Self {
-            status: "error".to_string(),
-            code: code.to_string(),
-            message: message.to_string(),
-        }
-    }
-}
 
 /// Serialize any `Serialize` type and deliver it as a JSON response.
 /// This is the primary helper all handlers should use instead of
@@ -37,11 +18,37 @@ pub fn deliver_serialized_json<T: Serialize>(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     let json = serde_json::to_string(data).context("Failed to serialize response")?;
 
-    debug!("Delivering serialized JSON response, size: {} bytes", json.len());
-
-    let response = Response::builder()
+    debug!(
+        "Delivering serialized JSON response, size: {} bytes",
+        json.len()
+    );
+    let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()
         .status(status)
         .header(header::CONTENT_TYPE, "application/json")
+        .body(Full::new(Bytes::from(json)).boxed())
+        .map_err(|e| anyhow!("Failed to build JSON response: {}", e))?;
+
+    Ok(response)
+}
+
+pub fn deliver_serialized_json_with_cookie<T: Serialize>(
+    data: &T,
+    status: StatusCode,
+    cookie: Option<HeaderValue>,
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    let json = serde_json::to_string(data).context("Failed to serialize response")?;
+
+    debug!(
+        "Delivering serialized JSON response, size: {} bytes",
+        json.len()
+    );
+    let mut builder = Response::builder()
+        .status(status)
+        .header(header::CONTENT_TYPE, "application/json");
+    if let Some(c) = cookie {
+        builder = builder.header(header::SET_COOKIE, c);
+    }
+    let response = builder
         .body(Full::new(Bytes::from(json)).boxed())
         .map_err(|e| anyhow!("Failed to build JSON response: {}", e))?;
 
@@ -76,56 +83,6 @@ pub fn deliver_error_json(
         .map_err(|e: http::Error| {
             error!("Failed to build error JSON response: {}", e);
             anyhow!("Failed to build error JSON response: {}", e)
-        })?;
-
-    Ok(response)
-}
-
-/// Delivers a success JSON response with optional data.
-pub fn deliver_success_json<T: Serialize>(
-    data: Option<T>,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    let response_body = match data {
-        Some(d) => json!({
-            "status": "success",
-            "data": d
-        }),
-        None => json!({
-            "status": "success"
-        }),
-    };
-
-    let json_string = response_body.to_string();
-
-    let response = Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(Full::new(Bytes::from(json_string)).boxed())
-        .map_err(|e: http::Error| {
-            error!("Failed to build success JSON response: {}", e);
-            anyhow!("Failed to build success JSON response: {}", e)
-        })?;
-
-    Ok(response)
-}
-
-/// Delivers a JSON response from raw pre-serialized bytes.
-/// Prefer `deliver_serialized_json` when you have a typed value.
-pub fn deliver_json<T: Into<Bytes>>(
-    json: T,
-    status: StatusCode,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    let bytes: Bytes = json.into();
-
-    debug!("Delivering raw JSON response, size: {} bytes", bytes.len());
-
-    let response = Response::builder()
-        .status(status)
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(full(bytes))
-        .map_err(|e: http::Error| {
-            error!("Failed to build JSON response: {}", e);
-            anyhow!("Failed to build JSON response: {}", e)
         })?;
 
     Ok(response)

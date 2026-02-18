@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use bytes::Bytes;
+use http::response;
 use http_body_util::BodyExt;
 use http_body_util::combinators::BoxBody;
 use hyper::{Request, Response, StatusCode};
@@ -10,97 +11,11 @@ use tracing::{error, info, warn};
 
 use crate::AppState;
 use crate::handlers::http::utils::{
-    create_session_cookie, deliver_page, deliver_redirect, deliver_serialized_json,
+    create_session_cookie, deliver_serialized_json, deliver_serialized_json_with_cookie,
 };
+use shared::types::register::*;
 
 /// Registration request data (supports both form-encoded and JSON)
-#[derive(Debug, Clone, Deserialize)]
-pub struct RegistrationData {
-    pub username: String,
-    pub password: String,
-    pub email: Option<String>,
-    #[serde(default)]
-    pub full_name: Option<String>,
-    #[serde(default)]
-    pub avatar: Option<String>,
-}
-
-/// Registration response codes
-#[derive(Debug, Serialize)]
-#[serde(tag = "status", rename_all = "snake_case")]
-pub enum RegistrationResponse {
-    Success {
-        user_id: i64,
-        username: String,
-        message: String,
-        redirect: String,
-        token: Option<String>,
-    },
-    Error {
-        code: String,
-        message: String,
-    },
-}
-
-/// Error codes for registration
-pub enum RegistrationError {
-    UsernameTaken,
-    EmailTaken,
-    InvalidUsername,
-    InvalidPassword,
-    InvalidEmail,
-    EmailRequired,
-    PasswordMismatch,
-    MissingField(String),
-    DatabaseError,
-    InternalError,
-}
-
-impl RegistrationError {
-    fn to_code(&self) -> &'static str {
-        match self {
-            Self::UsernameTaken => "USERNAME_TAKEN",
-            Self::EmailTaken => "EMAIL_TAKEN",
-            Self::InvalidUsername => "INVALID_USERNAME",
-            Self::InvalidPassword => "INVALID_PASSWORD",
-            Self::InvalidEmail => "INVALID_EMAIL",
-            Self::EmailRequired => "EMAIL_REQUIRED",
-            Self::PasswordMismatch => "PASSWORD_MISMATCH",
-            Self::MissingField(_) => "MISSING_FIELD",
-            Self::DatabaseError => "DATABASE_ERROR",
-            Self::InternalError => "INTERNAL_ERROR",
-        }
-    }
-
-    fn to_message(&self) -> String {
-        match self {
-            Self::UsernameTaken => "Username is already taken".to_string(),
-            Self::EmailTaken => "Email is already registered".to_string(),
-            Self::InvalidUsername => {
-                "Username must be 3-32 characters, alphanumeric, underscores, or hyphens only"
-                    .to_string()
-            }
-            Self::InvalidPassword => {
-                "Password must be 8-128 characters with at least one letter and one number"
-                    .to_string()
-            }
-            Self::InvalidEmail => "Invalid email format".to_string(),
-            Self::EmailRequired => "Email is required for registration".to_string(),
-            Self::PasswordMismatch => "Passwords do not match".to_string(),
-            Self::MissingField(field) => format!("Missing required field: {}", field),
-            Self::DatabaseError => "Database error occurred".to_string(),
-            Self::InternalError => "An internal error occurred".to_string(),
-        }
-    }
-
-    fn to_response(&self) -> RegistrationResponse {
-        RegistrationResponse::Error {
-            code: self.to_code().to_string(),
-            message: self.to_message(),
-        }
-    }
-}
-
 /// Main registration handler - supports both JSON and form submissions
 pub async fn handle_register(
     req: Request<hyper::body::Incoming>,
@@ -120,18 +35,11 @@ pub async fn handle_register(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
 
-    let wants_json =
-        content_type.contains("application/json") || accept.contains("application/json");
-
     let registration_data = match parse_and_validate_registration(req, &state).await {
         Ok(data) => data,
         Err(e) => {
             warn!("Registration validation failed: {:?}", e.to_code());
-            if wants_json {
-                return deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST);
-            } else {
-                return deliver_redirect("/register?error=validation_failed");
-            }
+            return deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST);
         }
     };
 
@@ -156,54 +64,28 @@ pub async fn handle_register(
             let instance_cookie = create_session_cookie("instance_id", &session_token, true)
                 .context("Failed to create instance cookie")?;
 
-            if wants_json {
-                let response = RegistrationResponse::Success {
-                    user_id,
-                    username,
-                    message: "Registration successful".to_string(),
-                    redirect: "/chat".to_string(),
-                    token: if session_created {
-                        Some(session_token)
-                    } else {
-                        None
-                    },
-                };
+            let response = RegistrationResponse::Success {
+                user_id,
+                username,
+                message: "Registration successful".to_string(),
+                redirect: "/chat".to_string(),
+                token: if session_created {
+                    Some(session_token)
+                } else {
+                    None
+                },
+            };
 
-                let json =
-                    serde_json::to_string(&response).context("Failed to serialize response")?;
-
-                let response = Response::builder()
-                    .status(StatusCode::CREATED)
-                    .header("content-type", "application/json")
-                    .header("set-cookie", instance_cookie)
-                    .body(deliver_page::full(Bytes::from(json)))
-                    .context("Failed to build response")?;
-
-                Ok(response)
-            } else {
-                // Form submission fallback — redirect with instance cookie set
-                let response = Response::builder()
-                    .status(StatusCode::FOUND)
-                    .header("location", "/chat")
-                    .header("set-cookie", instance_cookie)
-                    .body(deliver_page::empty())
-                    .context("Failed to build redirect response")?;
-
-                Ok(response)
-            }
+            Ok(deliver_serialized_json_with_cookie(
+                &response,
+                StatusCode::OK,
+                Some(instance_cookie),
+            )
+            .unwrap())
         }
         Err(e) => {
             error!("Registration failed: {:?}", e.to_code());
-            if wants_json {
-                deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST)
-            } else {
-                let error_code = match e {
-                    RegistrationError::UsernameTaken => "username_taken",
-                    RegistrationError::EmailTaken => "email_taken",
-                    _ => "registration_failed",
-                };
-                deliver_redirect(&format!("/register?error={}", error_code))
-            }
+            deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST)
         }
     }
 }

@@ -3,82 +3,18 @@ use bytes::Bytes;
 use http_body_util::BodyExt;
 use http_body_util::combinators::BoxBody;
 use hyper::{Request, Response, StatusCode};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::convert::Infallible;
 use tracing::{error, info, warn};
 
 use crate::AppState;
-use crate::handlers::http::utils::{self, deliver_serialized_json};
+use crate::handlers::http::utils::{
+    create_persistent_cookie, create_session_cookie, deliver_redirect,
+    deliver_redirect_with_cookie, deliver_serialized_json,
+};
+use shared::types::login::*;
 
 /// Login request data (supports both form-encoded and JSON)
-#[derive(Debug, Deserialize)]
-pub struct LoginData {
-    #[serde(alias = "email")]
-    pub username: String,
-    pub password: String,
-    #[serde(default)]
-    pub remember_me: bool,
-}
-
-/// Login response codes (for API-style responses)
-#[derive(Debug, Serialize)]
-#[serde(tag = "status", rename_all = "snake_case")]
-pub enum LoginResponse {
-    Success {
-        user_id: i64,
-        username: String,
-        token: String,
-        expires_in: u64,
-        message: String,
-    },
-    Error {
-        code: String,
-        message: String,
-    },
-}
-
-/// Error codes for login
-pub enum LoginError {
-    InvalidCredentials,
-    UserBanned,
-    UserNotFound,
-    MissingField(String),
-    DatabaseError,
-    InternalError,
-}
-
-impl LoginError {
-    fn to_code(&self) -> &'static str {
-        match self {
-            Self::InvalidCredentials => "INVALID_CREDENTIALS",
-            Self::UserBanned => "USER_BANNED",
-            Self::UserNotFound => "USER_NOT_FOUND",
-            Self::MissingField(_) => "MISSING_FIELD",
-            Self::DatabaseError => "DATABASE_ERROR",
-            Self::InternalError => "INTERNAL_ERROR",
-        }
-    }
-
-    fn to_message(&self) -> String {
-        match self {
-            Self::InvalidCredentials => "Invalid username or password".to_string(),
-            Self::UserBanned => "This account has been banned".to_string(),
-            Self::UserNotFound => "User not found".to_string(),
-            Self::MissingField(field) => format!("Missing required field: {}", field),
-            Self::DatabaseError => "Database error occurred".to_string(),
-            Self::InternalError => "An internal error occurred".to_string(),
-        }
-    }
-
-    fn to_response(&self) -> LoginResponse {
-        LoginResponse::Error {
-            code: self.to_code().to_string(),
-            message: self.to_message(),
-        }
-    }
-}
-
 /// Main login handler
 pub async fn handle_login(
     req: Request<hyper::body::Incoming>,
@@ -124,34 +60,19 @@ pub async fn handle_login(
 
             let token_expiry_secs = state.config.auth.token_expiry_minutes * 60;
 
-            // The session token is stored both in the cookie and returned in the JSON
-            // body so the frontend can send it as a Bearer header on subsequent requests.
+            // The session token is stored in the cookie so the user is authenticated
+            // on the /chat page they're being redirected to.
             let instance_cookie = if login_data.remember_me {
                 let max_age = std::time::Duration::from_secs(token_expiry_secs);
-                utils::create_persistent_cookie("instance_id", &token, max_age, true)
+                create_persistent_cookie("instance_id", &token, max_age, true)
                     .context("Failed to create persistent instance cookie")?
             } else {
-                utils::create_session_cookie("instance_id", &token, true)
+                create_session_cookie("instance_id", &token, true)
                     .context("Failed to create session instance cookie")?
             };
 
-            let response_data = LoginResponse::Success {
-                user_id,
-                username,
-                token,
-                expires_in: token_expiry_secs,
-                message: "Login successful".to_string(),
-            };
-
-            let json =
-                serde_json::to_string(&response_data).context("Failed to serialize response")?;
-
-            let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()
-                .status(StatusCode::OK)
-                .header("content-type", "application/json")
-                .header("set-cookie", instance_cookie)
-                .body(utils::deliver_page::full(Bytes::from(json)).boxed())
-                .context("Failed to build response")?;
+            // Redirect to /chat with the session cookie set
+            let response = deliver_redirect_with_cookie("/chat", Some(instance_cookie))?;
 
             Ok(response)
         }

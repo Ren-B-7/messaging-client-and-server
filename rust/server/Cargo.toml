@@ -36,7 +36,6 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
 tokio-tungstenite = { workspace = true }
-tungstenite = { workspace = true }
 bytes = { workspace = true }
 form_urlencoded = { workspace = true }
 

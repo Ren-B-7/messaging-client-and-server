@@ -98,7 +98,7 @@ pub async fn handle_login(
             Ok(data) => data,
             Err(e) => {
                 warn!("Admin login JSON parsing failed: {:?}", e.to_code());
-                return deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST);
+                return deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST, None);
             }
         }
     } else {
@@ -106,14 +106,14 @@ pub async fn handle_login(
             Ok(data) => data,
             Err(e) => {
                 warn!("Admin login form parsing failed: {:?}", e.to_code());
-                return deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST);
+                return deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST, None);
             }
         }
     };
 
     if let Err(e) = validate_login(&login_data) {
         warn!("Admin login validation failed: {:?}", e.to_code());
-        return deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST);
+        return deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST, None);
     }
 
     match attempt_login(&login_data, &state).await {
@@ -124,7 +124,6 @@ pub async fn handle_login(
             );
 
             let token_expiry_secs = state.config.auth.token_expiry_minutes * 60;
-
 
             // The session token is stored both in the cookie and returned in the JSON
             // body so the frontend can send it as a Bearer header on subsequent requests.
@@ -160,7 +159,7 @@ pub async fn handle_login(
         }
         Err(e) => {
             warn!("Admin login failed: {:?}", e.to_code());
-            deliver_serialized_json(&e.to_response(), StatusCode::UNAUTHORIZED)
+            deliver_serialized_json(&e.to_response(), StatusCode::UNAUTHORIZED, None)
         }
     }
 }

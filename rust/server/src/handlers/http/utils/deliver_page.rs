@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
 use bytes::Bytes;
+use http::{HeaderValue, response};
 use http_body_util::{BodyExt, Empty, Full, combinators::BoxBody};
 use hyper::{Response, StatusCode, header};
 use std::convert::Infallible;
@@ -183,6 +184,28 @@ pub fn deliver_redirect(location: &str) -> Result<Response<BoxBody<Bytes, Infall
     Ok(response)
 }
 
+/// Delivers a redirect response
+pub fn deliver_redirect_with_cookie(
+    location: &str,
+    cookie: Option<HeaderValue>,
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    info!("Delivering redirect to: {}", location);
+
+    let empty_bytes: Bytes = Bytes::from("");
+    let mut builder = Response::builder()
+        .status(StatusCode::FOUND)
+        .header(header::LOCATION, location);
+
+    if let Some(c) = cookie {
+        builder = builder.header(header::SET_COOKIE, c);
+    }
+    let response = builder.body(full(empty_bytes)).map_err(|e: http::Error| {
+        error!("Failed to build redirect response to {}: {}", location, e);
+        anyhow!("Failed to build redirect response: {}", e)
+    })?;
+
+    Ok(response)
+}
 /// Delivers a plain text response
 pub fn deliver_text<T: Into<Bytes>>(text: T) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     let bytes_string: Bytes = text.into();
