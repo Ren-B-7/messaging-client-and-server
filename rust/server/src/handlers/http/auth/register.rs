@@ -62,12 +62,10 @@ pub async fn handle_register(
                 },
             };
 
-            Ok(deliver_serialized_json_with_cookie(
-                &response,
-                StatusCode::OK,
-                Some(instance_cookie),
+            Ok(
+                deliver_serialized_json_with_cookie(&response, StatusCode::OK, instance_cookie)
+                    .unwrap(),
             )
-            .unwrap())
         }
         Err(e) => {
             error!("Registration failed: {:?}", e.to_code());

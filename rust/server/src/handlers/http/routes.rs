@@ -1,15 +1,15 @@
-use anyhow::{Context, Result};
-use bytes::Bytes;
-use http_body_util::BodyExt;
-use http_body_util::combinators::BoxBody;
-use hyper::{Method, Request, Response, StatusCode};
 use std::convert::Infallible;
 use std::future::Future;
 use std::pin::Pin;
 
+use anyhow::{Context, Result};
+use bytes::Bytes;
+use http_body_util::{BodyExt, combinators::BoxBody};
+use hyper::{Method, Request, Response, StatusCode};
+
 use crate::AppState;
-use crate::handlers::http::utils::CacheStrategy;
 use crate::handlers::http::{auth, messaging, profile, utils::*};
+use shared::types::cache::*;
 
 /// Type alias for route handler functions
 type RouteHandler = Box<
@@ -234,11 +234,6 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
             auth::handle_register(req, state)
                 .await
                 .context("Register failed")
-        })
-        .post("/api/login", |req, state| async move {
-            auth::handle_login(req, state)
-                .await
-                .context("Login attempt failed")
         })
         .post("/api/logout", |req, state| async move {
             auth::handle_logout(req, state)

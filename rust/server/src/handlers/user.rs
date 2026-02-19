@@ -16,7 +16,7 @@ use tracing::{error, info, warn};
 
 use crate::AppState;
 use crate::handlers::http::routes::{Router, build_api_router_with_config};
-use crate::handlers::http::{admin::*, auth::*, utils::*};
+use crate::handlers::http::{auth::*, utils::*};
 
 /// User service implementation
 #[derive(Clone, Debug)]
@@ -165,6 +165,16 @@ pub fn build_user_router_with_config(
         .get("/chat", move |_req, _| async move {
             let path = format!("{}/chat.html", web_dir);
             deliver_html_page(path).context("failed to deliver chat page")
+        })
+        .post("/api/login", |req, state| async move {
+            handle_login(req, state)
+                .await
+                .context("Login attempt failed")
+        })
+        .post("/login", |req, state| async move {
+            handle_login(req, state)
+                .await
+                .context("Login attempt failed")
         });
 
     router

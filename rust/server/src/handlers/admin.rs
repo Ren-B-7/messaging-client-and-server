@@ -5,18 +5,17 @@ use std::pin::Pin;
 
 use anyhow::{Context, Result};
 use bytes::Bytes;
-use http_body_util::BodyExt;
-use http_body_util::Full;
-use http_body_util::combinators::BoxBody;
+use http_body_util::{BodyExt, combinators::BoxBody};
 use hyper::body::Incoming as IncomingBody;
 use hyper::{Request, Response, StatusCode};
 use std::task::{Context as taskContext, Poll};
 use tower::Service;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 use crate::AppState;
+use crate::handlers::http::auth::handle_admin_login;
 use crate::handlers::http::routes::{Router, build_api_router_with_config};
-use crate::handlers::http::{admin::*, auth::*, utils::*};
+use crate::handlers::http::{admin::*, utils::*};
 
 /// Admin service implementation
 #[derive(Clone, Debug)]
@@ -198,15 +197,27 @@ pub fn build_admin_router_with_config(
                 .await
                 .context("Demote failed")
         })
+        .post("/admin/api/login", |req, state| async move {
+            handle_admin_login(req, state)
+                .await
+                .context("Login attempt failed")
+        })
+        .post("/api/login", |req, state| async move {
+            handle_admin_login(req, state)
+                .await
+                .context("Login attempt failed")
+        })
+        .post("/login", |req, state| async move {
+            handle_admin_login(req, state)
+                .await
+                .context("Login attempt failed")
+        })
         // ── Health check ─────────────────────────────────────────────────────
         .get("/admin/health", |_req, _state| async move {
-            let body = r#"{"status":"success","service":"admin","health":"ok"}"#;
-            let response = Response::builder()
-                .status(StatusCode::OK)
-                .header("content-type", "application/json")
-                .body(Full::new(Bytes::from(body)).boxed())
-                .unwrap();
-            Ok(response)
+            deliver_serialized_json(
+                &serde_json::json!({"status":"success","service":"admin","health":"ok"}),
+                StatusCode::OK,
+            )
         });
 
     router

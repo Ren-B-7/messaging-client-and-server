@@ -1,32 +1,15 @@
-use std::fmt;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
 use bytes::Bytes;
-use http::{HeaderValue, response};
+use http::HeaderValue;
 use http_body_util::{BodyExt, Empty, Full, combinators::BoxBody};
 use hyper::{Response, StatusCode, header};
 use std::convert::Infallible;
 use tracing::{debug, error, info};
 
 use crate::handlers::http::utils::headers;
-
-#[derive(Debug, Clone, Copy)]
-pub enum CacheStrategy {
-    Yes,      // Default (1 year)
-    No,       // 1 hour cache
-    Explicit, // No cache at all
-}
-
-impl fmt::Display for CacheStrategy {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            CacheStrategy::Yes => write!(f, "Yes (1 year)"),
-            CacheStrategy::No => write!(f, "No (1 hour)"),
-            CacheStrategy::Explicit => write!(f, "Explicit (no-cache)"),
-        }
-    }
-}
+use shared::types::cache::CacheStrategy;
 
 /// Expand tilde (~) in path to home directory
 fn expand_tilde<P: AsRef<Path>>(path: P) -> PathBuf {

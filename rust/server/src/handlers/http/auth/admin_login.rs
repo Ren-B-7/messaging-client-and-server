@@ -77,14 +77,11 @@ pub async fn handle_login(
                 message: "Admin login successful".to_string(),
             };
 
-            let response = deliver_serialized_json_with_cookie(
+            Ok(deliver_serialized_json_with_cookie(
                 &response_data,
                 StatusCode::OK,
-                Some(instance_cookie),
-            )
-            .unwrap();
-
-            Ok(response)
+                instance_cookie,
+            )?)
         }
         Err(e) => {
             warn!("Admin login failed: {:?}", e.to_code());

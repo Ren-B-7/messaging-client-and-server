@@ -1,3 +1,4 @@
+pub mod cache;
 pub mod json_error;
 pub mod login;
 pub mod message;
@@ -7,9 +8,15 @@ pub mod server_stats;
 pub mod update;
 
 #[allow(unused_imports)]
+pub use self::cache::CacheStrategy;
+#[allow(unused_imports)]
 pub use self::json_error::ErrorResponse;
 #[allow(unused_imports)]
 pub use self::login::{LoginData, LoginError, LoginResponse};
+#[allow(unused_imports)]
+pub use self::message::{
+    GetMessagesQuery, MessageError, MessageResponse, SendMessageData, SendMessageResponse,
+};
 #[allow(unused_imports)]
 pub use self::register::{RegistrationData, RegistrationError, RegistrationResponse};
 #[allow(unused_imports)]

@@ -1,9 +1,10 @@
+use std::convert::Infallible;
+
 use anyhow::{Context, Result};
 use bytes::Bytes;
 use http_body_util::combinators::BoxBody;
 use hyper::body::Incoming as IncomingBody;
 use hyper::{Request, Response, StatusCode};
-use std::convert::Infallible;
 use tokio_rusqlite::rusqlite;
 use tracing::info;
 
