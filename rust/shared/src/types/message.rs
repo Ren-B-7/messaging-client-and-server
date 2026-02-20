@@ -16,6 +16,29 @@ pub struct SendMessageData {
     pub message_type: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct Message {
+    pub id: i64,
+    pub sender_id: i64,
+    pub recipient_id: Option<i64>,
+    pub group_id: Option<i64>,
+    pub content: Vec<u8>, // Compressed/encrypted message data
+    pub sent_at: i64,
+    pub delivered_at: Option<i64>,
+    pub read_at: Option<i64>,
+    pub is_encrypted: bool,
+    pub message_type: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct NewMessage {
+    pub sender_id: i64,
+    pub recipient_id: Option<i64>,
+    pub group_id: Option<i64>,
+    pub content: Vec<u8>,
+    pub is_encrypted: bool,
+    pub message_type: String,
+}
 /// Get messages query parameters
 #[derive(Debug, Deserialize)]
 pub struct GetMessagesQuery {

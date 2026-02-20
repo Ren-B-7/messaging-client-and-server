@@ -83,24 +83,23 @@ pub fn deliver_error_json(
     Ok(response)
 }
 
-/// Delivers a success JSON response with optional data.
+/// Delivers a success JSON response with optional data, message, and status code.
 pub fn deliver_success_json<T: Serialize>(
     data: Option<T>,
+    message: Option<&str>,
+    status: StatusCode,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    let response_body = match data {
-        Some(d) => json!({
-            "status": "success",
-            "data": d
-        }),
-        None => json!({
-            "status": "success"
-        }),
+    let response_body = match (data, message) {
+        (Some(d), Some(m)) => json!({ "status": "success", "message": m, "data": d }),
+        (Some(d), None)    => json!({ "status": "success", "data": d }),
+        (None,    Some(m)) => json!({ "status": "success", "message": m }),
+        (None,    None)    => json!({ "status": "success" }),
     };
 
     let json_string = response_body.to_string();
 
     let response = Response::builder()
-        .status(StatusCode::OK)
+        .status(status)
         .header(header::CONTENT_TYPE, "application/json")
         .body(Full::new(Bytes::from(json_string)).boxed())
         .map_err(|e: http::Error| {

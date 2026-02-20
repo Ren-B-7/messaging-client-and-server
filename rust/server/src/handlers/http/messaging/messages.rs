@@ -8,12 +8,8 @@ use hyper::{Request, Response, StatusCode};
 use tracing::{error, info, warn};
 
 use crate::AppState;
-use crate::handlers::http::utils::deliver_serialized_json;
+use crate::handlers::http::utils::{deliver_serialized_json, deliver_success_json};
 use shared::types::message::*;
-
-// ---------------------------------------------------------------------------
-// Chat management
-// ---------------------------------------------------------------------------
 
 /// Get all chats (direct + group) for the authenticated user
 pub async fn handle_get_chats(
@@ -30,10 +26,44 @@ pub async fn handle_get_chats(
         }
     };
 
-    // TODO: implement db_messages::get_chats and wire it in here
-    let empty_chats: Vec<serde_json::Value> = vec![];
-    deliver_serialized_json(
-        &serde_json::json!({ "status": "success", "data": { "chats": empty_chats } }),
+    use crate::database::messages as db_messages;
+    use crate::database::groups as db_groups;
+
+    // DM conversations
+    let conversations = db_messages::get_recent_conversations(&state.db, user_id, 50)
+        .await
+        .map_err(|e| anyhow::anyhow!("Database error getting conversations: {}", e))?;
+
+    let dm_chats: Vec<serde_json::Value> = conversations
+        .into_iter()
+        .map(|(other_user_id, last_message_time)| serde_json::json!({
+            "type":            "direct",
+            "other_user_id":   other_user_id,
+            "last_message_at": last_message_time,
+        }))
+        .collect();
+
+    // Group conversations
+    let groups = db_groups::get_user_groups(&state.db, user_id)
+        .await
+        .map_err(|e| anyhow::anyhow!("Database error getting groups: {}", e))?;
+
+    let group_chats: Vec<serde_json::Value> = groups
+        .into_iter()
+        .map(|g| serde_json::json!({
+            "type":       "group",
+            "group_id":   g.id,
+            "name":       g.name,
+            "created_at": g.created_at,
+        }))
+        .collect();
+
+    let mut chats = dm_chats;
+    chats.extend(group_chats);
+
+    deliver_success_json(
+        Some(serde_json::json!({ "chats": chats })),
+        None,
         StatusCode::OK,
     )
 }
@@ -82,22 +112,40 @@ pub async fn handle_create_chat(
         all_participants.push(user_id);
     }
 
-    // TODO: implement db_messages::create_chat and wire it in here
-    let chat_id: i64 = 0;
-    info!("Chat {} created by user {} (stub)", chat_id, user_id);
-    deliver_serialized_json(
-        &serde_json::json!({
-            "status": "success",
-            "message": "Chat created successfully",
-            "data": { "chat_id": chat_id, "name": name, "participants": all_participants }
-        }),
+    // A "chat" is represented as a group in the database — create one and add all participants.
+    use crate::database::groups as db_groups;
+
+    let group_id = db_groups::create_group(
+        &state.db,
+        db_groups::NewGroup {
+            name: name.clone().unwrap_or_else(|| "Direct Chat".to_string()),
+            created_by: user_id,
+            description: None,
+        },
+    )
+    .await
+    .map_err(|e| {
+        error!("Failed to create chat group: {}", e);
+        anyhow::anyhow!("Database error: {}", e)
+    })?;
+
+    // Add all participants (creator was already added as admin by create_group)
+    for &participant_id in all_participants.iter().filter(|&&id| id != user_id) {
+        db_groups::add_group_member(&state.db, group_id, participant_id, "member".to_string())
+            .await
+            .map_err(|e| {
+                error!("Failed to add participant {}: {}", participant_id, e);
+                anyhow::anyhow!("Database error: {}", e)
+            })?;
+    }
+
+    info!("Chat {} created by user {}", group_id, user_id);
+    deliver_success_json(
+        Some(serde_json::json!({ "chat_id": group_id, "name": name, "participants": all_participants })),
+        Some("Chat created successfully"),
         StatusCode::CREATED,
     )
 }
-
-// ---------------------------------------------------------------------------
-// Sending & receiving messages
-// ---------------------------------------------------------------------------
 
 /// Send a message — to either a direct recipient (`recipient_id`) or a group/chat (`group_id` / `chat_id`)
 pub async fn handle_send_message(
@@ -329,7 +377,7 @@ async fn send_message(
 
     let message_id = db_messages::send_message(
         &state.db,
-        db_messages::NewMessage {
+        shared::types::message::NewMessage {
             sender_id,
             recipient_id: data.recipient_id,
             group_id: data.group_id,

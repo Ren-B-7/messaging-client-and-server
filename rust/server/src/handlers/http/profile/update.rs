@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::convert::Infallible;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
+use tokio_rusqlite::rusqlite;
 use bytes::Bytes;
 use http_body_util::{BodyExt, combinators::BoxBody};
 use hyper::{Request, Response, StatusCode};
@@ -143,12 +144,28 @@ async fn get_user_profile(
         })?
         .ok_or(ProfileError::UserNotFound)?;
 
+    // Fetch last_login separately from the sessions table
+    let last_login = state
+        .db
+        .call(move |conn| {
+            let result: Option<i64> = conn
+                .query_row(
+                    "SELECT last_login FROM users WHERE id = ?1",
+                    [user.id],
+                    |r| r.get(0),
+                )
+                .unwrap_or(None);
+            Ok::<_, tokio_rusqlite::rusqlite::Error>(result)
+        })
+        .await
+        .unwrap_or(None);
+
     Ok(ProfileData {
         user_id: user.id,
         username: user.username,
         email: user.email,
         created_at: user.created_at,
-        last_login: None, // TODO: Add last_login to User struct
+        last_login,
     })
 }
 
@@ -242,8 +259,21 @@ async fn update_user_profile(
             return Err(ProfileError::EmailTaken);
         }
 
-        // TODO: Add update_email function to register module
-        // db_register::update_email(&state.db, user_id, new_email.clone()).await?;
+        let email_to_set = new_email.clone();
+        state
+            .db
+            .call(move |conn| {
+                conn.execute(
+                    "UPDATE users SET email = ?1 WHERE id = ?2",
+                    rusqlite::params![email_to_set, user_id],
+                )?;
+                Ok::<_, tokio_rusqlite::rusqlite::Error>(())
+            })
+            .await
+            .map_err(|e| {
+                error!("Database error updating email: {}", e);
+                ProfileError::DatabaseError
+            })?;
     }
 
     Ok(())

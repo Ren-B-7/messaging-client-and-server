@@ -34,7 +34,7 @@ pub async fn handle_server_config(
                 .unwrap_or(0);
 
             let banned_users: i64 = conn
-                .query_row("SELECT COUNT(*) FROM users WHERE banned = 1", [], |r| {
+                .query_row("SELECT COUNT(*) FROM users WHERE is_banned = 1", [], |r| {
                     r.get(0)
                 })
                 .unwrap_or(0);
