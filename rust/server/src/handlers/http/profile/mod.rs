@@ -1,5 +1,6 @@
 pub mod get;
 pub mod settings;
+#[allow(dead_code)]
 pub mod update;
 
 // Re-export main handlers

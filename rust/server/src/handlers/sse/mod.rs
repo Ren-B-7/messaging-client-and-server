@@ -1,6 +1,6 @@
 mod sse;
 
-pub use sse::{SseManager, handle_sse_subscribe, SseStreamBuilder};
+pub use sse::{ChatContext, SseManager, SseStreamBuilder, handle_sse_subscribe};
 
 #[cfg(test)]
 mod tests {
@@ -15,7 +15,7 @@ mod tests {
         let tx1 = manager.get_channel(user_id.clone()).await;
         let tx2 = manager.get_channel(user_id).await;
 
-        // Both should reference same channel
+        // Both calls must return handles to the same underlying channel
         assert_eq!(tx1.is_closed(), tx2.is_closed());
     }
 
@@ -36,7 +36,7 @@ mod tests {
 
         let result = manager.broadcast_to_user(event.clone()).await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 1); // One subscriber
+        assert_eq!(result.unwrap(), 1); // one subscriber
 
         let received = rx.recv().await;
         assert!(received.is_ok());
@@ -72,21 +72,21 @@ mod tests {
         let _tx1 = manager.get_channel(user1.clone()).await;
         let tx2 = manager.get_channel(user2.clone()).await;
 
-        let _rx2 = tx2.subscribe(); // Keep user2's channel active
+        let _rx2 = tx2.subscribe(); // Keep user2 active
 
         manager.cleanup().await;
 
-        // user1 should be removed, user2 should remain
         let channels = manager.channels.read().await;
-        assert!(!channels.contains_key(&user1));
-        assert!(channels.contains_key(&user2));
+        assert!(!channels.contains_key(&user1), "user1 should be removed");
+        assert!(channels.contains_key(&user2), "user2 should remain");
     }
 
     #[tokio::test]
-    async fn test_broadcast_with_no_subscribers() {
+    async fn test_broadcast_with_no_channel() {
         let manager = SseManager::new();
-        let user_id = "test-user".to_string();
+        let user_id = "ghost-user".to_string();
 
+        // No channel created — broadcast_to_user returns Ok(0)
         let event = SseEvent {
             user_id,
             event_type: "test".to_string(),
@@ -96,11 +96,11 @@ mod tests {
 
         let result = manager.broadcast_to_user(event).await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 0); // No subscribers
+        assert_eq!(result.unwrap(), 0);
     }
 
     #[tokio::test]
-    async fn test_channel_event_streaming() {
+    async fn test_channel_event_ordering() {
         let manager = SseManager::new();
         let user_id = "alice".to_string();
 
@@ -122,17 +122,14 @@ mod tests {
             },
         ];
 
-        // Send all events
-        for event in events.iter() {
-            let _ = manager.broadcast_to_user(event.clone()).await;
+        for event in &events {
+            manager.broadcast_to_user(event.clone()).await.unwrap();
         }
 
-        // Receive all events
-        let received1 = rx.recv().await.unwrap();
-        let received2 = rx.recv().await.unwrap();
-
-        assert_eq!(received1.event_type, "message");
-        assert_eq!(received2.event_type, "typing");
+        let r1 = rx.recv().await.unwrap();
+        let r2 = rx.recv().await.unwrap();
+        assert_eq!(r1.event_type, "message");
+        assert_eq!(r2.event_type, "typing");
     }
 
     #[tokio::test]
@@ -143,33 +140,25 @@ mod tests {
         let tx = manager.get_channel(user_id.clone()).await;
         let mut rx = tx.subscribe();
 
-        // Spawn multiple tasks broadcasting events
         let mut handles = vec![];
-
         for i in 0..5 {
-            let manager_clone = manager.clone();
-            let user_id_clone = user_id.clone();
-
-            let handle = tokio::spawn(async move {
-                let event = SseEvent {
-                    user_id: user_id_clone,
+            let m = manager.clone();
+            let uid = user_id.clone();
+            handles.push(tokio::spawn(async move {
+                m.broadcast_to_user(SseEvent {
+                    user_id: uid,
                     event_type: "concurrent".to_string(),
                     data: serde_json::json!({"index": i}),
                     timestamp: i as i64,
-                };
-
-                manager_clone.broadcast_to_user(event).await
-            });
-
-            handles.push(handle);
+                })
+                .await
+            }));
         }
 
-        // Wait for all to complete
-        for handle in handles {
-            let _ = handle.await;
+        for h in handles {
+            h.await.unwrap().unwrap();
         }
 
-        // Should receive all 5 events
         let mut count = 0;
         loop {
             match tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await {
@@ -177,7 +166,6 @@ mod tests {
                 _ => break,
             }
         }
-
         assert_eq!(count, 5);
     }
 
@@ -198,11 +186,10 @@ mod tests {
             timestamp: 1000,
         };
 
-        let result = manager.broadcast_to_user(event.clone()).await;
+        let result = manager.broadcast_to_user(event).await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 3); // Three subscribers
+        assert_eq!(result.unwrap(), 3);
 
-        // All subscribers should receive the event
         assert!(rx1.recv().await.is_ok());
         assert!(rx2.recv().await.is_ok());
         assert!(rx3.recv().await.is_ok());
@@ -213,10 +200,9 @@ mod tests {
         let manager = SseManager::new();
 
         let user1 = "alice".to_string();
-        let user2 = "bob".to_string();
+        let user2 = "bob".to_string();   // channel exists but no subscriber
         let user3 = "charlie".to_string();
 
-        // Only subscribe user1 and user3
         let tx1 = manager.get_channel(user1.clone()).await;
         let _tx2 = manager.get_channel(user2.clone()).await;
         let tx3 = manager.get_channel(user3.clone()).await;
@@ -231,13 +217,11 @@ mod tests {
             timestamp: 2000,
         };
 
-        // Broadcast to all three
         manager
             .broadcast_to_users(event, vec![user1, user2, user3])
             .await
             .unwrap();
 
-        // user1 and user3 should receive (user2 has no subscribers, but that's ok)
         assert!(rx1.recv().await.is_ok());
         assert!(rx3.recv().await.is_ok());
     }
@@ -254,9 +238,7 @@ mod tests {
             "message": "hello world",
             "user_id": 123,
             "tags": ["important", "urgent"],
-            "nested": {
-                "key": "value"
-            }
+            "nested": { "key": "value" }
         });
 
         let event = SseEvent {
@@ -272,5 +254,44 @@ mod tests {
         assert_eq!(received.data, original_data);
         assert_eq!(received.event_type, "complex_event");
         assert_eq!(received.user_id, user_id);
+    }
+
+    // ── ChatContext parsing ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_chat_context_direct() {
+        let mut p = std::collections::HashMap::new();
+        p.insert("other_user_id".to_string(), "42".to_string());
+        let ctx = ChatContext::from_params(&p).unwrap();
+        assert!(matches!(ctx, ChatContext::Direct { other_user_id: 42 }));
+    }
+
+    #[test]
+    fn test_chat_context_group_by_group_id() {
+        let mut p = std::collections::HashMap::new();
+        p.insert("group_id".to_string(), "7".to_string());
+        let ctx = ChatContext::from_params(&p).unwrap();
+        assert!(matches!(ctx, ChatContext::Group { group_id: 7 }));
+    }
+
+    #[test]
+    fn test_chat_context_group_by_chat_id() {
+        let mut p = std::collections::HashMap::new();
+        p.insert("chat_id".to_string(), "99".to_string());
+        let ctx = ChatContext::from_params(&p).unwrap();
+        assert!(matches!(ctx, ChatContext::Group { group_id: 99 }));
+    }
+
+    #[test]
+    fn test_chat_context_missing_returns_none() {
+        let p = std::collections::HashMap::new();
+        assert!(ChatContext::from_params(&p).is_none());
+    }
+
+    #[test]
+    fn test_chat_context_invalid_value_returns_none() {
+        let mut p = std::collections::HashMap::new();
+        p.insert("other_user_id".to_string(), "not-a-number".to_string());
+        assert!(ChatContext::from_params(&p).is_none());
     }
 }

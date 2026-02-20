@@ -92,7 +92,7 @@ pub async fn handle_logout(
             info!("User logged out successfully");
 
             // Create cookie to clear auth token
-            let clear_cookie = create_session_cookie("instance_id", "", true)
+            let clear_cookie = create_session_cookie("auth_id", "", true)
                 .context("Failed to create session instance cookie")?;
 
             let response_body = SettingsResponse::Success {
@@ -184,7 +184,7 @@ fn extract_token_from_request(req: &Request<hyper::body::Incoming>) -> Option<&s
                 .and_then(|cookies| {
                     cookies
                         .split(';')
-                        .find(|c| c.trim().starts_with("auth_token="))
+                        .find(|c| c.trim().starts_with("auth_id="))
                         .and_then(|c| c.split('=').nth(1))
                 })
         })

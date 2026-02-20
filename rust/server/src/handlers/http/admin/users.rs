@@ -31,7 +31,7 @@ pub async fn require_admin(
                 .and_then(|cookies| {
                     cookies
                         .split(';')
-                        .find(|c| c.trim().starts_with("instance_id="))
+                        .find(|c| c.trim().starts_with("auth_id="))
                         .and_then(|c| c.split('=').nth(1))
                 })
         });

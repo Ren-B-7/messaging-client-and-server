@@ -71,7 +71,7 @@ async fn extract_user_from_request(req: &Request<IncomingBody>, state: &AppState
                 .and_then(|cookies| {
                     cookies
                         .split(';')
-                        .find(|c| c.trim().starts_with("auth_token="))
+                        .find(|c| c.trim().starts_with("auth_id="))
                         .and_then(|c| c.split('=').nth(1))
                 })
         })

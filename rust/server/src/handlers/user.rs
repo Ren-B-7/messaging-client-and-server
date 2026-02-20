@@ -68,16 +68,12 @@ impl Service<Request<IncomingBody>> for UserService {
                         StatusCode::INTERNAL_SERVER_ERROR,
                     )
                     .unwrap_or_else(|delivery_err| {
-                        error!(
-                            "Failed to deliver error response: {:?}",
-                            delivery_err
-                        );
+                        error!("Failed to deliver error response: {:?}", delivery_err);
 
-                        let fallback_body =
-                            http_body_util::Full::new(Bytes::from(
-                                r#"{"status":"error","code":"INTERNAL_ERROR","message":"Internal Server Error"}"#,
-                            ))
-                            .boxed();
+                        let fallback_body = http_body_util::Full::new(Bytes::from(
+                            r#"{"status":"error","code":"INTERNAL_ERROR","message":"Internal Server Error"}"#,
+                        ))
+                        .boxed();
 
                         Response::builder()
                             .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -102,7 +98,7 @@ async fn user_conn(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("User request from {}: {} {}", addr, req.method(), req.uri());
 
-    let blocked_paths: &HashSet<String> = &state.config.read().await.paths.blocked_paths.clone();
+    let blocked_paths: HashSet<String> = state.config.read().await.paths.blocked_paths.clone();
     let path: String = req.uri().path().to_string();
 
     // CRITICAL: Block any /admin/* paths on the user service
@@ -115,14 +111,12 @@ async fn user_conn(
             .context("Failed to deliver FORBIDDEN error response");
     }
 
-    // Check if path is in the blocked paths list
     if blocked_paths.contains(&path) {
         warn!("Blocked path access attempt from {}: {}", addr, path);
         return deliver_error_json("FORBIDDEN", "Access Denied", StatusCode::FORBIDDEN)
             .context("Failed to deliver FORBIDDEN error response");
     }
 
-    // Route through the user router
     router
         .route(req, state)
         .await
@@ -133,7 +127,6 @@ pub fn build_user_router_with_config(
     web_dir_static: Option<String>,
     icons_dir_static: Option<String>,
 ) -> Router {
-    // Leak paths for use in async closures that require 'static lifetime
     let web_dir: &'static str = web_dir_static
         .clone()
         .map(|d| -> &'static str { Box::leak(d.into_boxed_str()) })
@@ -142,7 +135,7 @@ pub fn build_user_router_with_config(
     let mut router = build_api_router_with_config(web_dir_static, icons_dir_static);
 
     router = router
-        // ── Dashboard / HTML shell ──────────────────────────────────────────
+        // ── HTML pages ──────────────────────────────────────────────────────
         .get("/login", move |_req, _| async move {
             let path = format!("{}/index.html", web_dir);
             deliver_html_page(path).context("failed to deliver login page")
@@ -167,6 +160,7 @@ pub fn build_user_router_with_config(
             let path = format!("{}/chat.html", web_dir);
             deliver_html_page(path).context("failed to deliver chat page")
         })
+        // ── Auth ────────────────────────────────────────────────────────────
         .post("/api/login", |req, state| async move {
             handle_login(req, state)
                 .await
@@ -177,12 +171,20 @@ pub fn build_user_router_with_config(
                 .await
                 .context("Login attempt failed")
         })
+        // ── Real-time SSE stream ────────────────────────────────────────────
+        //
+        // Auth is handled inside handle_sse_subscribe (Bearer header or
+        // instance_id / auth_token cookie). Chat context is passed via query
+        // params: ?other_user_id=<id>  or  ?group_id=<id>  or  ?chat_id=<id>
+        //
+        // On connect the handler:
+        //   1. Validates the session token
+        //   2. Loads and replays chat history as history_message events
+        //   3. Parks on the broadcast channel for live message_sent events
         .get("/api/stream", |req, state| async move {
-            // TODO: Extract user_id from token/session
-            let user_id = "authenticated-user-id".to_string();
-            sse::handle_sse_subscribe(req, state, user_id)
+            sse::handle_sse_subscribe(req, state)
                 .await
-                .context("SSE subscription failed")
+                .map_err(|e| anyhow::anyhow!("SSE subscription failed: {:?}", e))
         });
 
     router

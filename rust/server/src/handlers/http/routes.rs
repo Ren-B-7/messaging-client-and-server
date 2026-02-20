@@ -270,7 +270,7 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
                 .context("Message send failed")
         })
         .get("/api/messages", |req, state| async move {
-            messaging::handle_get_messages(req, state)
+            messaging::handle_get_messages(req, state, None)
                 .await
                 .context("Message get attempt failed")
         })

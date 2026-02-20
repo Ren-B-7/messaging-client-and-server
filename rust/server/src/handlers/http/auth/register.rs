@@ -47,7 +47,7 @@ pub async fn handle_register(
 
             // The session token is stored both in the cookie and returned in the JSON
             // body so the frontend can send it as a Bearer header on subsequent requests.
-            let instance_cookie = create_session_cookie("instance_id", &session_token, true)
+            let instance_cookie = create_session_cookie("auth_id", &session_token, true)
                 .context("Failed to create instance cookie")?;
 
             let response = RegistrationResponse::Success {

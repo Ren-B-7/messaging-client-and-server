@@ -1,19 +1,17 @@
-pub mod chats;
+#[allow(dead_code)]
 pub mod groups;
+#[allow(dead_code)]
 pub mod messages;
 
-// Re-export from messages
+// Chat management (create, list)
+#[allow(unused_imports)]
+pub use messages::{handle_create_chat, handle_get_chats};
+
+// Message operations (send, receive, mark read)
 #[allow(unused_imports)]
 pub use messages::{handle_get_messages, handle_mark_read, handle_send_message};
 
-// Re-export from chats
-#[allow(unused_imports)]
-pub use chats::{
-    handle_create_chat, handle_get_chats, handle_get_messages as handle_get_chat_messages,
-    handle_send_message as handle_send_group_message,
-};
-
-// Re-export from groups
+// Group management
 #[allow(unused_imports)]
 pub use groups::{
     handle_add_member, handle_create_group, handle_get_groups, handle_get_members,

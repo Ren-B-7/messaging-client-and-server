@@ -64,10 +64,10 @@ pub async fn handle_login(
             // on the /chat page they're being redirected to.
             let instance_cookie = if login_data.remember_me {
                 let max_age = std::time::Duration::from_secs(token_expiry_secs);
-                create_persistent_cookie("instance_id", &token, max_age, true)
+                create_persistent_cookie("auth_id", &token, max_age, true)
                     .context("Failed to create persistent instance cookie")?
             } else {
-                create_session_cookie("instance_id", &token, true)
+                create_session_cookie("auth_id", &token, true)
                     .context("Failed to create session instance cookie")?
             };
 

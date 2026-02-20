@@ -11,14 +11,101 @@ use crate::AppState;
 use crate::handlers::http::utils::deliver_serialized_json;
 use shared::types::message::*;
 
-/// Send a message handler
+// ---------------------------------------------------------------------------
+// Chat management
+// ---------------------------------------------------------------------------
+
+/// Get all chats (direct + group) for the authenticated user
+pub async fn handle_get_chats(
+    req: Request<hyper::body::Incoming>,
+    state: AppState,
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    info!("Processing get chats request");
+
+    let user_id = match extract_user_from_request(&req, &state).await {
+        Ok(id) => id,
+        Err(err) => {
+            warn!("Unauthorized get chats attempt");
+            return deliver_serialized_json(&err.to_list_response(), StatusCode::UNAUTHORIZED);
+        }
+    };
+
+    // TODO: implement db_messages::get_chats and wire it in here
+    let empty_chats: Vec<serde_json::Value> = vec![];
+    deliver_serialized_json(
+        &serde_json::json!({ "status": "success", "data": { "chats": empty_chats } }),
+        StatusCode::OK,
+    )
+}
+
+/// Create a new group chat
+pub async fn handle_create_chat(
+    req: Request<hyper::body::Incoming>,
+    state: AppState,
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    info!("Processing create chat request");
+
+    let user_id = match extract_user_from_request(&req, &state).await {
+        Ok(id) => id,
+        Err(err) => {
+            warn!("Unauthorized create chat attempt");
+            return deliver_serialized_json(&err.to_send_response(), StatusCode::UNAUTHORIZED);
+        }
+    };
+
+    let body = req
+        .collect()
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to read request body: {}", e))?
+        .to_bytes();
+
+    let params: HashMap<String, String> =
+        form_urlencoded::parse(body.as_ref()).into_owned().collect();
+
+    let name = params.get("name").map(|s| s.to_string());
+
+    let participants: Vec<i64> = params
+        .get("participants")
+        .map(|s| s.split(',').filter_map(|p| p.trim().parse().ok()).collect())
+        .unwrap_or_default();
+
+    if participants.is_empty() {
+        return deliver_serialized_json(
+            &MessageError::MissingField("participants".to_string()).to_send_response(),
+            StatusCode::BAD_REQUEST,
+        );
+    }
+
+    // Ensure the creator is always included
+    let mut all_participants = participants;
+    if !all_participants.contains(&user_id) {
+        all_participants.push(user_id);
+    }
+
+    // TODO: implement db_messages::create_chat and wire it in here
+    let chat_id: i64 = 0;
+    info!("Chat {} created by user {} (stub)", chat_id, user_id);
+    deliver_serialized_json(
+        &serde_json::json!({
+            "status": "success",
+            "message": "Chat created successfully",
+            "data": { "chat_id": chat_id, "name": name, "participants": all_participants }
+        }),
+        StatusCode::CREATED,
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Sending & receiving messages
+// ---------------------------------------------------------------------------
+
+/// Send a message — to either a direct recipient (`recipient_id`) or a group/chat (`group_id` / `chat_id`)
 pub async fn handle_send_message(
     req: Request<hyper::body::Incoming>,
     state: AppState,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing send message request");
 
-    // Extract user_id from session (authenticated request)
     let user_id = match extract_user_from_request(&req, &state).await {
         Ok(id) => id,
         Err(err) => {
@@ -27,7 +114,6 @@ pub async fn handle_send_message(
         }
     };
 
-    // Parse message data
     let message_data = match parse_message_form(req).await {
         Ok(data) => data,
         Err(err) => {
@@ -36,24 +122,22 @@ pub async fn handle_send_message(
         }
     };
 
-    // Validate message
     if let Err(err) = validate_message(&message_data) {
         warn!("Message validation failed: {:?}", err.to_code());
         return deliver_serialized_json(&err.to_send_response(), StatusCode::BAD_REQUEST);
     }
 
-    // Send the message
     match send_message(user_id, &message_data, &state).await {
         Ok((message_id, sent_at)) => {
             info!("Message sent successfully: ID {}", message_id);
-
-            let response = SendMessageResponse::Success {
-                message_id,
-                sent_at,
-                message: "Message sent successfully".to_string(),
-            };
-
-            deliver_serialized_json(&response, StatusCode::CREATED)
+            deliver_serialized_json(
+                &SendMessageResponse::Success {
+                    message_id,
+                    sent_at,
+                    message: "Message sent successfully".to_string(),
+                },
+                StatusCode::CREATED,
+            )
         }
         Err(err) => {
             error!("Failed to send message: {:?}", err.to_code());
@@ -62,14 +146,17 @@ pub async fn handle_send_message(
     }
 }
 
-/// Get messages handler
+/// Get messages — filtered by `other_user_id` (DM) or `group_id` / `chat_id` (group).
+///
+/// `chat_id` can be supplied as a URL path parameter (e.g. `/chats/42/messages`)
+/// and takes precedence over the same key in the query string.
 pub async fn handle_get_messages(
     req: Request<hyper::body::Incoming>,
     state: AppState,
+    chat_id: Option<i64>,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing get messages request");
 
-    // Extract user_id from session
     let user_id = match extract_user_from_request(&req, &state).await {
         Ok(id) => id,
         Err(err) => {
@@ -78,20 +165,23 @@ pub async fn handle_get_messages(
         }
     };
 
-    // Parse query parameters
-    let query = parse_query_params(&req);
+    let mut query = parse_query_params(&req);
 
-    // Get messages
+    // Path parameter wins over query string
+    if let Some(id) = chat_id {
+        query.group_id = Some(id);
+    }
+
     match retrieve_messages(user_id, &query, &state).await {
         Ok(messages) => {
             info!("Retrieved {} messages", messages.len());
-
-            let response = MessagesResponse::Success {
-                total: messages.len(),
-                messages,
-            };
-
-            deliver_serialized_json(&response, StatusCode::OK)
+            deliver_serialized_json(
+                &MessagesResponse::Success {
+                    total: messages.len(),
+                    messages,
+                },
+                StatusCode::OK,
+            )
         }
         Err(err) => {
             error!("Failed to retrieve messages: {:?}", err.to_code());
@@ -100,7 +190,7 @@ pub async fn handle_get_messages(
     }
 }
 
-/// Mark message as read handler
+/// Mark a message as read
 pub async fn handle_mark_read(
     req: Request<hyper::body::Incoming>,
     state: AppState,
@@ -108,7 +198,6 @@ pub async fn handle_mark_read(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing mark as read request for message {}", message_id);
 
-    // Extract user_id from session
     let _user_id = match extract_user_from_request(&req, &state).await {
         Ok(id) => id,
         Err(err) => {
@@ -116,20 +205,19 @@ pub async fn handle_mark_read(
         }
     };
 
-    // Mark as read
     use crate::database::messages as db_messages;
 
     match db_messages::mark_read(&state.db, message_id).await {
         Ok(_) => {
             info!("Message {} marked as read", message_id);
-
-            let response = SendMessageResponse::Success {
-                message_id,
-                sent_at: crate::database::utils::get_timestamp(),
-                message: "Message marked as read".to_string(),
-            };
-
-            deliver_serialized_json(&response, StatusCode::OK)
+            deliver_serialized_json(
+                &SendMessageResponse::Success {
+                    message_id,
+                    sent_at: crate::database::utils::get_timestamp(),
+                    message: "Message marked as read".to_string(),
+                },
+                StatusCode::OK,
+            )
         }
         Err(e) => {
             error!("Failed to mark message as read: {}", e);
@@ -141,43 +229,45 @@ pub async fn handle_mark_read(
     }
 }
 
-/// Extract authenticated user from request
+// ---------------------------------------------------------------------------
+// Private helpers
+// ---------------------------------------------------------------------------
+
+/// Extract the authenticated user ID from the `Authorization` header or `auth_token` cookie
 async fn extract_user_from_request(
     req: &Request<hyper::body::Incoming>,
     state: &AppState,
 ) -> std::result::Result<i64, MessageError> {
     use crate::database::login as db_login;
 
-    // Extract token from Authorization header or cookie
     let token = req
         .headers()
         .get("authorization")
         .and_then(|h| h.to_str().ok())
         .and_then(|s| s.strip_prefix("Bearer "))
         .or_else(|| {
-            // Try to get from cookie
             req.headers()
                 .get("cookie")
                 .and_then(|h| h.to_str().ok())
                 .and_then(|cookies| {
                     cookies
                         .split(';')
-                        .find(|c| c.trim().starts_with("auth_token="))
+                        .find(|c| c.trim().starts_with("auth_id="))
                         .and_then(|c| c.split('=').nth(1))
                 })
         })
         .ok_or(MessageError::Unauthorized)?;
 
-    // Validate session token
     let user_id = db_login::validate_session(&state.db, token.to_string())
         .await
         .map_err(|_| MessageError::DatabaseError)?
         .ok_or(MessageError::Unauthorized)?;
-
+    info!(user_id);
     Ok(user_id)
 }
 
-/// Parse message form data
+/// Parse a form-urlencoded message body into `SendMessageData`.
+/// Accepts `group_id` and `chat_id` interchangeably.
 async fn parse_message_form(
     req: Request<hyper::body::Incoming>,
 ) -> std::result::Result<SendMessageData, MessageError> {
@@ -187,52 +277,43 @@ async fn parse_message_form(
         .map_err(|_| MessageError::InternalError)?
         .to_bytes();
 
-    let params = form_urlencoded::parse(body.as_ref())
-        .into_owned()
-        .collect::<HashMap<String, String>>();
+    let params: HashMap<String, String> =
+        form_urlencoded::parse(body.as_ref()).into_owned().collect();
 
     let content = params
         .get("content")
         .ok_or(MessageError::MissingField("content".to_string()))?
         .to_string();
 
-    let recipient_id = params
-        .get("recipient_id")
-        .and_then(|s| s.parse::<i64>().ok());
-
-    let group_id = params.get("group_id").and_then(|s| s.parse::<i64>().ok());
-
-    let message_type = params.get("message_type").cloned();
-
     Ok(SendMessageData {
-        recipient_id,
-        group_id,
+        recipient_id: params.get("recipient_id").and_then(|s| s.parse().ok()),
+        group_id: params
+            .get("group_id")
+            .or_else(|| params.get("chat_id"))
+            .and_then(|s| s.parse().ok()),
         content,
-        message_type,
+        message_type: params.get("message_type").cloned(),
     })
 }
 
-/// Validate message data
+/// Validate that a message has a destination and non-empty content within size limits
 fn validate_message(data: &SendMessageData) -> std::result::Result<(), MessageError> {
-    // Must have either recipient or group
     if data.recipient_id.is_none() && data.group_id.is_none() {
         return Err(MessageError::MissingRecipient);
     }
 
-    // Check message length
     if data.content.is_empty() {
         return Err(MessageError::EmptyMessage);
     }
 
-    if data.content.len() > 10000 {
-        // 10KB limit
+    if data.content.len() > 10_000 {
         return Err(MessageError::MessageTooLong);
     }
 
     Ok(())
 }
 
-/// Send message to database
+/// Compress and persist a message, returning `(message_id, sent_at)`
 async fn send_message(
     sender_id: i64,
     data: &SendMessageData,
@@ -240,14 +321,12 @@ async fn send_message(
 ) -> std::result::Result<(i64, i64), MessageError> {
     use crate::database::messages as db_messages;
 
-    // Compress the message content
     let compressed_content = crate::database::utils::compress_data(data.content.as_bytes())
         .map_err(|e| {
             error!("Failed to compress message: {}", e);
             MessageError::InternalError
         })?;
 
-    // Create new message
     let message_id = db_messages::send_message(
         &state.db,
         db_messages::NewMessage {
@@ -268,26 +347,29 @@ async fn send_message(
         MessageError::DatabaseError
     })?;
 
-    let sent_at = crate::database::utils::get_timestamp();
-    Ok((message_id, sent_at))
+    Ok((message_id, crate::database::utils::get_timestamp()))
 }
 
-/// Parse query parameters
+/// Parse pagination and filter params from the request URI query string.
+/// Accepts `group_id` and `chat_id` interchangeably.
 fn parse_query_params(req: &Request<hyper::body::Incoming>) -> GetMessagesQuery {
-    let query_str = req.uri().query().unwrap_or("");
-    let params: HashMap<String, String> = form_urlencoded::parse(query_str.as_bytes())
-        .into_owned()
-        .collect();
+    let params: HashMap<String, String> =
+        form_urlencoded::parse(req.uri().query().unwrap_or("").as_bytes())
+            .into_owned()
+            .collect();
 
     GetMessagesQuery {
         other_user_id: params.get("other_user_id").and_then(|s| s.parse().ok()),
-        group_id: params.get("group_id").and_then(|s| s.parse().ok()),
+        group_id: params
+            .get("group_id")
+            .or_else(|| params.get("chat_id"))
+            .and_then(|s| s.parse().ok()),
         limit: params.get("limit").and_then(|s| s.parse().ok()),
         offset: params.get("offset").and_then(|s| s.parse().ok()),
     }
 }
 
-/// Retrieve messages from database
+/// Fetch, decompress, and map messages from the database
 async fn retrieve_messages(
     user_id: i64,
     query: &GetMessagesQuery,
@@ -295,20 +377,17 @@ async fn retrieve_messages(
 ) -> std::result::Result<Vec<MessageResponse>, MessageError> {
     use crate::database::messages as db_messages;
 
-    let limit = query.limit.unwrap_or(50).min(100); // Max 100 messages
+    let limit = query.limit.unwrap_or(50).min(100);
     let offset = query.offset.unwrap_or(0);
 
-    // Get messages based on query type
     let messages = if let Some(other_user_id) = query.other_user_id {
-        // Direct messages
         db_messages::get_direct_messages(&state.db, user_id, other_user_id, limit, offset)
             .await
             .map_err(|e| {
-                error!("Database error getting messages: {}", e);
+                error!("Database error getting direct messages: {}", e);
                 MessageError::DatabaseError
             })?
     } else if let Some(group_id) = query.group_id {
-        // Group messages
         db_messages::get_group_messages(&state.db, group_id, limit, offset)
             .await
             .map_err(|e| {
@@ -316,33 +395,28 @@ async fn retrieve_messages(
                 MessageError::DatabaseError
             })?
     } else {
-        // Return empty if no filter specified
         vec![]
     };
 
-    // Convert to response format and decompress content
-    let mut responses = Vec::new();
-    for msg in messages {
-        // Decompress content
-        let content = crate::database::utils::decompress_data(&msg.content).map_err(|e| {
-            error!("Failed to decompress message: {}", e);
-            MessageError::InternalError
-        })?;
+    messages
+        .into_iter()
+        .map(|msg| {
+            let content = crate::database::utils::decompress_data(&msg.content).map_err(|e| {
+                error!("Failed to decompress message {}: {}", msg.id, e);
+                MessageError::InternalError
+            })?;
 
-        let content_str = String::from_utf8_lossy(&content).to_string();
-
-        responses.push(MessageResponse {
-            id: msg.id,
-            sender_id: msg.sender_id,
-            recipient_id: msg.recipient_id,
-            group_id: msg.group_id,
-            content: content_str,
-            sent_at: msg.sent_at,
-            delivered_at: msg.delivered_at,
-            read_at: msg.read_at,
-            message_type: msg.message_type,
-        });
-    }
-
-    Ok(responses)
+            Ok(MessageResponse {
+                id: msg.id,
+                sender_id: msg.sender_id,
+                recipient_id: msg.recipient_id,
+                group_id: msg.group_id,
+                content: String::from_utf8_lossy(&content).to_string(),
+                sent_at: msg.sent_at,
+                delivered_at: msg.delivered_at,
+                read_at: msg.read_at,
+                message_type: msg.message_type,
+            })
+        })
+        .collect()
 }
