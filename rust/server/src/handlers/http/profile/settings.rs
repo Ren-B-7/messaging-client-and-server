@@ -1,86 +1,18 @@
-use anyhow::{Context, Result};
-use bytes::Bytes;
-use http_body_util::BodyExt;
-use http_body_util::combinators::BoxBody;
-use hyper::{Request, Response, StatusCode};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::convert::Infallible;
+
+use anyhow::{Context, Result};
+use bytes::Bytes;
+use http_body_util::{BodyExt, combinators::BoxBody};
+use hyper::{Request, Response, StatusCode};
 use tracing::{error, info, warn};
 
+pub use shared::types::settings::*;
+
 use crate::AppState;
-use crate::handlers::http::utils::deliver_serialized_json;
-
-/// Change password request
-#[derive(Debug, Deserialize)]
-pub struct ChangePasswordData {
-    pub current_password: String,
-    pub new_password: String,
-    pub confirm_password: String,
-}
-
-/// Settings response
-#[derive(Debug, Serialize)]
-#[serde(tag = "status", rename_all = "snake_case")]
-pub enum SettingsResponse {
-    Success { message: String },
-    Error { code: String, message: String },
-}
-
-/// Settings error codes
-pub enum SettingsError {
-    Unauthorized,
-    InvalidCurrentPassword,
-    InvalidNewPassword,
-    PasswordMismatch,
-    PasswordTooWeak,
-    SamePassword,
-    MissingField(String),
-    DatabaseError,
-    InternalError,
-}
-
-impl SettingsError {
-    fn to_code(&self) -> &'static str {
-        match self {
-            Self::Unauthorized => "UNAUTHORIZED",
-            Self::InvalidCurrentPassword => "INVALID_CURRENT_PASSWORD",
-            Self::InvalidNewPassword => "INVALID_NEW_PASSWORD",
-            Self::PasswordMismatch => "PASSWORD_MISMATCH",
-            Self::PasswordTooWeak => "PASSWORD_TOO_WEAK",
-            Self::SamePassword => "SAME_PASSWORD",
-            Self::MissingField(_) => "MISSING_FIELD",
-            Self::DatabaseError => "DATABASE_ERROR",
-            Self::InternalError => "INTERNAL_ERROR",
-        }
-    }
-
-    fn to_message(&self) -> String {
-        match self {
-            Self::Unauthorized => "Authentication required".to_string(),
-            Self::InvalidCurrentPassword => "Current password is incorrect".to_string(),
-            Self::InvalidNewPassword => "Invalid new password format".to_string(),
-            Self::PasswordMismatch => "New passwords do not match".to_string(),
-            Self::PasswordTooWeak => {
-                "Password must be 8-128 characters with at least one letter and one number"
-                    .to_string()
-            }
-            Self::SamePassword => {
-                "New password must be different from current password".to_string()
-            }
-            Self::MissingField(field) => format!("Missing required field: {}", field),
-            Self::DatabaseError => "Database error occurred".to_string(),
-            Self::InternalError => "An internal error occurred".to_string(),
-        }
-    }
-
-    fn to_response(&self) -> SettingsResponse {
-        SettingsResponse::Error {
-            code: self.to_code().to_string(),
-            message: self.to_message(),
-        }
-    }
-}
+use crate::handlers::http::utils::{
+    create_session_cookie, deliver_serialized_json, deliver_serialized_json_with_cookie,
+};
 
 /// Change password handler
 pub async fn handle_change_password(
@@ -160,20 +92,15 @@ pub async fn handle_logout(
             info!("User logged out successfully");
 
             // Create cookie to clear auth token
-            let clear_cookie = "auth_token=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0";
+            let clear_cookie = create_session_cookie("instance_id", "", true)
+                .context("Failed to create session instance cookie")?;
 
             let response_body = SettingsResponse::Success {
                 message: "Logged out successfully".to_string(),
             };
-            let json =
-                serde_json::to_string(&response_body).context("Failed to serialize response")?;
-
-            let response = Response::builder()
-                .status(StatusCode::OK)
-                .header("content-type", "application/json")
-                .header("set-cookie", clear_cookie)
-                .body(http_body_util::Full::new(Bytes::from(json)).boxed())
-                .context("Failed to build response")?;
+            let response =
+                deliver_serialized_json_with_cookie(&response_body, StatusCode::OK, clear_cookie)
+                    .unwrap();
 
             Ok(response)
         }

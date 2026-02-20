@@ -10,7 +10,7 @@ pub use messages::{handle_get_messages, handle_mark_read, handle_send_message};
 #[allow(unused_imports)]
 pub use chats::{
     handle_create_chat, handle_get_chats, handle_get_messages as handle_get_chat_messages,
-    handle_send_message as handle_send_chat_message,
+    handle_send_message as handle_send_group_message,
 };
 
 // Re-export from groups

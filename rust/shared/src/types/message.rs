@@ -1,5 +1,12 @@
 use serde::{Deserialize, Serialize};
 
+/// Chat creation request
+#[derive(Debug, Deserialize)]
+pub struct CreateChatRequest {
+    pub name: Option<String>,
+    pub participants: Vec<i64>,
+}
+
 /// Send message request data
 #[derive(Debug, Deserialize)]
 pub struct SendMessageData {

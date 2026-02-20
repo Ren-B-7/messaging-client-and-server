@@ -1,15 +1,16 @@
-use anyhow::{Context, Result};
-use bytes::Bytes;
-use http_body_util::BodyExt;
-use http_body_util::combinators::BoxBody;
-use hyper::{Request, Response, StatusCode};
 use std::collections::HashMap;
 use std::convert::Infallible;
+
+use anyhow::{Context, Result};
+use bytes::Bytes;
+use http_body_util::{BodyExt, combinators::BoxBody};
+use hyper::{Request, Response, StatusCode};
 use tracing::{error, info, warn};
+
+use shared::types::update::*;
 
 use crate::AppState;
 use crate::handlers::http::utils::deliver_serialized_json;
-use shared::types::update::*;
 
 /// Get user profile handler
 pub async fn handle_get_profile(

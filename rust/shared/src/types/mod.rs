@@ -5,6 +5,7 @@ pub mod message;
 pub mod register;
 pub mod server_config;
 pub mod server_stats;
+pub mod settings;
 pub mod sse;
 pub mod update;
 
@@ -16,7 +17,8 @@ pub use self::json_error::ErrorResponse;
 pub use self::login::{LoginData, LoginError, LoginResponse};
 #[allow(unused_imports)]
 pub use self::message::{
-    GetMessagesQuery, MessageError, MessageResponse, SendMessageData, SendMessageResponse,
+    CreateChatRequest, GetMessagesQuery, MessageError, MessageResponse, SendMessageData,
+    SendMessageResponse,
 };
 #[allow(unused_imports)]
 pub use self::register::{RegistrationData, RegistrationError, RegistrationResponse};
@@ -24,6 +26,10 @@ pub use self::register::{RegistrationData, RegistrationError, RegistrationRespon
 pub use self::server_config::{AppConfig, AuthConfig, ConfigError, PathsConfig, ServerConfig};
 #[allow(unused_imports)]
 pub use self::server_stats::{AuthInfo, DatabaseInfo, RuntimeInfo, ServerInfo, ServerStats};
+#[allow(unused_imports)]
+pub use self::settings::{ChangePasswordData, SettingsError, SettingsResponse};
+#[allow(unused_imports)]
+pub use self::sse::{SseError, SseEvent, SseResult};
 #[allow(unused_imports)]
 pub use self::update::{
     ProfileData, ProfileError, ProfileResponse, UpdateProfileData, UpdateResponse,

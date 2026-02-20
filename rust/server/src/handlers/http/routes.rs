@@ -8,6 +8,7 @@ use http_body_util::{BodyExt, combinators::BoxBody};
 use hyper::{Method, Request, Response, StatusCode};
 
 use crate::AppState;
+use crate::handlers::http::profile::settings;
 use crate::handlers::http::{auth, messaging, profile, utils::*};
 
 use shared::types::cache::*;
@@ -237,7 +238,7 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
                 .context("Register failed")
         })
         .post("/api/logout", |req, state| async move {
-            auth::handle_logout(req, state)
+            settings::handle_logout(req, state)
                 .await
                 .context("Logout failed")
         })

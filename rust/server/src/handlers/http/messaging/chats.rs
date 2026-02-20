@@ -1,33 +1,24 @@
-use anyhow::{Context, Result};
-use bytes::Bytes;
-use http_body_util::combinators::BoxBody;
-use http_body_util::{BodyExt, Full};
-use hyper::body::Incoming as IncomingBody;
-use hyper::{Request, Response, StatusCode};
-use serde::Deserialize;
 use std::collections::HashMap;
 use std::convert::Infallible;
+
+use anyhow::{Context, Ok, Result};
+use bytes::Bytes;
+use http_body_util::{BodyExt, combinators::BoxBody};
+use hyper::body::Incoming;
+use hyper::{Request, Response, StatusCode};
 use tracing::info;
 
 use crate::AppState;
-use crate::handlers::http::utils::deliver_error_json;
-
-/// Chat creation request
-#[derive(Debug, Deserialize)]
-pub struct CreateChatRequest {
-    pub name: Option<String>,
-    pub participants: Vec<i64>,
-}
+use crate::handlers::http::utils::{deliver_error_json, deliver_serialized_json};
 
 /// Get all chats for authenticated user
 pub async fn handle_get_chats(
-    _req: Request<IncomingBody>,
+    _req: Request<Incoming>,
     _state: AppState,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Fetching chats for user");
 
-    // TODO: Fetch actual chats from database
-    let chats_json = serde_json::json!({
+    let chats_json = &serde_json::json!({
         "status": "success",
         "data": {
             "chats": [
@@ -51,21 +42,15 @@ pub async fn handle_get_chats(
         }
     });
 
-    let json_string: String = chats_json.to_string();
-    let json_bytes: Bytes = Bytes::from(json_string);
-
-    let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()
-        .status(StatusCode::OK)
-        .header("content-type", "application/json")
-        .body(Full::new(json_bytes).boxed())
-        .context("Failed to build chats response")?;
+    let response: Response<BoxBody<Bytes, Infallible>> =
+        deliver_serialized_json(chats_json, StatusCode::OK).unwrap();
 
     Ok(response)
 }
 
 /// Create a new chat
 pub async fn handle_create_chat(
-    req: Request<IncomingBody>,
+    req: Request<Incoming>,
     _state: AppState,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Creating new chat");
@@ -100,7 +85,7 @@ pub async fn handle_create_chat(
     // TODO: Create chat in database
     let chat_id: i64 = 123; // Placeholder
 
-    let response_json = serde_json::json!({
+    let response_json = &serde_json::json!({
         "status": "success",
         "message": "Chat created successfully",
         "data": {
@@ -110,28 +95,22 @@ pub async fn handle_create_chat(
         }
     });
 
-    let json_string: String = response_json.to_string();
-    let json_bytes: Bytes = Bytes::from(json_string);
-
-    let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()
-        .status(StatusCode::CREATED)
-        .header("content-type", "application/json")
-        .body(Full::new(json_bytes).boxed())
-        .context("Failed to build response")?;
+    let response: Response<BoxBody<Bytes, Infallible>> =
+        deliver_serialized_json(response_json, StatusCode::OK).unwrap();
 
     Ok(response)
 }
 
 /// Get messages for a specific chat
 pub async fn handle_get_messages(
-    _req: Request<IncomingBody>,
+    _req: Request<Incoming>,
     _state: AppState,
     chat_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Fetching messages for chat {}", chat_id);
 
     // TODO: Fetch actual messages from database
-    let messages_json = serde_json::json!({
+    let messages_json = &serde_json::json!({
         "status": "success",
         "data": {
             "chat_id": chat_id,
@@ -154,21 +133,14 @@ pub async fn handle_get_messages(
         }
     });
 
-    let json_string: String = messages_json.to_string();
-    let json_bytes: Bytes = Bytes::from(json_string);
-
-    let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()
-        .status(StatusCode::OK)
-        .header("content-type", "application/json")
-        .body(Full::new(json_bytes).boxed())
-        .context("Failed to build messages response")?;
-
+    let response: Response<BoxBody<Bytes, Infallible>> =
+        deliver_serialized_json(messages_json, StatusCode::OK).unwrap();
     Ok(response)
 }
 
 /// Send a message to a chat
 pub async fn handle_send_message(
-    req: Request<IncomingBody>,
+    req: Request<Incoming>,
     _state: AppState,
     chat_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
@@ -197,7 +169,7 @@ pub async fn handle_send_message(
     // TODO: Save message to database
     let message_id: i64 = 456; // Placeholder
 
-    let response_json = serde_json::json!({
+    let response_json = &serde_json::json!({
         "status": "success",
         "message": "Message sent successfully",
         "data": {
@@ -207,14 +179,8 @@ pub async fn handle_send_message(
         }
     });
 
-    let json_string: String = response_json.to_string();
-    let json_bytes: Bytes = Bytes::from(json_string);
-
-    let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()
-        .status(StatusCode::CREATED)
-        .header("content-type", "application/json")
-        .body(Full::new(json_bytes).boxed())
-        .context("Failed to build response")?;
+    let response: Response<BoxBody<Bytes, Infallible>> =
+        deliver_serialized_json(response_json, StatusCode::OK).unwrap();
 
     Ok(response)
 }

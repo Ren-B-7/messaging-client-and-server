@@ -1,25 +1,24 @@
 use anyhow::{Context, Result};
 use bytes::Bytes;
-use http_body_util::combinators::BoxBody;
-use http_body_util::{BodyExt, Full};
-use hyper::body::Incoming as IncomingBody;
+use http_body_util::{BodyExt, combinators::BoxBody};
+use hyper::body::Incoming;
 use hyper::{Request, Response, StatusCode};
 use std::collections::HashMap;
 use std::convert::Infallible;
 use tracing::info;
 
 use crate::AppState;
-use crate::handlers::http::utils::deliver_error_json;
+use crate::handlers::http::utils::{deliver_error_json, deliver_serialized_json};
 
 /// Get all groups for authenticated user
 pub async fn handle_get_groups(
-    _req: Request<IncomingBody>,
+    _req: Request<Incoming>,
     _state: AppState,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Fetching groups for user");
 
     // TODO: Fetch actual groups from database
-    let groups_json = serde_json::json!({
+    let groups_json = &serde_json::json!({
         "status": "success",
         "data": {
             "groups": [
@@ -41,21 +40,15 @@ pub async fn handle_get_groups(
         }
     });
 
-    let json_string: String = groups_json.to_string();
-    let json_bytes: Bytes = Bytes::from(json_string);
-
-    let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()
-        .status(StatusCode::OK)
-        .header("content-type", "application/json")
-        .body(Full::new(json_bytes).boxed())
-        .context("Failed to build groups response")?;
+    let response: Response<BoxBody<Bytes, Infallible>> =
+        deliver_serialized_json(groups_json, StatusCode::OK).unwrap();
 
     Ok(response)
 }
 
 /// Create a new group
 pub async fn handle_create_group(
-    req: Request<IncomingBody>,
+    req: Request<Incoming>,
     _state: AppState,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Creating new group");
@@ -85,7 +78,7 @@ pub async fn handle_create_group(
     // TODO: Create group in database
     let group_id: i64 = 123; // Placeholder
 
-    let response_json = serde_json::json!({
+    let response_json = &serde_json::json!({
         "status": "success",
         "message": "Group created successfully",
         "data": {
@@ -95,28 +88,22 @@ pub async fn handle_create_group(
         }
     });
 
-    let json_string: String = response_json.to_string();
-    let json_bytes: Bytes = Bytes::from(json_string);
-
-    let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()
-        .status(StatusCode::CREATED)
-        .header("content-type", "application/json")
-        .body(Full::new(json_bytes).boxed())
-        .context("Failed to build response")?;
+    let response: Response<BoxBody<Bytes, Infallible>> =
+        deliver_serialized_json(response_json, StatusCode::OK).unwrap();
 
     Ok(response)
 }
 
 /// Get group members
 pub async fn handle_get_members(
-    _req: Request<IncomingBody>,
+    _req: Request<Incoming>,
     _state: AppState,
     group_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Fetching members for group {}", group_id);
 
     // TODO: Fetch actual members from database
-    let members_json = serde_json::json!({
+    let members_json = &serde_json::json!({
         "status": "success",
         "data": {
             "group_id": group_id,
@@ -137,21 +124,15 @@ pub async fn handle_get_members(
         }
     });
 
-    let json_string: String = members_json.to_string();
-    let json_bytes: Bytes = Bytes::from(json_string);
-
-    let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()
-        .status(StatusCode::OK)
-        .header("content-type", "application/json")
-        .body(Full::new(json_bytes).boxed())
-        .context("Failed to build members response")?;
+    let response: Response<BoxBody<Bytes, Infallible>> =
+        deliver_serialized_json(members_json, StatusCode::OK).unwrap();
 
     Ok(response)
 }
 
 /// Add member to group
 pub async fn handle_add_member(
-    req: Request<IncomingBody>,
+    req: Request<Incoming>,
     _state: AppState,
     group_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
@@ -172,7 +153,7 @@ pub async fn handle_add_member(
 
     // TODO: Add member to group in database
 
-    let response_json = serde_json::json!({
+    let response_json = &serde_json::json!({
         "status": "success",
         "message": "Member added successfully",
         "data": {
@@ -181,21 +162,15 @@ pub async fn handle_add_member(
         }
     });
 
-    let json_string: String = response_json.to_string();
-    let json_bytes: Bytes = Bytes::from(json_string);
-
-    let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()
-        .status(StatusCode::OK)
-        .header("content-type", "application/json")
-        .body(Full::new(json_bytes).boxed())
-        .context("Failed to build response")?;
+    let response: Response<BoxBody<Bytes, Infallible>> =
+        deliver_serialized_json(response_json, StatusCode::OK).unwrap();
 
     Ok(response)
 }
 
 /// Remove member from group
 pub async fn handle_remove_member(
-    req: Request<IncomingBody>,
+    req: Request<Incoming>,
     _state: AppState,
     group_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
@@ -216,7 +191,7 @@ pub async fn handle_remove_member(
 
     // TODO: Remove member from group in database
 
-    let response_json = serde_json::json!({
+    let response_json = &serde_json::json!({
         "status": "success",
         "message": "Member removed successfully",
         "data": {
@@ -225,14 +200,8 @@ pub async fn handle_remove_member(
         }
     });
 
-    let json_string: String = response_json.to_string();
-    let json_bytes: Bytes = Bytes::from(json_string);
-
-    let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()
-        .status(StatusCode::OK)
-        .header("content-type", "application/json")
-        .body(Full::new(json_bytes).boxed())
-        .context("Failed to build response")?;
+    let response: Response<BoxBody<Bytes, Infallible>> =
+        deliver_serialized_json(response_json, StatusCode::OK).unwrap();
 
     Ok(response)
 }
