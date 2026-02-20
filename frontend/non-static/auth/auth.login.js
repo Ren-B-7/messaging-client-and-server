@@ -25,11 +25,22 @@ const AuthLogin = {
           body: JSON.stringify({ username: username, password }),
         });
 
+        // Server sent a redirect (302) — fetch followed it, navigate the browser there
+        if (response.redirected) {
+          window.location.href = response.url;
+          return;
+        }
+
         const data = await response.json();
 
         if (data.status === "error") {
           AuthLogin._handleServerError(data);
           return;
+        }
+
+        // Success response with explicit redirect field
+        if (data.redirect) {
+          window.location.href = data.redirect;
         }
       } catch (err) {
         // Network failure or non-JSON response

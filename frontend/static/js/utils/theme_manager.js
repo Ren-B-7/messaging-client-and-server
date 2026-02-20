@@ -133,10 +133,11 @@ if (typeof module !== "undefined" && module.exports) {
 window.addEventListener("DOMContentLoaded", function () {
   if (typeof themeManager !== "undefined") {
     themeManager.init(["base", "chat"]);
-    document
-      .getElementById("themeToggle")
-      .addEventListener("click", function () {
+    const themeToggle = document.getElementById("themeToggle");
+    if (themeToggle) {
+      themeToggle.addEventListener("click", function () {
         themeManager.toggle();
       });
+    }
   }
 });

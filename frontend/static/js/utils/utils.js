@@ -171,6 +171,15 @@ const Utils = {
   },
 
   /**
+   * Validate email address format
+   * @param {string} email - Email to validate
+   * @returns {boolean} Whether the email is valid
+   */
+  isValidEmail(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  },
+
+  /**
    * Format file size to human readable format
    * @param {number} bytes - File size in bytes
    * @returns {string} Formatted file size
