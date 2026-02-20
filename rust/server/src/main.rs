@@ -27,12 +27,13 @@ mod database;
 mod handlers;
 mod tower_middle;
 
-use handlers::{admin::AdminService, user::UserService};
-use shared::config::{self, LiveConfig};
+use handlers::{admin::AdminService, sse::SseManager, user::UserService};
 use tower_middle::{
     IpFilterLayer, MetricsLayer, RateLimiterLayer, TimeoutLayer,
     security::{IpFilter, Metrics, RateLimiter},
 };
+
+use shared::config::{self, LiveConfig};
 
 /// Shared application state.
 ///
@@ -47,6 +48,7 @@ pub struct AppState {
     pub rate_limiter: RateLimiter,
     pub metrics: Metrics,
     pub timeout: Duration,
+    pub sse_manager: Arc<SseManager>,
 }
 
 impl AppState {
@@ -60,6 +62,7 @@ impl AppState {
             rate_limiter,
             metrics: Metrics::new(),
             timeout: Duration::new(10, 0),
+            sse_manager: Arc::new(SseManager::new()),
         }
     }
 }
@@ -126,10 +129,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let user_state = state.clone();
     let admin_state = state.clone();
+
+    let cleanup_state = state.clone();
+    let sse_state = state.clone();
     let metrics_state = state.clone();
 
-    // ── Background task: rate-limiter cleanup ────────────────────────────────
-    let cleanup_state = user_state.clone();
+    // Rate limiter cleanup
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(60));
         loop {
@@ -139,7 +144,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     });
 
-    // ── Background task: metrics snapshot ───────────────────────────────────
+    // SSE cleanup
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+            sse_state.sse_manager.cleanup().await;
+            debug!("SSE manager cleanup completed");
+        }
+    });
+
+    // Metric snapshot
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(30));
         loop {

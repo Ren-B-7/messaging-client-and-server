@@ -5,6 +5,7 @@ pub mod message;
 pub mod register;
 pub mod server_config;
 pub mod server_stats;
+pub mod sse;
 pub mod update;
 
 #[allow(unused_imports)]

@@ -7,6 +7,10 @@ description = "Low-level async messaging server with HTTP and SSE"
 license = "MIT"
 
 [dependencies]
+# SSE for live messages
+async-stream = "0.3"
+futures-util = "0.3"
+
 # Ipfiltering
 ipnet = "2.11.0"
 

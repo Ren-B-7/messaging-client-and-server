@@ -9,6 +9,7 @@ use hyper::{Method, Request, Response, StatusCode};
 
 use crate::AppState;
 use crate::handlers::http::{auth, messaging, profile, utils::*};
+
 use shared::types::cache::*;
 
 /// Type alias for route handler functions

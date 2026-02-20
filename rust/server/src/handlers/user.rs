@@ -17,6 +17,7 @@ use tracing::{error, info, warn};
 use crate::AppState;
 use crate::handlers::http::routes::{Router, build_api_router_with_config};
 use crate::handlers::http::{auth::*, utils::*};
+use crate::handlers::sse;
 
 /// User service implementation
 #[derive(Clone, Debug)]
@@ -175,6 +176,13 @@ pub fn build_user_router_with_config(
             handle_login(req, state)
                 .await
                 .context("Login attempt failed")
+        })
+        .get("/api/stream", |req, state| async move {
+            // TODO: Extract user_id from token/session
+            let user_id = "authenticated-user-id".to_string();
+            sse::handle_sse_subscribe(req, state, user_id)
+                .await
+                .context("SSE subscription failed")
         });
 
     router
