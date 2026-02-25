@@ -206,7 +206,7 @@ const AuthRegister = {
       });
 
       if (response.redirected) {
-        localStorage.setItem("allowed", true);
+        localStorage.setItem("allowed", "true");
         window.location.href = response.url;
         return;
       }

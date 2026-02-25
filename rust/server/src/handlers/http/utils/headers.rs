@@ -71,6 +71,7 @@ pub fn set_cookie(
     }
 
     cookie.push_str("; SameSite=Strict");
+    cookie.push_str("; Partitioned");
 
     debug!("Setting cookie: {}", name);
 

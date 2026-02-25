@@ -10,11 +10,17 @@
 
 document.addEventListener("DOMContentLoaded", () => {
   // ── Auth guard ─────────────────────────────────────────────────────────────
-  const allowed = Utils.getStorage("allowed");
+  const allowed = Utils.getStorage("allowed") === "true";
+
+  console.log("Allowed value:", allowed);
+
   if (!allowed) {
+    console.log("User NOT allowed — redirecting");
     window.location.href = "/";
     return;
   }
+
+  console.log("User IS allowed — continuing boot");
 
   // ── Populate navbar avatar ─────────────────────────────────────────────────
   const initialsEl = document.getElementById("userInitials");
