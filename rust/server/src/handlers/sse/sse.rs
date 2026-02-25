@@ -300,23 +300,19 @@ pub async fn handle_sse_subscribe(
 
     info!(
         "SSE subscribe: user={} context={:?} limit={} offset={}",
-        session_id, chat_ctx, limit, offset
+        user_id, chat_ctx, limit, offset
     );
 
     // ── 3. Fetch history ───────────────────────────────────────────────────
     let history = match &chat_ctx {
-        ChatContext::Direct { other_user_id } => db_messages::get_direct_messages(
-            &state.db,
-            user_id,
-            *other_user_id,
-            limit,
-            offset,
-        )
-        .await
-        .map_err(|e| {
-            error!("SSE history fetch (DM) failed: {}", e);
-            SseError::ChannelSendFailed("Failed to fetch message history".to_string())
-        })?,
+        ChatContext::Direct { other_user_id } => {
+            db_messages::get_direct_messages(&state.db, user_id, *other_user_id, limit, offset)
+                .await
+                .map_err(|e| {
+                    error!("SSE history fetch (DM) failed: {}", e);
+                    SseError::ChannelSendFailed("Failed to fetch message history".to_string())
+                })?
+        }
         ChatContext::Group { group_id } => {
             db_messages::get_group_messages(&state.db, *group_id, limit, offset)
                 .await
