@@ -10,8 +10,8 @@ use tracing::{error, info, warn};
 use crate::AppState;
 use crate::database::register as db_register;
 use crate::handlers::http::utils::{
-    create_session_cookie, deliver_redirect_with_cookie,
-    deliver_serialized_json, get_client_ip, get_user_agent,
+    create_session_cookie, deliver_redirect_with_cookie, deliver_serialized_json, get_client_ip,
+    get_user_agent, is_https,
 };
 
 use shared::types::login::*;
@@ -27,6 +27,7 @@ pub async fn handle_register(
     // Extract IP and user-agent BEFORE consuming req into the body parser.
     let ip_address = get_client_ip(&req);
     let user_agent = get_user_agent(&req);
+    let secure_cookie = is_https(&req);
 
     let registration_data = match parse_and_validate_registration(req, &state).await {
         Ok(data) => data,
@@ -64,7 +65,7 @@ pub async fn handle_register(
     info!("User registered successfully: ID {}", user_id);
 
     let _token_expiry_secs = state.config.read().await.auth.token_expiry_minutes * 60;
-    let instance_cookie = create_session_cookie("auth_id", &session_token, true)
+    let instance_cookie = create_session_cookie("auth_id", &session_token, secure_cookie)
         .context("Failed to create session cookie")?;
 
     Ok(deliver_redirect_with_cookie(
@@ -200,9 +201,7 @@ pub(crate) fn validate_password(password: &str) -> std::result::Result<(), Regis
     if password.len() < 8 || password.len() > 128 {
         return Err(RegisterError::WeakPassword);
     }
-    if !password.chars().any(|c| c.is_alphabetic())
-        || !password.chars().any(|c| c.is_numeric())
-    {
+    if !password.chars().any(|c| c.is_alphabetic()) || !password.chars().any(|c| c.is_numeric()) {
         return Err(RegisterError::WeakPassword);
     }
     Ok(())

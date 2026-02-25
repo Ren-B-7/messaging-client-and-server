@@ -178,8 +178,8 @@ pub fn deliver_redirect_with_cookie(
     let mut builder = Response::builder()
         .status(StatusCode::FOUND)
         .header(header::LOCATION, location);
-
     if let Some(c) = cookie {
+        info!("Setting cookie {}", c.to_str().unwrap_or_default());
         builder = builder.header(header::SET_COOKIE, c);
     }
     let response = builder.body(full(empty_bytes)).map_err(|e: http::Error| {

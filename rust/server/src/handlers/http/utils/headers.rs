@@ -81,9 +81,9 @@ pub fn set_cookie(
 }
 
 /// Create a session cookie (expires when browser closes)
-pub fn create_session_cookie(name: &str, value: &str, secure: bool) -> Result<HeaderValue> {
+pub fn create_session_cookie(name: &str, value: &str, https: bool) -> Result<HeaderValue> {
     debug!("Creating session cookie: {}", name);
-    set_cookie(name, value, None, Some("/"), true, secure)
+    set_cookie(name, value, None, Some("/"), true, https)
 }
 
 /// Create a persistent cookie with expiration
@@ -91,13 +91,13 @@ pub fn create_persistent_cookie(
     name: &str,
     value: &str,
     max_age: Duration,
-    secure: bool,
+    https: bool,
 ) -> Result<HeaderValue> {
     debug!(
         "Creating persistent cookie: {} with max_age: {:?}",
         name, max_age
     );
-    set_cookie(name, value, Some(max_age), Some("/"), true, secure)
+    set_cookie(name, value, Some(max_age), Some("/"), true, https)
 }
 
 /// Delete a cookie by setting it to expire
@@ -312,7 +312,7 @@ pub async fn validate_token_secure(
 
     // OPTIONAL: Warn when the user-agent prefix changed (browser update, device swap, etc.)
     if let Some(ref stored_ua) = session.user_agent {
-        let stored_prefix  = &stored_ua[..30_usize.min(stored_ua.len())];
+        let stored_prefix = &stored_ua[..30_usize.min(stored_ua.len())];
         let current_prefix = &current_ua[..30_usize.min(current_ua.len())];
         if stored_prefix != current_prefix {
             warn!(

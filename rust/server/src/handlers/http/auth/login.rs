@@ -10,7 +10,8 @@ use tracing::{error, info, warn};
 use crate::AppState;
 use crate::database::login as db_login;
 use crate::handlers::http::utils::{
-    self, deliver_redirect_with_cookie, deliver_serialized_json, get_client_ip, get_user_agent,
+    create_persistent_cookie, create_session_cookie, deliver_redirect_with_cookie,
+    deliver_serialized_json, get_client_ip, get_user_agent, is_https,
 };
 
 use shared::types::login::*;
@@ -25,6 +26,7 @@ pub async fn handle_login(
     // Extract IP and user-agent NOW, before req is consumed by the body parser.
     let ip_address = get_client_ip(&req);
     let user_agent = get_user_agent(&req);
+    let secure_cookie = is_https(&req);
 
     let content_type = req
         .headers()
@@ -67,10 +69,10 @@ pub async fn handle_login(
 
             let instance_cookie = if login_data.remember_me {
                 let max_age = std::time::Duration::from_secs(token_expiry_secs);
-                self::utils::create_persistent_cookie("auth_id", &token, max_age, true)
+                create_persistent_cookie("auth_id", &token, max_age, secure_cookie)
                     .context("Failed to create persistent instance cookie")?
             } else {
-                self::utils::create_session_cookie("auth_id", &token, true)
+                create_session_cookie("auth_id", &token, secure_cookie)
                     .context("Failed to create session instance cookie")?
             };
 
@@ -232,7 +234,6 @@ mod tests {
     // covered in the integration test suite.
 
     use super::*;
-    use shared::types::login::LoginData;
 
     // ── validate_login ────────────────────────────────────────────────────────
 
@@ -272,9 +273,9 @@ mod tests {
 
     #[tokio::test]
     async fn parse_login_form_all_fields() {
+        use bytes::Bytes;
         use http_body_util::Full;
         use hyper::Request;
-        use bytes::Bytes;
 
         let body = b"username=alice&password=secret&remember_me=on".to_vec();
         let req = Request::builder()
@@ -289,10 +290,7 @@ mod tests {
                 .collect();
         assert_eq!(params.get("username").map(|s| s.as_str()), Some("alice"));
         assert_eq!(params.get("password").map(|s| s.as_str()), Some("secret"));
-        assert_eq!(
-            params.get("remember_me").map(|v| v == "on"),
-            Some(true)
-        );
+        assert_eq!(params.get("remember_me").map(|v| v == "on"), Some(true));
     }
 
     #[test]

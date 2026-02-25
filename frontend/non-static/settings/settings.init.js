@@ -7,22 +7,23 @@
  *            → settings.preferences.js → settings.init.js
  */
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener("DOMContentLoaded", () => {
   // ── Auth guard ─────────────────────────────────────────────────────────────
-  const user = Utils.getStorage('user');
-  if (!user?.loggedIn) {
-    window.location.href = '/';
+  const allowed = Utils.getStorage("allowed");
+  if (!allowed) {
+    window.location.href = "/";
     return;
   }
 
   // ── Navbar avatar ──────────────────────────────────────────────────────────
-  const initialsEl = document.getElementById('userInitials');
-  if (initialsEl) initialsEl.textContent = Utils.getInitials(user.name || user.email);
+  const initialsEl = document.getElementById("userInitials");
+  if (initialsEl)
+    initialsEl.textContent = Utils.getInitials(user.name || user.email);
 
   // ── Platform info (Help tab) ───────────────────────────────────────────────
-  const platformInfoEl = document.getElementById('platformInfo');
+  const platformInfoEl = document.getElementById("platformInfo");
   if (platformInfoEl && window.PlatformConfig) {
-    platformInfoEl.textContent = window.PlatformConfig.platform || 'Web';
+    platformInfoEl.textContent = window.PlatformConfig.platform || "Web";
   }
 
   // ── Boot sub-modules ───────────────────────────────────────────────────────

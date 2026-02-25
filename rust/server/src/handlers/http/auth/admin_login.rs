@@ -9,7 +9,7 @@ use tracing::{error, info, warn};
 
 use crate::AppState;
 use crate::handlers::http::utils::{
-    self, deliver_serialized_json, deliver_serialized_json_with_cookie,
+    self, deliver_serialized_json, deliver_serialized_json_with_cookie, is_https,
 };
 use shared::types::login::*;
 
@@ -25,6 +25,7 @@ pub async fn handle_login(
         .get("content-type")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
+    let secure_cookie = is_https(&req);
 
     let login_data = if content_type.contains("application/json") {
         match parse_login_json(req).await {
@@ -62,10 +63,10 @@ pub async fn handle_login(
             // body so the frontend can send it as a Bearer header on subsequent requests.
             let instance_cookie = if login_data.remember_me {
                 let max_age = std::time::Duration::from_secs(token_expiry_secs);
-                utils::create_persistent_cookie("auth_id", &token, max_age, true)
+                utils::create_persistent_cookie("auth_id", &token, max_age, secure_cookie)
                     .context("Failed to create persistent instance cookie")?
             } else {
-                utils::create_session_cookie("auth_id", &token, true)
+                utils::create_session_cookie("auth_id", &token, secure_cookie)
                     .context("Failed to create session instance cookie")?
             };
 

@@ -3,6 +3,8 @@ pub mod deliver_page;
 #[allow(dead_code)]
 pub mod headers;
 #[allow(dead_code)]
+pub mod http;
+#[allow(dead_code)]
 pub mod json_response;
 
 // Re-export commonly used utilities
@@ -19,6 +21,8 @@ pub use headers::{
     get_basic_auth, get_bearer_token, get_client_ip, get_cookie, get_header_value, get_user_agent,
     header_matches, set_cookie, validate_token_secure,
 };
+#[allow(unused_imports)]
+pub use http::is_https;
 #[allow(unused_imports)]
 pub use json_response::{
     deliver_error_json, deliver_json, deliver_serialized_json, deliver_serialized_json_with_cookie,

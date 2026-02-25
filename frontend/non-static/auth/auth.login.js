@@ -27,6 +27,7 @@ const AuthLogin = {
 
         // Server sent a redirect (302) — fetch followed it, navigate the browser there
         if (response.redirected) {
+          localStorage.setItem("allowed", true);
           window.location.href = response.url;
           return;
         }

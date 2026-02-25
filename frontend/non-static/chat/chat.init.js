@@ -8,17 +8,18 @@
  *            → chat.conversations.js → chat.init.js
  */
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener("DOMContentLoaded", () => {
   // ── Auth guard ─────────────────────────────────────────────────────────────
-  const user = Utils.getStorage('user');
-  if (!user?.loggedIn) {
-    window.location.href = '/';
+  const allowed = Utils.getStorage("allowed");
+  if (!allowed) {
+    window.location.href = "/";
     return;
   }
 
   // ── Populate navbar avatar ─────────────────────────────────────────────────
-  const initialsEl = document.getElementById('userInitials');
-  if (initialsEl) initialsEl.textContent = Utils.getInitials(user.name || user.email);
+  const initialsEl = document.getElementById("userInitials");
+  if (initialsEl)
+    initialsEl.textContent = Utils.getInitials(user.name || user.email);
 
   // ── Load persisted data ────────────────────────────────────────────────────
   ChatState.load();
