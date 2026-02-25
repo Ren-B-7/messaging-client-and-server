@@ -1,3 +1,5 @@
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 
 /// Chat creation request
@@ -142,5 +144,11 @@ impl MessageError {
             code: self.to_code().to_string(),
             message: self.to_message(),
         }
+    }
+}
+
+impl fmt::Display for MessageError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Code: {}", self.to_code())
     }
 }

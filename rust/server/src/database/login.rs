@@ -2,49 +2,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use tokio_rusqlite::{Connection, OptionalExtension, Result, params, rusqlite};
 
-#[derive(Debug, Clone)]
-pub struct LoginCredentials {
-    pub username: String,
-    pub password_hash: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct UserAuth {
-    pub id: i64,
-    pub username: String,
-    pub password_hash: String,
-    pub is_banned: bool,
-    pub ban_reason: Option<String>,
-}
-
-/// Auth record for admin accounts — same users table, filtered by is_admin = 1
-#[derive(Debug, Clone)]
-pub struct AdminAuth {
-    pub id: i64,
-    pub username: String,
-    pub password_hash: String,
-    pub is_banned: bool,
-    pub ban_reason: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct Session {
-    pub id: i64,
-    pub user_id: i64,
-    pub session_token: String,
-    pub created_at: i64,
-    pub expires_at: i64,
-    pub last_activity: i64,
-}
-
-#[derive(Debug, Clone)]
-pub struct NewSession {
-    pub user_id: i64,
-    pub session_token: String,
-    pub expires_at: i64,
-    pub ip_address: Option<String>,
-    pub user_agent: Option<String>,
-}
+use shared::types::login::*;
 
 /// Get user authentication data by username
 pub async fn get_user_auth(conn: &Connection, username: String) -> Result<Option<UserAuth>> {
@@ -130,40 +88,46 @@ pub async fn create_session(conn: &Connection, new_session: NewSession) -> Resul
     .await
 }
 
-/// Validate session token and return user_id if valid
-pub async fn validate_session(conn: &Connection, session_token: String) -> Result<Option<i64>> {
+/// Validate session token and return the full Session if valid (not expired).
+/// Returns `None` when the token doesn't exist or has expired.
+pub async fn validate_session(conn: &Connection, session_token: String) -> Result<Option<Session>> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
 
     conn.call(move |conn: &mut rusqlite::Connection| {
-        let mut stmt =
-            conn.prepare("SELECT user_id, expires_at FROM sessions WHERE session_token = ?1")?;
+        let mut stmt = conn.prepare(
+            "SELECT id, user_id, session_token, created_at, expires_at, last_activity,
+                    ip_address, user_agent
+             FROM sessions
+             WHERE session_token = ?1",
+        )?;
 
         let result = stmt
             .query_row(params![session_token.clone()], |row: &rusqlite::Row| {
-                let user_id: i64 = row.get(0)?;
-                let expires_at: i64 = row.get(1)?;
-                Ok((user_id, expires_at))
+                Ok(Session {
+                    id: row.get(0)?,
+                    user_id: row.get(1)?,
+                    session_token: row.get(2)?,
+                    created_at: row.get(3)?,
+                    expires_at: row.get(4)?,
+                    last_activity: row.get(5)?,
+                    ip_address: row.get(6)?,
+                    user_agent: row.get(7)?,
+                })
             })
             .optional()?;
 
         match result {
-            Some((user_id, expires_at)) => {
-                if expires_at > now {
-                    // Update last_activity
-                    conn.execute(
-                        "UPDATE sessions SET last_activity = ?1 WHERE session_token = ?2",
-                        params![now, session_token],
-                    )?;
-                    Ok(Some(user_id))
-                } else {
-                    // Session expired
-                    Ok(None)
-                }
+            Some(session) if session.expires_at > now => {
+                conn.execute(
+                    "UPDATE sessions SET last_activity = ?1 WHERE session_token = ?2",
+                    params![now, session_token],
+                )?;
+                Ok(Some(session))
             }
-            None => Ok(None),
+            _ => Ok(None),
         }
     })
     .await
@@ -273,8 +237,9 @@ pub async fn get_user_sessions(conn: &Connection, user_id: i64) -> Result<Vec<Se
 
     conn.call(move |conn: &mut rusqlite::Connection| {
         let mut stmt = conn.prepare(
-            "SELECT id, user_id, session_token, created_at, expires_at, last_activity 
-             FROM sessions 
+            "SELECT id, user_id, session_token, created_at, expires_at, last_activity,
+                    ip_address, user_agent
+             FROM sessions
              WHERE user_id = ?1 AND expires_at > ?2
              ORDER BY last_activity DESC",
         )?;
@@ -288,6 +253,8 @@ pub async fn get_user_sessions(conn: &Connection, user_id: i64) -> Result<Vec<Se
                     created_at: row.get(3)?,
                     expires_at: row.get(4)?,
                     last_activity: row.get(5)?,
+                    ip_address: row.get(6)?,
+                    user_agent: row.get(7)?,
                 })
             })?
             .collect::<std::result::Result<Vec<Session>, rusqlite::Error>>()?;

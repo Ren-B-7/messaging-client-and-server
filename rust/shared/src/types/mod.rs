@@ -14,14 +14,17 @@ pub use self::cache::CacheStrategy;
 #[allow(unused_imports)]
 pub use self::json_error::ErrorResponse;
 #[allow(unused_imports)]
-pub use self::login::{LoginData, LoginError, LoginResponse};
+pub use self::login::{
+    AdminAuth, LoginCredentials, LoginData, LoginError, LoginResponse, NewSession, Session,
+    UserAuth,
+};
 #[allow(unused_imports)]
 pub use self::message::{
     CreateChatRequest, GetMessagesQuery, MessageError, MessageResponse, SendMessageData,
     SendMessageResponse,
 };
 #[allow(unused_imports)]
-pub use self::register::{RegistrationData, RegistrationError, RegistrationResponse};
+pub use self::register::{RegisterData, RegisterError, RegisterResponse};
 #[allow(unused_imports)]
 pub use self::server_config::{AppConfig, AuthConfig, ConfigError, PathsConfig, ServerConfig};
 #[allow(unused_imports)]

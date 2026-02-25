@@ -1,20 +1,19 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct RegistrationData {
+pub struct RegisterData {
     pub username: String,
     pub password: String,
+    pub confirm_password: String,
     pub email: Option<String>,
     #[serde(default)]
     pub full_name: Option<String>,
-    #[serde(default)]
-    pub avatar: Option<String>,
 }
 
 /// Registration response codes
 #[derive(Debug, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
-pub enum RegistrationResponse {
+pub enum RegisterResponse {
     Success {
         user_id: i64,
         username: String,
@@ -29,7 +28,7 @@ pub enum RegistrationResponse {
 }
 
 /// Error codes for registration
-pub enum RegistrationError {
+pub enum RegisterError {
     UsernameTaken,
     EmailTaken,
     InvalidUsername,
@@ -40,9 +39,10 @@ pub enum RegistrationError {
     MissingField(String),
     DatabaseError,
     InternalError,
+    WeakPassword,
 }
 
-impl RegistrationError {
+impl RegisterError {
     pub fn to_code(&self) -> &'static str {
         match self {
             Self::UsernameTaken => "USERNAME_TAKEN",
@@ -55,6 +55,7 @@ impl RegistrationError {
             Self::MissingField(_) => "MISSING_FIELD",
             Self::DatabaseError => "DATABASE_ERROR",
             Self::InternalError => "INTERNAL_ERROR",
+            Self::WeakPassword => "WEAK_PASSWORD",
         }
     }
 
@@ -76,11 +77,12 @@ impl RegistrationError {
             Self::MissingField(field) => format!("Missing required field: {}", field),
             Self::DatabaseError => "Database error occurred".to_string(),
             Self::InternalError => "An internal error occurred".to_string(),
+            Self::WeakPassword => "Password is too weak".to_string(),
         }
     }
 
-    pub fn to_response(&self) -> RegistrationResponse {
-        RegistrationResponse::Error {
+    pub fn to_response(&self) -> RegisterResponse {
+        RegisterResponse::Error {
             code: self.to_code().to_string(),
             message: self.to_message(),
         }

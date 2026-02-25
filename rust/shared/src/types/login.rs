@@ -1,3 +1,5 @@
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
@@ -64,5 +66,71 @@ impl LoginError {
             code: self.to_code().to_string(),
             message: self.to_message(),
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct LoginCredentials {
+    pub username: String,
+    pub password_hash: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct UserAuth {
+    pub id: i64,
+    pub username: String,
+    pub password_hash: String,
+    pub is_banned: bool,
+    pub ban_reason: Option<String>,
+}
+
+/// Auth record for admin accounts — same users table, filtered by is_admin = 1
+#[derive(Debug, Clone)]
+pub struct AdminAuth {
+    pub id: i64,
+    pub username: String,
+    pub password_hash: String,
+    pub is_banned: bool,
+    pub ban_reason: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Session {
+    pub id: i64,
+    pub user_id: i64,
+    pub session_token: String,
+    pub created_at: i64,
+    pub expires_at: i64,
+    pub last_activity: i64,
+    pub ip_address: Option<String>,
+    pub user_agent: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct NewSession {
+    pub user_id: i64,
+    pub session_token: String,
+    pub expires_at: i64,
+    pub ip_address: Option<String>,
+    pub user_agent: Option<String>,
+}
+
+impl fmt::Display for NewSession {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "id - {:?}, ip - {:?}, agent - {:?}",
+            self.user_id, self.ip_address, self.user_agent
+        )
+    }
+}
+
+impl fmt::Display for Session {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "id - {:?}, ip - {:?}, agent - {:?}",
+            self.user_id, self.ip_address, self.user_agent
+        )
     }
 }
