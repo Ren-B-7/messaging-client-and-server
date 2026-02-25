@@ -11,7 +11,10 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::database::login as db_login;
 use crate::database::messages as db_messages;
+use crate::database::utils as db_utils;
+use shared::types::login::Session;
 
 // ---------------------------------------------------------------------------
 // Chat context — parsed from the SSE request query string
@@ -263,7 +266,8 @@ pub async fn handle_sse_subscribe(
         SseError::ChannelSendFailed("Unauthorized".to_string())
     })?;
 
-    let session = crate::database::login::validate_session(&state.db, token)
+    let session: Session =
+        db_login::validate_session_id(&state.db, token)
         .await
         .map_err(|e| {
             error!("SSE auth DB error: {}", e);
@@ -332,7 +336,7 @@ pub async fn handle_sse_subscribe(
     ));
 
     for msg in &history {
-        let content = crate::database::utils::decompress_data(&msg.content).map_err(|e| {
+        let content = db_utils::decompress_data(&msg.content).map_err(|e| {
             error!("SSE history decompress failed for msg {}: {}", msg.id, e);
             SseError::ChannelSendFailed("Failed to decompress message".to_string())
         })?;

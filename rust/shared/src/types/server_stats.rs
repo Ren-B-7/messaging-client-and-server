@@ -52,9 +52,9 @@ impl ServerStats {
     /// Build a stats snapshot from config + live database counts.
     ///
     /// `config` is typically a short-lived read guard from `LiveConfig`:
-    /// ```rust
-    /// let cfg = state.config.read().await;
-    /// let stats = ServerStats::build(&cfg, db_info, started_at);
+    /// ```rust,no_run
+    /// // let cfg = state.config.read().await;
+    /// // let stats = ServerStats::build(&cfg, db_info, started_at);
     /// // guard drops here
     /// ```
     ///

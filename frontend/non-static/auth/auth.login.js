@@ -22,11 +22,12 @@ const AuthLogin = {
         const response = await fetch("/api/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username: username, password }),
+          body: JSON.stringify({ username: username, password: password }),
         });
 
         // Server sent a redirect (302) — fetch followed it, navigate the browser there
         if (response.redirected) {
+          console.log("response");
           localStorage.setItem("allowed", "true");
           window.location.href = response.url;
           return;
@@ -41,6 +42,8 @@ const AuthLogin = {
 
         // Success response with explicit redirect field
         if (data.redirect) {
+          console.log("Data");
+          localStorage.setItem("allowed", "true");
           window.location.href = data.redirect;
         }
       } catch (err) {

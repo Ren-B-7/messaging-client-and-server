@@ -39,6 +39,8 @@ anyhow = "1.0"
 # Bytes
 bytes = "1"
 
+jsonwebtoken = "10.3.0"
+
 [profile.release]
 opt-level = 3
 lto = "thin"

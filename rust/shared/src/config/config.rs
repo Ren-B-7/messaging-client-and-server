@@ -21,6 +21,8 @@ pub fn load_config(path: &str) -> Result<AppConfig, ConfigError> {
 
     validate_config(&config)?;
 
+    info!("Config validated");
+
     Ok(config)
 }
 
@@ -39,6 +41,24 @@ fn validate_config(config: &AppConfig) -> Result<(), ConfigError> {
         return Err(ConfigError::InvalidConfig(
             "max_connections must be greater than 0".into(),
         ));
+    }
+
+    // JWT secret must be resolvable (env var or config field) and long enough.
+    // Validated here so a bad config is rejected immediately — including on
+    // SIGHUP hot-reloads — rather than failing silently at the first login.
+    match config.auth.resolved_jwt_secret() {
+        None => {
+            return Err(ConfigError::InvalidConfig(
+                "jwt_secret must be set via the JWT_SECRET env var or auth.jwt_secret config field"
+                    .into(),
+            ));
+        }
+        Some(secret) if secret.len() < 32 => {
+            return Err(ConfigError::InvalidConfig(
+                "jwt_secret must be at least 32 characters long".into(),
+            ));
+        }
+        _ => {}
     }
 
     Ok(())

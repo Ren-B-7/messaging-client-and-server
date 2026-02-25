@@ -9,22 +9,30 @@ use tracing::{error, info, warn};
 
 use crate::AppState;
 use crate::handlers::http::utils::{
-    self, deliver_serialized_json, deliver_serialized_json_with_cookie, is_https,
+    self, deliver_serialized_json, deliver_serialized_json_with_cookie, encode_jwt, get_client_ip,
+    get_user_agent, is_https,
 };
+use shared::types::jwt::JwtClaims;
 use shared::types::login::*;
 
-/// Main admin login handler
+/// Main admin login handler.
 pub async fn handle_login(
     req: Request<hyper::body::Incoming>,
     state: AppState,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing admin login request");
 
+    // Capture IP and UA before consuming the body.
+    let ip_address = get_client_ip(&req);
+    let user_agent = get_user_agent(&req).unwrap_or_default();
+
     let content_type = req
         .headers()
         .get("content-type")
         .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
+        .unwrap_or("")
+        .to_string();
+
     let secure_cookie = is_https(&req);
 
     let login_data = if content_type.contains("application/json") {
@@ -50,8 +58,8 @@ pub async fn handle_login(
         return deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST);
     }
 
-    match attempt_login(&login_data, &state).await {
-        Ok((user_id, username, token)) => {
+    match attempt_login(&login_data, &state, ip_address, user_agent).await {
+        Ok((user_id, username, jwt)) => {
             info!(
                 "Admin logged in successfully: {} (ID: {})",
                 username, user_id
@@ -59,21 +67,21 @@ pub async fn handle_login(
 
             let token_expiry_secs = state.config.read().await.auth.token_expiry_minutes * 60;
 
-            // The session token is stored both in the cookie and returned in the JSON
-            // body so the frontend can send it as a Bearer header on subsequent requests.
+            // The JWT is returned in both the cookie and the JSON body so that
+            // the admin SPA can send it as a Bearer header on subsequent requests.
             let instance_cookie = if login_data.remember_me {
                 let max_age = std::time::Duration::from_secs(token_expiry_secs);
-                utils::create_persistent_cookie("auth_id", &token, max_age, secure_cookie)
+                utils::create_persistent_cookie("auth_id", &jwt, max_age, secure_cookie)
                     .context("Failed to create persistent instance cookie")?
             } else {
-                utils::create_session_cookie("auth_id", &token, secure_cookie)
+                utils::create_session_cookie("auth_id", &jwt, secure_cookie)
                     .context("Failed to create session instance cookie")?
             };
 
             let response_data = LoginResponse::Success {
                 user_id,
                 username,
-                token,
+                token: jwt,
                 expires_in: token_expiry_secs,
                 message: "Admin login successful".to_string(),
             };
@@ -91,7 +99,10 @@ pub async fn handle_login(
     }
 }
 
-/// Parse login JSON data
+// ---------------------------------------------------------------------------
+// Parsing helpers
+// ---------------------------------------------------------------------------
+
 async fn parse_login_json(
     req: Request<hyper::body::Incoming>,
 ) -> std::result::Result<LoginData, LoginError> {
@@ -107,7 +118,6 @@ async fn parse_login_json(
     })
 }
 
-/// Parse login form data
 async fn parse_login_form(
     req: Request<hyper::body::Incoming>,
 ) -> std::result::Result<LoginData, LoginError> {
@@ -146,7 +156,6 @@ async fn parse_login_form(
     })
 }
 
-/// Validate login data
 fn validate_login(data: &LoginData) -> std::result::Result<(), LoginError> {
     if data.username.is_empty() {
         return Err(LoginError::MissingField("username".to_string()));
@@ -157,10 +166,17 @@ fn validate_login(data: &LoginData) -> std::result::Result<(), LoginError> {
     Ok(())
 }
 
-/// Attempt to log in the admin user using the database
+// ---------------------------------------------------------------------------
+// Core admin login logic
+// ---------------------------------------------------------------------------
+
+/// Verify admin credentials, create a DB session, and mint a signed JWT with
+/// `is_admin: true`.
 async fn attempt_login(
     data: &LoginData,
     state: &AppState,
+    ip_address: Option<String>,
+    user_agent: String,
 ) -> std::result::Result<(i64, String, String), LoginError> {
     use crate::database::login as db_login;
 
@@ -194,7 +210,7 @@ async fn attempt_login(
         return Err(LoginError::InvalidCredentials);
     }
 
-    let token = crate::database::utils::generate_session_token();
+    let session_id = crate::database::utils::generate_uuid_token();
     let token_expiry_secs = state.config.read().await.auth.token_expiry_minutes * 60;
     let expires_at = crate::database::utils::calculate_expiry(token_expiry_secs as i64);
 
@@ -202,10 +218,9 @@ async fn attempt_login(
         &state.db,
         NewSession {
             user_id: admin_auth.id,
-            session_token: token.clone(),
+            session_id: session_id.clone(),
             expires_at,
-            ip_address: None,
-            user_agent: None,
+            ip_address,
         },
     )
     .await
@@ -216,15 +231,34 @@ async fn attempt_login(
 
     db_login::update_admin_last_login(&state.db, admin_auth.id)
         .await
-        .map_err(|e| {
-            error!("Failed to update admin last login: {}", e);
-        })
+        .map_err(|e| error!("Failed to update admin last login: {}", e))
         .ok();
+
+    // Admin sessions always carry is_admin: true.
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as usize;
+
+    let claims = JwtClaims {
+        sub: admin_auth.username.clone(),
+        user_id: admin_auth.id,
+        session_id,
+        user_agent,
+        is_admin: true,
+        exp: now + token_expiry_secs as usize,
+        iat: now,
+    };
+
+    let jwt = encode_jwt(&claims, &state.jwt_secret).map_err(|e| {
+        error!("JWT encoding failed: {}", e);
+        LoginError::InternalError
+    })?;
 
     info!(
         "Admin login successful for user: {} (ID: {})",
         admin_auth.username, admin_auth.id
     );
 
-    Ok((admin_auth.id, admin_auth.username, token))
+    Ok((admin_auth.id, admin_auth.username, jwt))
 }

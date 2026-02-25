@@ -10,7 +10,7 @@
 
 document.addEventListener("DOMContentLoaded", () => {
   // ── Auth guard ─────────────────────────────────────────────────────────────
-  const allowed = Utils.getStorage("allowed") === "true";
+  const allowed = localStorage.getStorage("allowed") === "true";
 
   console.log("Allowed value:", allowed);
 

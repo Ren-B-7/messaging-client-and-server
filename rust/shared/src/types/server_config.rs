@@ -2,6 +2,10 @@ use serde::Deserialize;
 use std::collections::HashSet;
 use thiserror::Error;
 
+// ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
+
 #[derive(Error, Debug)]
 pub enum ConfigError {
     #[error("Invalid configuration: {0}")]
@@ -13,6 +17,10 @@ pub enum ConfigError {
     #[error("TOML parse error: {0}")]
     TomlParse(#[from] toml::de::Error),
 }
+
+// ---------------------------------------------------------------------------
+// Config structs
+// ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ServerConfig {
@@ -39,6 +47,18 @@ pub struct AuthConfig {
     pub token_expiry_minutes: u64,
     #[serde(default)]
     pub email_required: bool,
+    /// HMAC key used to sign and verify JWTs.
+    ///
+    /// Prefer loading this via the `JWT_SECRET` environment variable.  This
+    /// config field is the fallback for deployments that cannot inject env
+    /// vars at runtime (e.g. certain container setups).
+    ///
+    /// **Minimum length:** 32 characters.
+    /// **Hot-reload safe:** NO — the server reads this once at startup and
+    /// stores it in `AppState.jwt_secret`.  Changing it via SIGHUP requires
+    /// a restart because rotating the secret immediately invalidates every
+    /// active session.
+    pub jwt_secret: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -48,20 +68,24 @@ pub struct AppConfig {
     pub auth: AuthConfig,
 }
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 impl ServerConfig {
-    /// Full bind address for the user-facing server, e.g. "0.0.0.0:1337"
+    /// Full bind address for the user-facing server, e.g. `"0.0.0.0:1337"`
     pub fn client_addr(&self) -> String {
         format!("{}:{}", self.bind, self.port_client.unwrap_or(1337))
     }
 
-    /// Full bind address for the admin server, e.g. "0.0.0.0:1338"
+    /// Full bind address for the admin server, e.g. `"0.0.0.0:1338"`
     pub fn admin_addr(&self) -> String {
         format!("{}:{}", self.bind, self.port_admin.unwrap_or(1338))
     }
 }
 
 impl AuthConfig {
-    /// Token expiry as seconds — convenience for cookie Max-Age
+    /// Token expiry converted to seconds — convenience for cookie `Max-Age`.
     pub fn token_expiry_secs(&self) -> u64 {
         self.token_expiry_minutes * 60
     }
@@ -69,9 +93,25 @@ impl AuthConfig {
     pub fn email_required(&self) -> bool {
         self.email_required
     }
+
+    /// Resolve the JWT secret with `JWT_SECRET` env-var taking priority over
+    /// the config file field.
+    ///
+    /// Returns `None` when neither source is set (the server startup code
+    /// treats this as a hard error).
+    pub fn resolved_jwt_secret(&self) -> Option<String> {
+        std::env::var("JWT_SECRET")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .or_else(|| self.jwt_secret.clone())
+            .filter(|s| !s.is_empty())
+    }
 }
 
-// Default functions referenced by #[serde(default = "...")] on struct fields
+// ---------------------------------------------------------------------------
+// Serde defaults
+// ---------------------------------------------------------------------------
+
 pub fn default_admin_port() -> Option<u16> {
     Some(1338)
 }

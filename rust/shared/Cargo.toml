@@ -9,6 +9,7 @@ description = "Common library for async server and tui client"
 thiserror = "2"
 toml = "0.8"
 
+jsonwebtoken = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }

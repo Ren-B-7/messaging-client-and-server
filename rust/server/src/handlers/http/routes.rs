@@ -6,72 +6,120 @@ use anyhow::{Context, Result};
 use bytes::Bytes;
 use http_body_util::{BodyExt, combinators::BoxBody};
 use hyper::{Method, Request, Response, StatusCode};
+use tracing::warn;
 
 use crate::AppState;
 use crate::handlers::http::profile::settings;
 use crate::handlers::http::{auth, messaging, profile, utils::*};
+use crate::handlers::http::utils::headers::{decode_jwt_claims, validate_jwt_secure};
 
 use shared::types::cache::*;
+use shared::types::jwt::JwtClaims;
 
-/// Type alias for route handler functions
+// ---------------------------------------------------------------------------
+// Handler type aliases
+// ---------------------------------------------------------------------------
+//
+// Three flavours depending on what auth the route needs:
+//
+//   RouteHandler  — no auth, receives raw (req, state)
+//   LightHandler  — JWT-only auth, receives (req, state, claims)
+//   HardHandler   — full DB auth, receives (req, state, user_id, claims)
+
 type RouteHandler = Box<
     dyn Fn(
             Request<hyper::body::Incoming>,
             AppState,
-        )
-            -> Pin<Box<dyn Future<Output = Result<Response<BoxBody<Bytes, Infallible>>>> + Send>>
+        ) -> Pin<Box<dyn Future<Output = Result<Response<BoxBody<Bytes, Infallible>>>> + Send>>
         + Send
         + Sync,
 >;
 
-/// Route definition
-struct Route {
-    method: Method,
-    path: String,
-    handler: RouteHandler,
+type LightHandler = Box<
+    dyn Fn(
+            Request<hyper::body::Incoming>,
+            AppState,
+            JwtClaims,
+        ) -> Pin<Box<dyn Future<Output = Result<Response<BoxBody<Bytes, Infallible>>>> + Send>>
+        + Send
+        + Sync,
+>;
+
+type HardHandler = Box<
+    dyn Fn(
+            Request<hyper::body::Incoming>,
+            AppState,
+            i64,       // user_id — extracted and verified by the router
+            JwtClaims, // full claims in case the handler wants them
+        ) -> Pin<Box<dyn Future<Output = Result<Response<BoxBody<Bytes, Infallible>>>> + Send>>
+        + Send
+        + Sync,
+>;
+
+// ---------------------------------------------------------------------------
+// RouteKind — bundles auth level with the appropriate handler type
+// ---------------------------------------------------------------------------
+
+enum RouteKind {
+    /// No authentication check.
+    Open(RouteHandler),
+
+    /// Light auth: JWT signature + expiry only, zero DB reads.
+    /// Handler receives the decoded `JwtClaims`.
+    Light(LightHandler),
+
+    /// Hard auth: JWT decode + DB session lookup + IP binding.
+    /// Handler receives the verified `user_id` and `JwtClaims`.
+    Hard(HardHandler),
 }
 
-/// HTTP Router with builder pattern for route registration
+// ---------------------------------------------------------------------------
+// Route
+// ---------------------------------------------------------------------------
+
+struct Route {
+    method: Method,
+    path:   String,
+    kind:   RouteKind,
+}
+
+// ---------------------------------------------------------------------------
+// Router
+// ---------------------------------------------------------------------------
+
 pub struct Router {
-    routes: Vec<Route>,
-    web_dir: Option<String>,
+    routes:    Vec<Route>,
+    web_dir:   Option<String>,
     icons_dir: Option<String>,
 }
 
-// Manual Debug implementation since RouteHandler contains function pointers
 impl std::fmt::Debug for Router {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Router")
             .field("routes_count", &self.routes.len())
-            .field("web_dir", &self.web_dir)
-            .field("icons_dir", &self.icons_dir)
+            .field("web_dir",      &self.web_dir)
+            .field("icons_dir",    &self.icons_dir)
             .finish()
     }
 }
 
 impl Router {
-    /// Create a new Router instance
     pub fn new() -> Self {
-        Self {
-            routes: Vec::new(),
-            web_dir: None,
-            icons_dir: None,
-        }
+        Self { routes: Vec::new(), web_dir: None, icons_dir: None }
     }
 
-    /// Set web directory for static file serving
     pub fn with_web_dir(mut self, web_dir: String) -> Self {
         self.web_dir = Some(web_dir);
         self
     }
 
-    /// Set icons directory for icon serving
     pub fn with_icons_dir(mut self, icons_dir: String) -> Self {
         self.icons_dir = Some(icons_dir);
         self
     }
 
-    /// Register a GET route
+    // ── Open (no auth) ────────────────────────────────────────────────────────
+
     pub fn get<F, Fut>(mut self, path: &str, handler: F) -> Self
     where
         F: Fn(Request<hyper::body::Incoming>, AppState) -> Fut + Send + Sync + 'static,
@@ -79,13 +127,12 @@ impl Router {
     {
         self.routes.push(Route {
             method: Method::GET,
-            path: path.to_string(),
-            handler: Box::new(move |req, state| Box::pin(handler(req, state))),
+            path:   path.to_string(),
+            kind:   RouteKind::Open(Box::new(move |req, state| Box::pin(handler(req, state)))),
         });
         self
     }
 
-    /// Register a POST route
     pub fn post<F, Fut>(mut self, path: &str, handler: F) -> Self
     where
         F: Fn(Request<hyper::body::Incoming>, AppState) -> Fut + Send + Sync + 'static,
@@ -93,13 +140,12 @@ impl Router {
     {
         self.routes.push(Route {
             method: Method::POST,
-            path: path.to_string(),
-            handler: Box::new(move |req, state| Box::pin(handler(req, state))),
+            path:   path.to_string(),
+            kind:   RouteKind::Open(Box::new(move |req, state| Box::pin(handler(req, state)))),
         });
         self
     }
 
-    /// Register a DELETE route
     pub fn delete<F, Fut>(mut self, path: &str, handler: F) -> Self
     where
         F: Fn(Request<hyper::body::Incoming>, AppState) -> Fut + Send + Sync + 'static,
@@ -107,69 +153,152 @@ impl Router {
     {
         self.routes.push(Route {
             method: Method::DELETE,
-            path: path.to_string(),
-            handler: Box::new(move |req, state| Box::pin(handler(req, state))),
+            path:   path.to_string(),
+            kind:   RouteKind::Open(Box::new(move |req, state| Box::pin(handler(req, state)))),
         });
         self
     }
 
-    /// Route a request to the appropriate handler
+    // ── Light auth (JWT decode only, zero DB reads) ───────────────────────────
+
+    /// GET guarded by **light** JWT auth.
+    ///
+    /// The router verifies the JWT signature and `exp` claim before calling
+    /// the handler. No database is touched. The handler receives the decoded
+    /// `JwtClaims` directly — no need to call `decode_jwt_claims` inside it.
+    pub fn get_light<F, Fut>(mut self, path: &str, handler: F) -> Self
+    where
+        F: Fn(Request<hyper::body::Incoming>, AppState, JwtClaims) -> Fut
+            + Send
+            + Sync
+            + 'static,
+        Fut: Future<Output = Result<Response<BoxBody<Bytes, Infallible>>>> + Send + 'static,
+    {
+        self.routes.push(Route {
+            method: Method::GET,
+            path:   path.to_string(),
+            kind:   RouteKind::Light(Box::new(move |req, state, claims| {
+                Box::pin(handler(req, state, claims))
+            })),
+        });
+        self
+    }
+
+    // ── Hard auth (JWT + DB session + IP binding) ─────────────────────────────
+
+    /// POST guarded by **hard** auth.
+    ///
+    /// Decodes the JWT, looks up `session_id` in the DB, validates IP binding,
+    /// then calls the handler with the verified `user_id` and `JwtClaims`.
+    /// The handler never needs to call any auth function itself.
+    pub fn post_hard<F, Fut>(mut self, path: &str, handler: F) -> Self
+    where
+        F: Fn(Request<hyper::body::Incoming>, AppState, i64, JwtClaims) -> Fut
+            + Send
+            + Sync
+            + 'static,
+        Fut: Future<Output = Result<Response<BoxBody<Bytes, Infallible>>>> + Send + 'static,
+    {
+        self.routes.push(Route {
+            method: Method::POST,
+            path:   path.to_string(),
+            kind:   RouteKind::Hard(Box::new(move |req, state, uid, claims| {
+                Box::pin(handler(req, state, uid, claims))
+            })),
+        });
+        self
+    }
+
+    /// DELETE guarded by **hard** auth.
+    pub fn delete_hard<F, Fut>(mut self, path: &str, handler: F) -> Self
+    where
+        F: Fn(Request<hyper::body::Incoming>, AppState, i64, JwtClaims) -> Fut
+            + Send
+            + Sync
+            + 'static,
+        Fut: Future<Output = Result<Response<BoxBody<Bytes, Infallible>>>> + Send + 'static,
+    {
+        self.routes.push(Route {
+            method: Method::DELETE,
+            path:   path.to_string(),
+            kind:   RouteKind::Hard(Box::new(move |req, state, uid, claims| {
+                Box::pin(handler(req, state, uid, claims))
+            })),
+        });
+        self
+    }
+
+    // ── Dispatch ──────────────────────────────────────────────────────────────
+
     pub async fn route(
         &self,
         req: Request<hyper::body::Incoming>,
         state: AppState,
     ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
         let method = req.method().clone();
-        let path = req.uri().path().to_string();
+        let path   = req.uri().path().to_string();
 
-        // Try to match against registered routes
         for route in &self.routes {
-            if route.method == method && Self::path_matches(&route.path, &path) {
-                let response = (route.handler)(req, state).await?;
-                return Ok(response); // No conversion needed - already BoxBody
+            if route.method != method || !Self::path_matches(&route.path, &path) {
+                continue;
             }
+
+            return match &route.kind {
+                RouteKind::Open(h) => h(req, state).await,
+
+                RouteKind::Light(h) => {
+                    match decode_jwt_claims(&req, &state.jwt_secret) {
+                        Ok(claims) => h(req, state, claims).await,
+                        Err(reason) => {
+                            warn!("Light-auth rejected {} {}: {}", method, path, reason);
+                            unauthorized()
+                        }
+                    }
+                }
+
+                RouteKind::Hard(h) => {
+                    // validate_jwt_secure now returns (user_id, claims) — see headers.rs
+                    match validate_jwt_secure(&req, &state).await {
+                        Ok((user_id, claims)) => h(req, state, user_id, claims).await,
+                        Err(reason) => {
+                            warn!("Hard-auth rejected {} {}: {}", method, path, reason);
+                            unauthorized()
+                        }
+                    }
+                }
+            };
         }
 
-        // If no route matched, try static file serving for GET requests
+        // No registered route matched — try static file fallback for GET
         if method == Method::GET {
             if let Some(static_response) = self.try_serve_static(&path, &state).await? {
                 return Ok(static_response);
             }
         }
 
-        // No route or static file matched - return 404
         json_response::deliver_error_json("NOT_FOUND", "Endpoint not found", StatusCode::NOT_FOUND)
             .context("Failed to deliver 404 response")
     }
 
-    /// Check if a route path matches the request path
-    /// Supports exact matches and path parameters (e.g., "/users/:id")
     fn path_matches(route_path: &str, request_path: &str) -> bool {
-        // For now, just do exact matching
-        // Can be extended to support path parameters later
         route_path == request_path
     }
 
-    /// Try to serve static files for GET requests
     async fn try_serve_static(
         &self,
         path: &str,
         state: &AppState,
     ) -> Result<Option<Response<BoxBody<Bytes, Infallible>>>> {
-        let cfg = state.config.read().await.clone();
+        let cfg     = state.config.read().await.clone();
         let web_dir = self.web_dir.as_ref().unwrap_or(&cfg.paths.web_dir);
-        let icons = self.icons_dir.as_ref().unwrap_or(&cfg.paths.icons);
+        let icons   = self.icons_dir.as_ref().unwrap_or(&cfg.paths.icons);
 
         match path {
-            // Home page
             "/" | "/index.html" => {
                 let file_path = format!("{}/index.html", web_dir);
-                Ok(Some(
-                    deliver_html_page(&file_path).context("Failed to deliver HTML page")?,
-                ))
+                Ok(Some(deliver_html_page(&file_path).context("Failed to deliver HTML page")?))
             }
 
-            // Static files - cached (1 year)
             path if path.starts_with("/static/") => {
                 let file_path = format!("{}{}", web_dir, path);
                 Ok(Some(
@@ -178,7 +307,6 @@ impl Router {
                 ))
             }
 
-            // Favicon and browser icons
             "/favicon.ico"
             | "/favicon.png"
             | "/favicon.svg"
@@ -188,7 +316,7 @@ impl Router {
             | "/android-chrome-512x512.png"
             | "/browserconfig.xml"
             | "/site.webmanifest" => {
-                let filename = path.trim_start_matches('/');
+                let filename  = path.trim_start_matches('/');
                 let file_path = format!("{}{}{}", web_dir, icons, filename);
                 Ok(Some(
                     deliver_page_with_status(&file_path, StatusCode::OK, CacheStrategy::Yes)
@@ -196,7 +324,6 @@ impl Router {
                 ))
             }
 
-            // Non-static files - not cached
             path if path.starts_with("/non-static/") => {
                 let file_path = format!("{}{}", web_dir, path);
                 Ok(Some(
@@ -205,12 +332,9 @@ impl Router {
                 ))
             }
 
-            // Any .html file from the frontend directory
             path if path.ends_with(".html") => {
                 let file_path = format!("{}{}", web_dir, path);
-                Ok(Some(
-                    deliver_html_page(&file_path).context("Failed to deliver HTML file")?,
-                ))
+                Ok(Some(deliver_html_page(&file_path).context("Failed to deliver HTML file")?))
             }
 
             _ => Ok(None),
@@ -218,31 +342,90 @@ impl Router {
     }
 }
 
-/// Build the user-facing API router with custom web_dir and icons_dir
+// ---------------------------------------------------------------------------
+// Helper
+// ---------------------------------------------------------------------------
+
+fn unauthorized() -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    json_response::deliver_error_json(
+        "UNAUTHORIZED",
+        "Authentication required",
+        StatusCode::UNAUTHORIZED,
+    )
+    .context("Failed to deliver 401 response")
+}
+
+// ---------------------------------------------------------------------------
+// Shared base API router
+// ---------------------------------------------------------------------------
+
 pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<String>) -> Router {
     let mut router = Router::new();
-
-    // Set directories if provided
-    if let Some(dir) = web_dir {
-        router = router.with_web_dir(dir);
-    }
-    if let Some(dir) = icons_dir {
-        router = router.with_icons_dir(dir);
-    }
+    if let Some(dir) = web_dir   { router = router.with_web_dir(dir); }
+    if let Some(dir) = icons_dir { router = router.with_icons_dir(dir); }
 
     router
-        // Auth endpoints
+        // ── Public: no auth ──────────────────────────────────────────────────
         .post("/api/register", |req, state| async move {
             auth::handle_register(req, state)
                 .await
                 .context("Register failed")
         })
+        .get("/api/config", |_req, state| async move {
+            let config_json = serde_json::json!({
+                "status": "success",
+                "data": {
+                    "email_required":       state.config.read().await.auth.email_required,
+                    "token_expiry_minutes": state.config.read().await.auth.token_expiry_minutes,
+                }
+            });
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header("content-type", "application/json")
+                .body(http_body_util::Full::new(Bytes::from(config_json.to_string())).boxed())
+                .context("Failed to build config response")?)
+        })
+        .get("/health", |_req, _state| async move {
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header("content-type", "application/json")
+                .body(
+                    http_body_util::Full::new(Bytes::from(
+                        r#"{"status":"success","health":"ok"}"#,
+                    ))
+                    .boxed(),
+                )
+                .unwrap())
+        })
+
+        // ── Light auth: JWT only, zero DB reads ──────────────────────────────
+        .get("/api/profile", |req, state| async move {
+            profile::handle_get_profile(req, state)
+                .await
+                .context("Profile get failed")
+        })
+        .get("/api/messages", |req, state| async move {
+            messaging::handle_get_messages(req, state, None)
+                .await
+                .context("Message get failed")
+        })
+        .get("/api/chats", |req, state| async move {
+            messaging::handle_get_chats(req, state)
+                .await
+                .context("Chat get failed")
+        })
+        .get("/api/groups", |req, state| async move {
+            messaging::handle_get_groups(req, state)
+                .await
+                .context("Group get failed")
+        })
+
+        // ── Hard auth: JWT + DB session + IP binding ─────────────────────────
         .post("/api/logout", |req, state| async move {
             settings::handle_logout(req, state)
                 .await
                 .context("Logout failed")
         })
-        // Profile & Settings
         .post("/api/profile/update", |req, state| async move {
             profile::handle_update_profile(req, state)
                 .await
@@ -254,80 +437,34 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
                 .context("Password change failed")
         })
         .post("/api/settings/logout-all", |req, state| async move {
-            profile::handle_logout_all(req, state)
+            settings::handle_logout_all(req, state)
                 .await
-                .context("Logout attempt failed")
+                .context("Logout-all failed")
         })
-        .get("/api/profile", |req, state| async move {
-            profile::handle_get_profile(req, state)
-                .await
-                .context("Profile get failed")
-        })
-        // Messaging & Chats
         .post("/api/messages/send", |req, state| async move {
             messaging::handle_send_message(req, state)
                 .await
                 .context("Message send failed")
-        })
-        .get("/api/messages", |req, state| async move {
-            messaging::handle_get_messages(req, state, None)
-                .await
-                .context("Message get attempt failed")
         })
         .post("/api/chats", |req, state| async move {
             messaging::handle_create_chat(req, state)
                 .await
                 .context("Create chat failed")
         })
-        .get("/api/chats", |req, state| async move {
-            messaging::handle_get_chats(req, state)
-                .await
-                .context("Chat get attempt failed")
-        })
         .post("/api/groups", |req, state| async move {
             messaging::handle_create_group(req, state)
                 .await
                 .context("Create group failed")
         })
-        .get("/api/groups", |req, state| async move {
-            messaging::handle_get_groups(req, state)
-                .await
-                .context("Group chat get attempt failed")
-        })
-        // Config & Health
-        .get("/api/config", |_req, state| async move {
-            let config_json = serde_json::json!({
-                "status": "success",
-                "data": {
-                    "email_required": state.config.read().await.auth.email_required,
-                    "token_expiry_minutes": state.config.read().await.auth.token_expiry_minutes
-                }
-            });
-            let response = Response::builder()
-                .status(StatusCode::OK)
-                .header("content-type", "application/json")
-                .body(http_body_util::Full::new(Bytes::from(config_json.to_string())).boxed())
-                .context("Failed to build config response")?;
-            Ok(response)
-        })
-        .get("/health", |_req, _state| async move {
-            let response = Response::builder()
-                .status(StatusCode::OK)
-                .header("content-type", "application/json")
-                .body(
-                    http_body_util::Full::new(Bytes::from(r#"{"status":"success","health":"ok"}"#))
-                        .boxed(),
-                )
-                .unwrap();
-            Ok(response)
-        })
 }
-// handlers/http/routes.rs  — append at the bottom
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // ── path_matches ──────────────────────────────────────────────────────────
 
     #[test]
     fn exact_path_matches() {
@@ -341,7 +478,6 @@ mod tests {
 
     #[test]
     fn trailing_slash_matters() {
-        // Current implementation is exact — these must differ.
         assert!(!Router::path_matches("/api/profile", "/api/profile/"));
     }
 
@@ -349,11 +485,6 @@ mod tests {
     fn root_path_matches_self() {
         assert!(Router::path_matches("/", "/"));
     }
-
-    // ── try_serve_static path classification ──────────────────────────────────
-    //
-    // We test the classification logic (the match arms) without constructing
-    // a full AppState by inspecting the string predicates directly.
 
     #[test]
     fn static_prefix_detection() {
@@ -383,7 +514,6 @@ mod tests {
             "/android-chrome-512x512.png",
             "/site.webmanifest",
         ];
-        // Mirror the match arm used in try_serve_static
         for path in &favicons {
             let is_favicon = matches!(
                 *path,
@@ -400,14 +530,6 @@ mod tests {
             assert!(is_favicon, "Expected {} to be recognised as favicon", path);
         }
     }
-
-    #[test]
-    fn root_path_matches_static_arm() {
-        let path = "/";
-        assert!(matches!(path, "/" | "/index.html"));
-    }
-
-    // ── Router builder ────────────────────────────────────────────────────────
 
     #[test]
     fn router_new_has_no_routes() {
@@ -428,20 +550,42 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn router_get_adds_route() {
+    async fn router_get_adds_open_route() {
         let r = Router::new().get("/ping", |_req, _state| async move {
-            use hyper::Response;
-            use http::StatusCode;
-            use bytes::Bytes;
-            use http_body_util::Full;
-            use std::convert::Infallible;
-            use http_body_util::BodyExt;
             Ok(Response::builder()
                 .status(StatusCode::OK)
-                .body(Full::new(Bytes::from("pong")).boxed())
+                .body(http_body_util::Full::new(Bytes::from("pong")).boxed())
                 .unwrap())
         });
         assert_eq!(r.routes.len(), 1);
         assert_eq!(r.routes[0].path, "/ping");
+        assert!(matches!(r.routes[0].kind, RouteKind::Open(_)));
+    }
+
+    #[tokio::test]
+    async fn router_get_light_adds_light_route() {
+        let r = Router::new().get_light("/api/test", |_req, _state, _claims| async move {
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .body(http_body_util::Full::new(Bytes::from("ok")).boxed())
+                .unwrap())
+        });
+        assert_eq!(r.routes.len(), 1);
+        assert!(matches!(r.routes[0].kind, RouteKind::Light(_)));
+    }
+
+    #[tokio::test]
+    async fn router_post_hard_adds_hard_route() {
+        let r = Router::new().post_hard(
+            "/api/test",
+            |_req, _state, _uid, _claims| async move {
+                Ok(Response::builder()
+                    .status(StatusCode::OK)
+                    .body(http_body_util::Full::new(Bytes::from("ok")).boxed())
+                    .unwrap())
+            },
+        );
+        assert_eq!(r.routes.len(), 1);
+        assert!(matches!(r.routes[0].kind, RouteKind::Hard(_)));
     }
 }

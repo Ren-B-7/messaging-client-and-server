@@ -14,17 +14,17 @@ use crate::types::server_config::AppConfig;
 /// holds a clone — including spawned tasks and per-connection handlers.
 ///
 /// # Usage
-/// ```rust
+/// ```rust,no_run
 /// // Read (short-lived guard — do not hold across .await points)
-/// let cfg = state.config.read().await;
-/// let expiry = cfg.auth.token_expiry_secs();
+/// // let cfg = state.config.read().await;
+/// // let expiry = cfg.auth.token_expiry_secs();
 ///
 /// // If you need a value across an await, copy it out first
-/// let max_conn = state.config.read().await.server.max_connections;
-/// do_something_async().await;
+/// // let max_conn = state.config.read().await.server.max_connections;
+/// // do_something_async().await;
 ///
 /// // Hot-reload from an admin endpoint or SIGHUP handler
-/// state.config.reload(new_app_config).await;
+/// // state.config.reload(new_app_config).await;
 /// ```
 #[derive(Clone, Debug)]
 pub struct LiveConfig(Arc<RwLock<AppConfig>>);

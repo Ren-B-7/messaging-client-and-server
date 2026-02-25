@@ -11,27 +11,29 @@ pub use shared::types::settings::*;
 
 use crate::AppState;
 use crate::handlers::http::utils::{
-    create_session_cookie, deliver_serialized_json, deliver_serialized_json_with_cookie,
-    is_https, validate_token_secure,
+    create_session_cookie, decode_jwt_claims, deliver_serialized_json,
+    deliver_serialized_json_with_cookie, is_https, validate_jwt_secure,
 };
 
-/// Change password handler
+/// Change password handler.
 pub async fn handle_change_password(
     req: Request<hyper::body::Incoming>,
     state: AppState,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing change password request");
 
-    // Extract user_id from session
-    let user_id = match extract_user_from_request(&req, &state).await {
-        Ok(id) => id,
-        Err(err) => {
+    // SECURE PATH: state-changing — validate IP/UA via DB.
+    let user_id = match validate_jwt_secure(&req, &state).await {
+        Ok((id, _)) => id,
+        Err(_) => {
             warn!("Unauthorized password change attempt");
-            return deliver_serialized_json(&err.to_response(), StatusCode::UNAUTHORIZED);
+            return deliver_serialized_json(
+                &SettingsError::Unauthorized.to_response(),
+                StatusCode::UNAUTHORIZED,
+            );
         }
     };
 
-    // Parse password change data
     let password_data = match parse_password_form(req).await {
         Ok(data) => data,
         Err(err) => {
@@ -40,22 +42,20 @@ pub async fn handle_change_password(
         }
     };
 
-    // Validate passwords
     if let Err(err) = validate_password_change(&password_data) {
         warn!("Password change validation failed: {:?}", err.to_code());
         return deliver_serialized_json(&err.to_response(), StatusCode::BAD_REQUEST);
     }
 
-    // Attempt password change
     match change_user_password(user_id, &password_data, &state).await {
         Ok(_) => {
             info!("Password changed successfully for user {}", user_id);
-
-            let response = SettingsResponse::Success {
-                message: "Password changed successfully".to_string(),
-            };
-
-            deliver_serialized_json(&response, StatusCode::OK)
+            deliver_serialized_json(
+                &SettingsResponse::Success {
+                    message: "Password changed successfully".to_string(),
+                },
+                StatusCode::OK,
+            )
         }
         Err(err) => {
             error!("Failed to change password: {:?}", err.to_code());
@@ -64,88 +64,74 @@ pub async fn handle_change_password(
     }
 }
 
-/// Logout handler (delete session)
+/// Logout handler — delete the session row so the JWT's `session_id` becomes
+/// invalid even before the token expires.
 pub async fn handle_logout(
     req: Request<hyper::body::Incoming>,
     state: AppState,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing logout request");
 
-    use crate::handlers::http::utils::extract_session_token;
-
-    // Extract token from request
     let secure_cookie = is_https(&req);
-    let token = match extract_session_token(&req) {
-        Some(t) => t,
-        None => {
-            warn!("Logout attempt without token");
-            return deliver_serialized_json(
-                &SettingsResponse::Success {
-                    message: "Logged out".to_string(),
-                },
-                StatusCode::OK,
-            );
+
+    // Decode the JWT to extract the session_id revocation handle.
+    // We don't need the full secure-path DB check here — we just want the
+    // session_id so we can delete it.  An invalid/expired JWT simply means
+    // there's nothing to delete, so we respond OK either way.
+    let session_id_opt = decode_jwt_claims(&req, &state.jwt_secret)
+        .ok()
+        .map(|c| c.session_id);
+
+    if let Some(session_id) = session_id_opt {
+        use crate::database::login as db_login;
+        match db_login::delete_session_by_id(&state.db, session_id).await {
+            Ok(_) => info!("Session deleted on logout"),
+            Err(e) => error!("Failed to delete session: {}", e),
         }
-    };
-
-    // Delete session
-    use crate::database::login as db_login;
-
-    match db_login::delete_session(&state.db, token).await {
-        Ok(_) => {
-            info!("User logged out successfully");
-
-            // Create cookie to clear auth token
-            let clear_cookie = create_session_cookie("auth_id", "", secure_cookie)
-                .context("Failed to create session instance cookie")?;
-
-            let response_body = SettingsResponse::Success {
-                message: "Logged out successfully".to_string(),
-            };
-            let response =
-                deliver_serialized_json_with_cookie(&response_body, StatusCode::OK, clear_cookie)
-                    .unwrap();
-
-            Ok(response)
-        }
-        Err(e) => {
-            error!("Failed to delete session: {}", e);
-            deliver_serialized_json(
-                &SettingsError::DatabaseError.to_response(),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            )
-        }
+    } else {
+        warn!("Logout with no valid JWT — nothing to delete");
     }
+
+    // Clear the auth_id cookie regardless.
+    let clear_cookie = create_session_cookie("auth_id", "", secure_cookie)
+        .context("Failed to create clear-cookie header")?;
+
+    let response_body = SettingsResponse::Success {
+        message: "Logged out successfully".to_string(),
+    };
+    Ok(deliver_serialized_json_with_cookie(&response_body, StatusCode::OK, clear_cookie)?)
 }
 
-/// Logout all devices handler
+/// Logout all devices — delete every session row for this user.
 pub async fn handle_logout_all(
     req: Request<hyper::body::Incoming>,
     state: AppState,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing logout all devices request");
 
-    // Extract user_id from session
-    let user_id = match extract_user_from_request(&req, &state).await {
-        Ok(id) => id,
-        Err(err) => {
-            warn!("Unauthorized logout all attempt");
-            return deliver_serialized_json(&err.to_response(), StatusCode::UNAUTHORIZED);
+    // SECURE PATH: state-changing.
+    let user_id = match validate_jwt_secure(&req, &state).await {
+        Ok((id, _)) => id,
+        Err(_) => {
+            warn!("Unauthorized logout-all attempt");
+            return deliver_serialized_json(
+                &SettingsError::Unauthorized.to_response(),
+                StatusCode::UNAUTHORIZED,
+            );
         }
     };
 
-    // Delete all user sessions
     use crate::database::login as db_login;
 
     match db_login::delete_all_user_sessions(&state.db, user_id).await {
         Ok(_) => {
             info!("All sessions deleted for user {}", user_id);
-
-            let response = SettingsResponse::Success {
-                message: "Logged out from all devices".to_string(),
-            };
-
-            deliver_serialized_json(&response, StatusCode::OK)
+            deliver_serialized_json(
+                &SettingsResponse::Success {
+                    message: "Logged out from all devices".to_string(),
+                },
+                StatusCode::OK,
+            )
         }
         Err(e) => {
             error!("Failed to delete sessions: {}", e);
@@ -157,19 +143,10 @@ pub async fn handle_logout_all(
     }
 }
 
-/// Extract authenticated user from request
-async fn extract_user_from_request(
-    req: &Request<hyper::body::Incoming>,
-    state: &AppState,
-) -> std::result::Result<i64, SettingsError> {
-    // SECURE PATH: Password changes and logout are state-changing
-    // Validate IP/UA to prevent stolen token attacks
-    validate_token_secure(req, state)
-        .await
-        .map_err(|_| SettingsError::Unauthorized)
-}
+// ---------------------------------------------------------------------------
+// Private helpers
+// ---------------------------------------------------------------------------
 
-/// Parse password change form
 async fn parse_password_form(
     req: Request<hyper::body::Incoming>,
 ) -> std::result::Result<ChangePasswordData, SettingsError> {
@@ -205,27 +182,19 @@ async fn parse_password_form(
     })
 }
 
-/// Validate password change data
 fn validate_password_change(data: &ChangePasswordData) -> std::result::Result<(), SettingsError> {
-    // Check if new passwords match
     if data.new_password != data.confirm_password {
         return Err(SettingsError::PasswordMismatch);
     }
-
-    // Check if new password is different from current
     if data.current_password == data.new_password {
         return Err(SettingsError::SamePassword);
     }
-
-    // Validate new password strength
     if !crate::database::utils::is_strong_password(&data.new_password) {
         return Err(SettingsError::PasswordTooWeak);
     }
-
     Ok(())
 }
 
-/// Change user password in database
 async fn change_user_password(
     user_id: i64,
     data: &ChangePasswordData,
@@ -233,7 +202,6 @@ async fn change_user_password(
 ) -> std::result::Result<(), SettingsError> {
     use crate::database::password as db_password;
 
-    // Get current password hash
     let current_hash = db_password::get_password_hash(&state.db, user_id)
         .await
         .map_err(|e| {
@@ -242,37 +210,30 @@ async fn change_user_password(
         })?
         .ok_or(SettingsError::DatabaseError)?;
 
-    // Verify current password
     let current_valid =
-        crate::database::utils::verify_password(&current_hash, &data.current_password).map_err(
-            |e| {
+        crate::database::utils::verify_password(&current_hash, &data.current_password)
+            .map_err(|e| {
                 error!("Password verification error: {}", e);
                 SettingsError::InternalError
-            },
-        )?;
+            })?;
 
     if !current_valid {
         warn!("Invalid current password for user {}", user_id);
         return Err(SettingsError::InvalidCurrentPassword);
     }
 
-    // Hash new password
-    let new_hash = crate::database::utils::hash_password(&data.new_password).map_err(|e| {
-        error!("Failed to hash new password: {}", e);
-        SettingsError::InternalError
-    })?;
+    let new_hash =
+        crate::database::utils::hash_password(&data.new_password).map_err(|e| {
+            error!("Failed to hash new password: {}", e);
+            SettingsError::InternalError
+        })?;
 
-    // Update password
     db_password::change_password(&state.db, user_id, new_hash)
         .await
         .map_err(|e| {
             error!("Database error updating password: {}", e);
             SettingsError::DatabaseError
         })?;
-
-    // Optionally: Delete all other sessions to force re-login
-    // use crate::database::login as db_login;
-    // db_login::delete_all_user_sessions(&state.db, user_id).await.ok();
 
     Ok(())
 }

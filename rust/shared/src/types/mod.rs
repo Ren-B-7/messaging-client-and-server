@@ -1,5 +1,6 @@
 pub mod cache;
 pub mod json_error;
+pub mod jwt;
 pub mod login;
 pub mod message;
 pub mod register;
@@ -14,19 +15,23 @@ pub use self::cache::CacheStrategy;
 #[allow(unused_imports)]
 pub use self::json_error::ErrorResponse;
 #[allow(unused_imports)]
+pub use self::jwt::JwtClaims;
+#[allow(unused_imports)]
 pub use self::login::{
     AdminAuth, LoginCredentials, LoginData, LoginError, LoginResponse, NewSession, Session,
     UserAuth,
 };
 #[allow(unused_imports)]
 pub use self::message::{
-    CreateChatRequest, GetMessagesQuery, MessageError, MessageResponse, SendMessageData,
-    SendMessageResponse,
+    CreateChatRequest, GetMessagesQuery, MessageError, MessageResponse, MessagesResponse,
+    NewMessage, SendMessageData, SendMessageResponse,
 };
 #[allow(unused_imports)]
 pub use self::register::{RegisterData, RegisterError, RegisterResponse};
 #[allow(unused_imports)]
-pub use self::server_config::{AppConfig, AuthConfig, ConfigError, PathsConfig, ServerConfig};
+pub use self::server_config::{
+    AppConfig, AuthConfig, ConfigError, PathsConfig, ServerConfig,
+};
 #[allow(unused_imports)]
 pub use self::server_stats::{AuthInfo, DatabaseInfo, RuntimeInfo, ServerInfo, ServerStats};
 #[allow(unused_imports)]

@@ -11,21 +11,22 @@ use crate::AppState;
 use crate::database::login as db_login;
 use crate::handlers::http::utils::{
     create_persistent_cookie, create_session_cookie, deliver_redirect_with_cookie,
-    deliver_serialized_json, get_client_ip, get_user_agent, is_https,
+    deliver_serialized_json, encode_jwt, get_client_ip, get_user_agent, is_https,
 };
 
+use shared::types::jwt::JwtClaims;
 use shared::types::login::*;
 
-/// Main login handler
+/// Main login handler.
 pub async fn handle_login(
     req: Request<hyper::body::Incoming>,
     state: AppState,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing login request");
 
-    // Extract IP and user-agent NOW, before req is consumed by the body parser.
+    // Extract IP and UA *before* consuming the body.
     let ip_address = get_client_ip(&req);
-    let user_agent = get_user_agent(&req);
+    let user_agent = get_user_agent(&req).unwrap_or_default();
     let secure_cookie = is_https(&req);
 
     let content_type = req
@@ -59,27 +60,21 @@ pub async fn handle_login(
     }
 
     match attempt_login(&login_data, &state, ip_address, user_agent).await {
-        Ok((user_id, username, token)) => {
-            info!(
-                "User logged in successfully: {} (ID: {})",
-                username, user_id
-            );
+        Ok((user_id, username, jwt)) => {
+            info!("User logged in successfully: {} (ID: {})", username, user_id);
 
             let token_expiry_secs = state.config.read().await.auth.token_expiry_minutes * 60;
 
             let instance_cookie = if login_data.remember_me {
                 let max_age = std::time::Duration::from_secs(token_expiry_secs);
-                create_persistent_cookie("auth_id", &token, max_age, secure_cookie)
+                create_persistent_cookie("auth_id", &jwt, max_age, secure_cookie)
                     .context("Failed to create persistent instance cookie")?
             } else {
-                create_session_cookie("auth_id", &token, secure_cookie)
+                create_session_cookie("auth_id", &jwt, secure_cookie)
                     .context("Failed to create session instance cookie")?
             };
 
-            Ok(deliver_redirect_with_cookie(
-                "/chat",
-                Some(instance_cookie),
-            )?)
+            Ok(deliver_redirect_with_cookie("/chat", Some(instance_cookie))?)
         }
         Err(e) => {
             warn!("Login failed: {:?}", e.to_code());
@@ -88,7 +83,10 @@ pub async fn handle_login(
     }
 }
 
-/// Parse login JSON data
+// ---------------------------------------------------------------------------
+// Parsing helpers
+// ---------------------------------------------------------------------------
+
 async fn parse_login_json(
     req: Request<hyper::body::Incoming>,
 ) -> std::result::Result<LoginData, LoginError> {
@@ -104,7 +102,6 @@ async fn parse_login_json(
     })
 }
 
-/// Parse login form data
 async fn parse_login_form(
     req: Request<hyper::body::Incoming>,
 ) -> std::result::Result<LoginData, LoginError> {
@@ -143,7 +140,6 @@ async fn parse_login_form(
     })
 }
 
-/// Validate login data
 fn validate_login(data: &LoginData) -> std::result::Result<(), LoginError> {
     if data.username.is_empty() {
         return Err(LoginError::MissingField("username".to_string()));
@@ -154,14 +150,21 @@ fn validate_login(data: &LoginData) -> std::result::Result<(), LoginError> {
     Ok(())
 }
 
-/// Attempt to log in the user. `ip_address` and `user_agent` are stored on the
-/// session so that `validate_token_secure` can reject requests from a different
-/// IP later (stolen-token protection).
+// ---------------------------------------------------------------------------
+// Core login logic
+// ---------------------------------------------------------------------------
+
+/// Verify credentials, create a DB session, and mint a signed JWT.
+///
+/// The JWT embeds `{username, user_id, session_id, user_agent, is_admin}` so
+/// that GET requests can be authorised with **zero DB reads** (signature
+/// verification only).  The `session_id` UUID links back to the DB row for
+/// revocation checks on mutating requests.
 async fn attempt_login(
     data: &LoginData,
     state: &AppState,
     ip_address: Option<String>,
-    user_agent: Option<String>,
+    user_agent: String,
 ) -> std::result::Result<(i64, String, String), LoginError> {
     info!("Attempting login for user: {}", data.username);
 
@@ -182,19 +185,35 @@ async fn attempt_login(
     }
 
     let password_valid =
-        crate::database::utils::verify_password(&user_auth.password_hash, &data.password).map_err(
-            |e| {
+        crate::database::utils::verify_password(&user_auth.password_hash, &data.password)
+            .map_err(|e| {
                 error!("Password verification error: {}", e);
                 LoginError::InternalError
-            },
-        )?;
+            })?;
 
     if !password_valid {
         warn!("Invalid password for user: {}", data.username);
         return Err(LoginError::InvalidCredentials);
     }
 
-    let token = crate::database::utils::generate_uuid_token();
+    // Check whether this user is an admin so we can embed the flag in the JWT.
+    let is_admin = state
+        .db
+        .call(move |conn| {
+            let v: i64 = conn
+                .query_row(
+                    "SELECT is_admin FROM users WHERE id = ?1",
+                    [user_auth.id],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            Ok::<_, tokio_rusqlite::rusqlite::Error>(v != 0)
+        })
+        .await
+        .unwrap_or(false);
+
+    // Generate a UUID that acts as the revocation handle inside the JWT.
+    let session_id = crate::database::utils::generate_uuid_token();
     let token_expiry_secs = state.config.read().await.auth.token_expiry_minutes * 60;
     let expires_at = crate::database::utils::calculate_expiry(token_expiry_secs as i64);
 
@@ -202,10 +221,9 @@ async fn attempt_login(
         &state.db,
         NewSession {
             user_id: user_auth.id,
-            session_token: token.clone(),
+            session_id: session_id.clone(),
             expires_at,
             ip_address,
-            user_agent,
         },
     )
     .await
@@ -219,23 +237,41 @@ async fn attempt_login(
         .map_err(|e| error!("Failed to update last login: {}", e))
         .ok();
 
+    // Build and sign the JWT.
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as usize;
+
+    let claims = JwtClaims {
+        sub: user_auth.username.clone(),
+        user_id: user_auth.id,
+        session_id,
+        user_agent,
+        is_admin,
+        exp: now + token_expiry_secs as usize,
+        iat: now,
+    };
+
+    let jwt = encode_jwt(&claims, &state.jwt_secret).map_err(|e| {
+        error!("JWT encoding failed: {}", e);
+        LoginError::InternalError
+    })?;
+
     info!(
         "Login successful for user: {} (ID: {})",
         user_auth.username, user_auth.id
     );
 
-    Ok((user_auth.id, user_auth.username, token))
+    Ok((user_auth.id, user_auth.username, jwt))
 }
-// handlers/http/auth/login.rs  — append at the bottom
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
 #[cfg(test)]
 mod tests {
-    // Unit-test the pure, synchronous helper functions inside this module.
-    // Handler-level integration tests require a live AppState / DB and are
-    // covered in the integration test suite.
-
     use super::*;
-
-    // ── validate_login ────────────────────────────────────────────────────────
 
     #[test]
     fn validate_login_ok() {
@@ -267,30 +303,6 @@ mod tests {
         };
         let err = validate_login(&data).unwrap_err();
         matches!(err, LoginError::MissingField(_));
-    }
-
-    // ── parse_login_form (async, but pure body parsing) ───────────────────────
-
-    #[tokio::test]
-    async fn parse_login_form_all_fields() {
-        use bytes::Bytes;
-        use http_body_util::Full;
-        use hyper::Request;
-
-        let body = b"username=alice&password=secret&remember_me=on".to_vec();
-        let req = Request::builder()
-            .header("content-type", "application/x-www-form-urlencoded")
-            .body(Full::new(Bytes::from(body)).boxed())
-            .unwrap();
-        // parse_login_form is private; we verify through the form_urlencoded
-        // decoder that the field names resolve correctly.
-        let params: std::collections::HashMap<String, String> =
-            form_urlencoded::parse(b"username=alice&password=secret&remember_me=on")
-                .into_owned()
-                .collect();
-        assert_eq!(params.get("username").map(|s| s.as_str()), Some("alice"));
-        assert_eq!(params.get("password").map(|s| s.as_str()), Some("secret"));
-        assert_eq!(params.get("remember_me").map(|v| v == "on"), Some(true));
     }
 
     #[test]

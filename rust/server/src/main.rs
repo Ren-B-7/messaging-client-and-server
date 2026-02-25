@@ -40,6 +40,11 @@ use shared::config::{self, LiveConfig};
 /// `config` is a `LiveConfig` — a cheaply-cloneable `Arc<RwLock<AppConfig>>`
 /// wrapper. Every clone of `AppState` shares the **same** underlying config,
 /// so an admin-triggered reload or SIGHUP is visible everywhere immediately.
+///
+/// `jwt_secret` is intentionally **not** inside `LiveConfig` / the hot-reload
+/// path.  Changing the secret invalidates every live session instantly —
+/// that is a deliberate operator action that requires a server restart, not
+/// something that should happen silently on SIGHUP.
 #[derive(Clone, Debug)]
 pub struct AppState {
     pub db: Arc<Connection>,
@@ -49,10 +54,14 @@ pub struct AppState {
     pub metrics: Metrics,
     pub timeout: Duration,
     pub sse_manager: Arc<SseManager>,
+    /// HMAC key used to sign and verify JWTs.  Shared via `Arc` so cloning
+    /// `AppState` is cheap.  Treat this like a password — load from env/config
+    /// and never log it.
+    pub jwt_secret: Arc<String>,
 }
 
 impl AppState {
-    fn new(config: LiveConfig, db: Connection) -> Self {
+    fn new(config: LiveConfig, db: Connection, jwt_secret: String) -> Self {
         let rate_limiter = RateLimiter::new(100, 200);
 
         Self {
@@ -63,6 +72,7 @@ impl AppState {
             metrics: Metrics::new(),
             timeout: Duration::new(10, 0),
             sse_manager: Arc::new(SseManager::new()),
+            jwt_secret: Arc::new(jwt_secret),
         }
     }
 }
@@ -107,8 +117,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let db: Connection = database::create::open_database("messaging.db").await?;
     let app_config = config::load_config(&config_path).context("Failed to load configuration")?;
+
+    // Resolve the JWT secret — env var takes priority over the config field.
+    // Presence and minimum length are already enforced by load_config's
+    // validate_config, so unwrap() is safe here.
+    let jwt_secret = app_config.auth.resolved_jwt_secret().unwrap();
+
     let live_config = LiveConfig::new(app_config);
-    let state = AppState::new(live_config, db);
+    let state = AppState::new(live_config, db, jwt_secret);
 
     // Read the ports once at startup — these are fixed for the lifetime of the
     // process (changing them requires a restart, not a hot-reload).
@@ -167,8 +183,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // ── Background task: SIGHUP → hot-reload config ─────────────────────────
     //
     // Send `kill -HUP <pid>` to reload the config file without restarting.
-    // Ports are NOT re-read after a reload — only values accessed via
-    // `state.config.read().await` in handlers will reflect the new config.
+    // Ports and jwt_secret are NOT re-read after a reload.
     {
         let reload_handle = state.config.clone();
         tokio::spawn(async move {

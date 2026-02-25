@@ -17,9 +17,10 @@ pub use deliver_page::{
 pub use headers::{
     accepts_content_type, add_cache_headers_with_max_age, add_etag_header,
     add_last_modified_header, add_no_cache_headers, check_etag_match, check_if_modified_since,
-    create_persistent_cookie, create_session_cookie, delete_cookie, extract_session_token,
-    get_basic_auth, get_bearer_token, get_client_ip, get_cookie, get_header_value, get_user_agent,
-    header_matches, set_cookie, validate_token_secure,
+    create_persistent_cookie, create_session_cookie, decode_jwt_claims, delete_cookie,
+    encode_jwt, extract_session_token, get_basic_auth, get_bearer_token, get_client_ip,
+    get_cookie, get_header_value, get_user_agent, header_matches, set_cookie,
+    validate_jwt_secure,
 };
 #[allow(unused_imports)]
 pub use http::is_https;

@@ -20,3 +20,4 @@ blocked_paths = [  # Paths that should return 403
 [auth]
 token_expiry_minutes = 60  # How long auth tokens are valid
 email_required = true  # Whether email is required for registration
+jwt_secret = "WlNNRl9K3NI6kj8pyh3VnL3ssLCHorjSG8YQ752xb/ejeLBIaRIWYF/B9nEDcdU3"
