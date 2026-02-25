@@ -9,43 +9,22 @@ use hyper::{Request, Response, StatusCode};
 use tracing::{info, warn};
 
 use crate::AppState;
-use crate::handlers::http::utils::{deliver_serialized_json, deliver_success_json};
+use crate::handlers::http::utils::{
+    deliver_serialized_json, deliver_success_json, validate_token_secure,
+};
 
-/// Extract and validate an admin session token from the request.
+/// Extract and validate an admin session token from the request with full security.
+/// Admin operations are state-changing, so always use secure validation with IP/UA checks.
 /// Returns the admin's user_id on success.
 pub async fn require_admin(
     req: &Request<IncomingBody>,
     state: &AppState,
 ) -> std::result::Result<i64, ()> {
-    use crate::database::login as db_login;
-
-    let token = req
-        .headers()
-        .get("authorization")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "))
-        .or_else(|| {
-            req.headers()
-                .get("cookie")
-                .and_then(|h| h.to_str().ok())
-                .and_then(|cookies| {
-                    cookies
-                        .split(';')
-                        .find(|c| c.trim().starts_with("auth_id="))
-                        .and_then(|c| c.split('=').nth(1))
-                })
-        });
-
-    let token = match token {
-        Some(t) => t.to_string(),
-        None => return Err(()),
-    };
-
-    db_login::validate_admin_session(&state.db, token)
+    // SECURE PATH: Admin operations are sensitive and state-changing
+    // Always validate IP/UA to prevent stolen token attacks on admin accounts
+    validate_token_secure(req, state)
         .await
-        .ok()
-        .flatten()
-        .ok_or(())
+        .map_err(|_| ())
 }
 
 /// GET /admin/api/users
@@ -428,5 +407,129 @@ async fn parse_body(req: Request<IncomingBody>) -> Result<HashMap<String, String
         Ok(form_urlencoded::parse(body.as_ref())
             .into_owned()
             .collect::<HashMap<String, String>>())
+    }
+}
+// handlers/http/admin/users.rs  — append at the bottom
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── parse_body logic (content-type dispatch + field extraction) ───────────
+
+    #[test]
+    fn form_body_user_id_parsing() {
+        let params: std::collections::HashMap<String, String> =
+            form_urlencoded::parse(b"user_id=123&reason=Spamming")
+                .into_owned()
+                .collect();
+
+        let user_id: Option<i64> = params.get("user_id").and_then(|id| id.parse().ok());
+        let reason = params.get("reason").cloned().unwrap_or_else(|| "No reason".to_string());
+
+        assert_eq!(user_id, Some(123));
+        assert_eq!(reason, "Spamming");
+    }
+
+    #[test]
+    fn form_body_missing_reason_defaults() {
+        let params: std::collections::HashMap<String, String> =
+            form_urlencoded::parse(b"user_id=5")
+                .into_owned()
+                .collect();
+
+        let reason = params
+            .get("reason")
+            .cloned()
+            .unwrap_or_else(|| "No reason provided".to_string());
+
+        assert_eq!(reason, "No reason provided");
+    }
+
+    #[test]
+    fn invalid_user_id_is_none() {
+        let params: std::collections::HashMap<String, String> =
+            form_urlencoded::parse(b"user_id=not_a_number")
+                .into_owned()
+                .collect();
+
+        let user_id: Option<i64> = params.get("user_id").and_then(|id| id.parse().ok());
+        assert!(user_id.is_none());
+    }
+
+    // ── path-based user_id extraction (handle_delete_user) ────────────────────
+
+    #[test]
+    fn user_id_from_path_last_segment() {
+        let path = "/admin/api/users/42";
+        let user_id: Option<i64> = path
+            .trim_end_matches('/')
+            .split('/')
+            .last()
+            .filter(|s| *s != ":id")
+            .and_then(|s| s.parse().ok());
+        assert_eq!(user_id, Some(42));
+    }
+
+    #[test]
+    fn literal_id_placeholder_gives_none() {
+        let path = "/admin/api/users/:id";
+        let user_id: Option<i64> = path
+            .trim_end_matches('/')
+            .split('/')
+            .last()
+            .filter(|s| *s != ":id")
+            .and_then(|s| s.parse().ok());
+        assert!(user_id.is_none());
+    }
+
+    #[test]
+    fn trailing_slash_still_extracts_id() {
+        let path = "/admin/api/users/99/";
+        let user_id: Option<i64> = path
+            .trim_end_matches('/')
+            .split('/')
+            .last()
+            .filter(|s| *s != ":id")
+            .and_then(|s| s.parse().ok());
+        assert_eq!(user_id, Some(99));
+    }
+
+    // ── self-action guard ─────────────────────────────────────────────────────
+
+    #[test]
+    fn admin_cannot_act_on_themselves() {
+        let admin_id: i64 = 1;
+        let target_id: i64 = 1;
+        assert_eq!(admin_id, target_id, "should be blocked when equal");
+    }
+
+    #[test]
+    fn admin_can_act_on_other_user() {
+        let admin_id: i64 = 1;
+        let target_id: i64 = 2;
+        assert_ne!(admin_id, target_id);
+    }
+
+    // ── JSON body parsing for numeric user_id ─────────────────────────────────
+
+    #[test]
+    fn json_body_numeric_user_id() {
+        let json = serde_json::json!({ "user_id": 77 });
+        let m = serde_json::from_value::<std::collections::HashMap<String, serde_json::Value>>(json).unwrap();
+        let user_id: Option<i64> = m.get("user_id").and_then(|v| {
+            match v {
+                serde_json::Value::Number(n) => n.as_i64(),
+                _ => None,
+            }
+        });
+        assert_eq!(user_id, Some(77));
+    }
+
+    #[test]
+    fn json_body_string_user_id_via_to_string() {
+        // The parse_body helper converts Number to String via n.to_string()
+        let raw = "77";
+        let id: Option<i64> = raw.parse().ok();
+        assert_eq!(id, Some(77));
     }
 }

@@ -8,7 +8,7 @@ use std::convert::Infallible;
 use tracing::info;
 
 use crate::AppState;
-use crate::handlers::http::utils::deliver_error_json;
+use crate::handlers::http::utils::{deliver_error_json, extract_session_token};
 
 /// Handle get profile (requires authentication)
 pub async fn handle_get_profile(
@@ -59,28 +59,16 @@ pub async fn handle_get_profile(
 async fn extract_user_from_request(req: &Request<IncomingBody>, state: &AppState) -> Result<i64> {
     use crate::database::login as db_login;
 
-    let token = req
-        .headers()
-        .get("authorization")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "))
-        .or_else(|| {
-            req.headers()
-                .get("cookie")
-                .and_then(|h| h.to_str().ok())
-                .and_then(|cookies| {
-                    cookies
-                        .split(';')
-                        .find(|c| c.trim().starts_with("auth_id="))
-                        .and_then(|c| c.split('=').nth(1))
-                })
-        })
+    // FAST PATH: GET requests just validate token exists
+    // No IP/UA check (for speed - no state changes)
+    let token = extract_session_token(req)
         .ok_or_else(|| anyhow::anyhow!("No auth token"))?;
 
-    let user_id = db_login::validate_session(&state.db, token.to_string())
+    let user_id = db_login::validate_session(&state.db, token)
         .await
         .map_err(|_| anyhow::anyhow!("Invalid session"))?
-        .ok_or_else(|| anyhow::anyhow!("Session not found"))?;
+        .ok_or_else(|| anyhow::anyhow!("Session not found"))?
+        .user_id;
 
     Ok(user_id)
 }

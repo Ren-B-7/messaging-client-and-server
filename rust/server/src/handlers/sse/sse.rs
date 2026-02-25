@@ -263,7 +263,7 @@ pub async fn handle_sse_subscribe(
         SseError::ChannelSendFailed("Unauthorized".to_string())
     })?;
 
-    let user_id = crate::database::login::validate_session(&state.db, token)
+    let session = crate::database::login::validate_session(&state.db, token)
         .await
         .map_err(|e| {
             error!("SSE auth DB error: {}", e);
@@ -273,6 +273,7 @@ pub async fn handle_sse_subscribe(
             warn!("SSE subscribe rejected: invalid session");
             SseError::ChannelSendFailed("Unauthorized".to_string())
         })?;
+    let user_id = session.user_id;
 
     // ── 2. Parse chat context & pagination ─────────────────────────────────
     let params = parse_query(&req);
@@ -299,19 +300,23 @@ pub async fn handle_sse_subscribe(
 
     info!(
         "SSE subscribe: user={} context={:?} limit={} offset={}",
-        user_id, chat_ctx, limit, offset
+        session_id, chat_ctx, limit, offset
     );
 
     // ── 3. Fetch history ───────────────────────────────────────────────────
     let history = match &chat_ctx {
-        ChatContext::Direct { other_user_id } => {
-            db_messages::get_direct_messages(&state.db, user_id, *other_user_id, limit, offset)
-                .await
-                .map_err(|e| {
-                    error!("SSE history fetch (DM) failed: {}", e);
-                    SseError::ChannelSendFailed("Failed to fetch message history".to_string())
-                })?
-        }
+        ChatContext::Direct { other_user_id } => db_messages::get_direct_messages(
+            &state.db,
+            user_id,
+            *other_user_id,
+            limit,
+            offset,
+        )
+        .await
+        .map_err(|e| {
+            error!("SSE history fetch (DM) failed: {}", e);
+            SseError::ChannelSendFailed("Failed to fetch message history".to_string())
+        })?,
         ChatContext::Group { group_id } => {
             db_messages::get_group_messages(&state.db, *group_id, limit, offset)
                 .await

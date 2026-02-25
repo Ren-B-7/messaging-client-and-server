@@ -11,7 +11,7 @@ use tracing::{error, info, warn};
 use shared::types::update::*;
 
 use crate::AppState;
-use crate::handlers::http::utils::deliver_serialized_json;
+use crate::handlers::http::utils::{deliver_serialized_json, validate_token_secure};
 
 /// Get user profile handler
 pub async fn handle_get_profile(
@@ -99,34 +99,10 @@ async fn extract_user_from_request(
     req: &Request<hyper::body::Incoming>,
     state: &AppState,
 ) -> std::result::Result<i64, ProfileError> {
-    use crate::database::login as db_login;
-
-    // Extract token from Authorization header or cookie
-    let token = req
-        .headers()
-        .get("authorization")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "))
-        .or_else(|| {
-            req.headers()
-                .get("cookie")
-                .and_then(|h| h.to_str().ok())
-                .and_then(|cookies| {
-                    cookies
-                        .split(';')
-                        .find(|c| c.trim().starts_with("auth_id="))
-                        .and_then(|c| c.split('=').nth(1))
-                })
-        })
-        .ok_or(ProfileError::Unauthorized)?;
-
-    // Validate session token
-    let user_id = db_login::validate_session(&state.db, token.to_string())
+    // SECURE PATH: PUT requests validate IP/UA (state-changing)
+    validate_token_secure(req, state)
         .await
-        .map_err(|_| ProfileError::DatabaseError)?
-        .ok_or(ProfileError::Unauthorized)?;
-
-    Ok(user_id)
+        .map_err(|_| ProfileError::Unauthorized)
 }
 
 /// Get user profile from database
@@ -277,4 +253,71 @@ async fn update_user_profile(
     }
 
     Ok(())
+}
+// handlers/http/profile/update.rs  — append at the bottom
+#[cfg(test)]
+mod tests {
+    // parse_update_form is private/async and requires a real body — we test the
+    // form-parsing logic directly by replicating it inline.
+
+    #[test]
+    fn parse_update_both_fields() {
+        let body = b"username=alice&email=alice@example.com";
+        let params: std::collections::HashMap<String, String> =
+            form_urlencoded::parse(body.as_ref())
+                .into_owned()
+                .collect();
+
+        let username = params.get("username").map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        let email = params.get("email").map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+
+        assert_eq!(username, Some("alice".to_string()));
+        assert_eq!(email, Some("alice@example.com".to_string()));
+    }
+
+    #[test]
+    fn parse_update_username_only() {
+        let body = b"username=bob";
+        let params: std::collections::HashMap<String, String> =
+            form_urlencoded::parse(body.as_ref())
+                .into_owned()
+                .collect();
+
+        let username = params.get("username").map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        let email = params.get("email").map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+
+        assert_eq!(username, Some("bob".to_string()));
+        assert!(email.is_none());
+    }
+
+    #[test]
+    fn parse_update_empty_fields_become_none() {
+        let body = b"username=&email=";
+        let params: std::collections::HashMap<String, String> =
+            form_urlencoded::parse(body.as_ref())
+                .into_owned()
+                .collect();
+
+        let username = params.get("username").map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        let email = params.get("email").map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+
+        assert!(username.is_none(), "empty username should be None");
+        assert!(email.is_none(), "empty email should be None");
+    }
+
+    #[test]
+    fn parse_update_whitespace_trimmed() {
+        let body = b"username=%20alice%20";
+        let params: std::collections::HashMap<String, String> =
+            form_urlencoded::parse(body.as_ref())
+                .into_owned()
+                .collect();
+
+        let username = params
+            .get("username")
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+
+        assert_eq!(username, Some("alice".to_string()));
+    }
 }

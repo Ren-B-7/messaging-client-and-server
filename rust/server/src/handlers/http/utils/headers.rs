@@ -241,6 +241,7 @@ pub fn check_if_modified_since(
 }
 
 /// Extract bearer token from Authorization header
+/// Format: "Authorization: Bearer <token>"
 pub fn get_bearer_token(req: &Request<hyper::body::Incoming>) -> Option<String> {
     get_header_value(req.headers(), "authorization").and_then(|auth| {
         if auth.starts_with("Bearer ") {
@@ -251,6 +252,83 @@ pub fn get_bearer_token(req: &Request<hyper::body::Incoming>) -> Option<String> 
             None
         }
     })
+}
+
+/// Extract session token from either Bearer header OR auth_id cookie
+/// Checks Authorization header with Bearer scheme first, then falls back to auth_id cookie
+/// This unified approach allows both authentication methods and should be used by all handlers
+pub fn extract_session_token(req: &Request<hyper::body::Incoming>) -> Option<String> {
+    // Try Bearer token first
+    if let Some(token) = get_bearer_token(req) {
+        debug!("Using session token from Bearer header");
+        return Some(token);
+    }
+
+    // Fall back to auth_id cookie
+    if let Some(token) = get_cookie(req.headers(), "auth_id") {
+        debug!("Using session token from auth_id cookie");
+        return Some(token);
+    }
+
+    debug!("No session token found in Bearer header or auth_id cookie");
+    None
+}
+
+/// Validate token with full security checks (for POST/PUT/DELETE state-changing requests).
+///
+/// This is the SECURE path — queries the database and verifies IP/UA match.
+///
+/// Verifies:
+/// - Token exists in the database and hasn't expired
+/// - Request IP matches the IP the session was created from (prevents stolen-token replay)
+/// - User-agent prefix is similar (warns on device change, does not block)
+pub async fn validate_token_secure(
+    req: &Request<hyper::body::Incoming>,
+    state: &crate::AppState,
+) -> std::result::Result<i64, String> {
+    use crate::database::login as db_login;
+
+    let token = extract_session_token(req).ok_or("No authentication token")?;
+
+    // validate_session now returns Option<Session>, which carries ip_address / user_agent
+    let session = db_login::validate_session(&state.db, token)
+        .await
+        .map_err(|e| format!("Database error: {}", e))?
+        .ok_or("Invalid or expired session")?;
+
+    let current_ip = get_client_ip(req).unwrap_or_else(|| "unknown".to_string());
+    let current_ua = get_user_agent(req).unwrap_or_else(|| "unknown".to_string());
+
+    // CRITICAL: Reject requests where the IP has changed — likely a stolen token
+    if let Some(ref stored_ip) = session.ip_address {
+        if stored_ip != &current_ip {
+            warn!(
+                "SECURITY: session IP mismatch. user_id={}, original={}, current={}",
+                session.user_id, stored_ip, current_ip
+            );
+            return Err("Session IP mismatch - possible token theft".to_string());
+        }
+    }
+
+    // OPTIONAL: Warn when the user-agent prefix changed (browser update, device swap, etc.)
+    if let Some(ref stored_ua) = session.user_agent {
+        let stored_prefix  = &stored_ua[..30_usize.min(stored_ua.len())];
+        let current_prefix = &current_ua[..30_usize.min(current_ua.len())];
+        if stored_prefix != current_prefix {
+            warn!(
+                "Session device changed. user_id={}, original={}, current={}",
+                session.user_id, stored_prefix, current_prefix
+            );
+            // Do not block — minor UA variations are common (browser updates etc.)
+        }
+    }
+
+    debug!(
+        "Secure session OK: user_id={}, ip={}",
+        session.user_id, current_ip
+    );
+
+    Ok(session.user_id)
 }
 
 /// Extract basic auth credentials from Authorization header

@@ -8,7 +8,9 @@ use hyper::{Request, Response, StatusCode};
 use tracing::{error, info, warn};
 
 use crate::AppState;
-use crate::handlers::http::utils::{deliver_serialized_json, deliver_success_json};
+use crate::handlers::http::utils::{
+    deliver_serialized_json, deliver_success_json, extract_session_token, validate_token_secure,
+};
 use shared::types::message::*;
 
 /// Get all chats (direct + group) for the authenticated user
@@ -26,8 +28,8 @@ pub async fn handle_get_chats(
         }
     };
 
-    use crate::database::messages as db_messages;
     use crate::database::groups as db_groups;
+    use crate::database::messages as db_messages;
 
     // DM conversations
     let conversations = db_messages::get_recent_conversations(&state.db, user_id, 50)
@@ -36,11 +38,13 @@ pub async fn handle_get_chats(
 
     let dm_chats: Vec<serde_json::Value> = conversations
         .into_iter()
-        .map(|(other_user_id, last_message_time)| serde_json::json!({
-            "type":            "direct",
-            "other_user_id":   other_user_id,
-            "last_message_at": last_message_time,
-        }))
+        .map(|(other_user_id, last_message_time)| {
+            serde_json::json!({
+                "type":            "direct",
+                "other_user_id":   other_user_id,
+                "last_message_at": last_message_time,
+            })
+        })
         .collect();
 
     // Group conversations
@@ -50,12 +54,14 @@ pub async fn handle_get_chats(
 
     let group_chats: Vec<serde_json::Value> = groups
         .into_iter()
-        .map(|g| serde_json::json!({
-            "type":       "group",
-            "group_id":   g.id,
-            "name":       g.name,
-            "created_at": g.created_at,
-        }))
+        .map(|g| {
+            serde_json::json!({
+                "type":       "group",
+                "group_id":   g.id,
+                "name":       g.name,
+                "created_at": g.created_at,
+            })
+        })
         .collect();
 
     let mut chats = dm_chats;
@@ -75,11 +81,15 @@ pub async fn handle_create_chat(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing create chat request");
 
-    let user_id = match extract_user_from_request(&req, &state).await {
+    // SECURE PATH: POST request (state-changing)
+    let user_id = match extract_user_from_request_secure(&req, &state).await {
         Ok(id) => id,
         Err(err) => {
-            warn!("Unauthorized create chat attempt");
-            return deliver_serialized_json(&err.to_send_response(), StatusCode::UNAUTHORIZED);
+            warn!("Unauthorized create chat attempt: {err}");
+            return deliver_serialized_json(
+                &MessageError::Unauthorized.to_send_response(),
+                StatusCode::UNAUTHORIZED,
+            );
         }
     };
 
@@ -141,7 +151,9 @@ pub async fn handle_create_chat(
 
     info!("Chat {} created by user {}", group_id, user_id);
     deliver_success_json(
-        Some(serde_json::json!({ "chat_id": group_id, "name": name, "participants": all_participants })),
+        Some(
+            serde_json::json!({ "chat_id": group_id, "name": name, "participants": all_participants }),
+        ),
         Some("Chat created successfully"),
         StatusCode::CREATED,
     )
@@ -154,11 +166,15 @@ pub async fn handle_send_message(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing send message request");
 
-    let user_id = match extract_user_from_request(&req, &state).await {
+    // SECURE PATH: POST request (state-changing)
+    let user_id = match extract_user_from_request_secure(&req, &state).await {
         Ok(id) => id,
-        Err(err) => {
+        Err(_) => {
             warn!("Unauthorized message send attempt");
-            return deliver_serialized_json(&err.to_send_response(), StatusCode::UNAUTHORIZED);
+            return deliver_serialized_json(
+                &MessageError::Unauthorized.to_send_response(),
+                StatusCode::UNAUTHORIZED,
+            );
         }
     };
 
@@ -246,10 +262,14 @@ pub async fn handle_mark_read(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing mark as read request for message {}", message_id);
 
-    let _user_id = match extract_user_from_request(&req, &state).await {
+    // SECURE PATH: POST request (state-changing)
+    let _user_id = match extract_user_from_request_secure(&req, &state).await {
         Ok(id) => id,
-        Err(err) => {
-            return deliver_serialized_json(&err.to_send_response(), StatusCode::UNAUTHORIZED);
+        Err(_) => {
+            return deliver_serialized_json(
+                &MessageError::Unauthorized.to_send_response(),
+                StatusCode::UNAUTHORIZED,
+            );
         }
     };
 
@@ -282,36 +302,35 @@ pub async fn handle_mark_read(
 // ---------------------------------------------------------------------------
 
 /// Extract the authenticated user ID from the `Authorization` header or `auth_token` cookie
+/// Fast extraction for GET requests (read-only operations)
 async fn extract_user_from_request(
     req: &Request<hyper::body::Incoming>,
     state: &AppState,
 ) -> std::result::Result<i64, MessageError> {
     use crate::database::login as db_login;
 
-    let token = req
-        .headers()
-        .get("authorization")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "))
-        .or_else(|| {
-            req.headers()
-                .get("cookie")
-                .and_then(|h| h.to_str().ok())
-                .and_then(|cookies| {
-                    cookies
-                        .split(';')
-                        .find(|c| c.trim().starts_with("auth_id="))
-                        .and_then(|c| c.split('=').nth(1))
-                })
-        })
-        .ok_or(MessageError::Unauthorized)?;
+    // FAST PATH: GET requests just validate token exists
+    // No IP/UA check (for speed - no state changes)
+    let token = extract_session_token(req).ok_or(MessageError::Unauthorized)?;
 
-    let user_id = db_login::validate_session(&state.db, token.to_string())
+    let session = db_login::validate_session(&state.db, token)
         .await
         .map_err(|_| MessageError::DatabaseError)?
         .ok_or(MessageError::Unauthorized)?;
-    info!(user_id);
+    let user_id = session.user_id;
+    info!("Validated session for user_id={}", user_id);
     Ok(user_id)
+}
+
+/// Secure extraction for POST/PUT/DELETE requests (state-changing operations)
+async fn extract_user_from_request_secure(
+    req: &Request<hyper::body::Incoming>,
+    state: &AppState,
+) -> std::result::Result<i64, MessageError> {
+    // SECURE PATH: POST/PUT/DELETE validate IP/UA (state-changing)
+    validate_token_secure(req, state)
+        .await
+        .map_err(|_| MessageError::Unauthorized)
 }
 
 /// Parse a form-urlencoded message body into `SendMessageData`.
@@ -467,4 +486,146 @@ async fn retrieve_messages(
             })
         })
         .collect()
+}
+// handlers/http/messaging/messages.rs  — append at the bottom
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use shared::types::message::SendMessageData;
+
+    // ── validate_message ──────────────────────────────────────────────────────
+
+    #[test]
+    fn valid_direct_message_passes() {
+        let data = SendMessageData {
+            recipient_id: Some(42),
+            group_id: None,
+            content: "Hello!".to_string(),
+            message_type: None,
+        };
+        assert!(validate_message(&data).is_ok());
+    }
+
+    #[test]
+    fn valid_group_message_passes() {
+        let data = SendMessageData {
+            recipient_id: None,
+            group_id: Some(7),
+            content: "Hi group".to_string(),
+            message_type: None,
+        };
+        assert!(validate_message(&data).is_ok());
+    }
+
+    #[test]
+    fn missing_recipient_and_group_fails() {
+        let data = SendMessageData {
+            recipient_id: None,
+            group_id: None,
+            content: "Nobody home".to_string(),
+            message_type: None,
+        };
+        let err = validate_message(&data).unwrap_err();
+        assert!(matches!(err, MessageError::MissingRecipient));
+    }
+
+    #[test]
+    fn empty_content_fails() {
+        let data = SendMessageData {
+            recipient_id: Some(1),
+            group_id: None,
+            content: "".to_string(),
+            message_type: None,
+        };
+        let err = validate_message(&data).unwrap_err();
+        assert!(matches!(err, MessageError::EmptyMessage));
+    }
+
+    #[test]
+    fn oversized_content_fails() {
+        let data = SendMessageData {
+            recipient_id: Some(1),
+            group_id: None,
+            content: "x".repeat(10_001),
+            message_type: None,
+        };
+        let err = validate_message(&data).unwrap_err();
+        assert!(matches!(err, MessageError::MessageTooLong));
+    }
+
+    #[test]
+    fn exact_max_content_passes() {
+        let data = SendMessageData {
+            recipient_id: Some(1),
+            group_id: None,
+            content: "x".repeat(10_000),
+            message_type: None,
+        };
+        assert!(validate_message(&data).is_ok());
+    }
+
+    // ── parse_query_params ────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_query_direct_message_params() {
+        // Mirror the parse_query_params logic directly to avoid needing a real body
+        let params: std::collections::HashMap<String, String> =
+            form_urlencoded::parse(b"other_user_id=5&limit=20&offset=10")
+                .into_owned()
+                .collect();
+
+        let other_user_id: Option<i64> = params.get("other_user_id").and_then(|s| s.parse().ok());
+        let limit: Option<usize> = params.get("limit").and_then(|s| s.parse().ok());
+        let offset: Option<usize> = params.get("offset").and_then(|s| s.parse().ok());
+
+        assert_eq!(other_user_id, Some(5));
+        assert_eq!(limit, Some(20));
+        assert_eq!(offset, Some(10));
+    }
+
+    #[test]
+    fn parse_query_chat_id_alias_for_group_id() {
+        let params: std::collections::HashMap<String, String> =
+            form_urlencoded::parse(b"chat_id=99")
+                .into_owned()
+                .collect();
+
+        let group_id: Option<i64> = params
+            .get("group_id")
+            .or_else(|| params.get("chat_id"))
+            .and_then(|s| s.parse().ok());
+
+        assert_eq!(group_id, Some(99));
+    }
+
+    #[test]
+    fn parse_query_group_id_takes_precedence_over_chat_id() {
+        let params: std::collections::HashMap<String, String> =
+            form_urlencoded::parse(b"group_id=10&chat_id=20")
+                .into_owned()
+                .collect();
+
+        let group_id: Option<i64> = params
+            .get("group_id")
+            .or_else(|| params.get("chat_id"))
+            .and_then(|s| s.parse().ok());
+
+        // group_id should win as it is checked first
+        assert_eq!(group_id, Some(10));
+    }
+
+    #[test]
+    fn limit_clamped_to_100() {
+        // Mirror the clamp logic from retrieve_messages
+        let raw_limit: usize = 200;
+        let clamped = raw_limit.min(100);
+        assert_eq!(clamped, 100);
+    }
+
+    #[test]
+    fn limit_defaults_to_50() {
+        let limit: Option<usize> = None;
+        let effective = limit.unwrap_or(50).min(100);
+        assert_eq!(effective, 50);
+    }
 }

@@ -199,7 +199,7 @@ async fn attempt_login(
 
     db_login::create_admin_session(
         &state.db,
-        db_login::NewSession {
+        NewSession {
             user_id: admin_auth.id,
             session_token: token.clone(),
             expires_at,

@@ -1,5 +1,6 @@
 mod sse;
 
+#[allow(unused_imports)]
 pub use sse::{ChatContext, SseManager, SseStreamBuilder, handle_sse_subscribe};
 
 #[cfg(test)]
@@ -15,8 +16,10 @@ mod tests {
         let tx1 = manager.get_channel(user_id.clone()).await;
         let tx2 = manager.get_channel(user_id).await;
 
-        // Both calls must return handles to the same underlying channel
-        assert_eq!(tx1.is_closed(), tx2.is_closed());
+        // Both calls must return handles to the same underlying channel.
+        // broadcast::Sender has no is_closed(); receiver_count() is the right
+        // proxy: if they share the same channel both will report the same count.
+        assert_eq!(tx1.receiver_count(), tx2.receiver_count());
     }
 
     #[tokio::test]
@@ -86,7 +89,6 @@ mod tests {
         let manager = SseManager::new();
         let user_id = "ghost-user".to_string();
 
-        // No channel created — broadcast_to_user returns Ok(0)
         let event = SseEvent {
             user_id,
             event_type: "test".to_string(),
@@ -200,7 +202,7 @@ mod tests {
         let manager = SseManager::new();
 
         let user1 = "alice".to_string();
-        let user2 = "bob".to_string();   // channel exists but no subscriber
+        let user2 = "bob".to_string();
         let user3 = "charlie".to_string();
 
         let tx1 = manager.get_channel(user1.clone()).await;

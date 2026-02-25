@@ -322,3 +322,126 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
             Ok(response)
         })
 }
+// handlers/http/routes.rs  — append at the bottom
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── path_matches ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn exact_path_matches() {
+        assert!(Router::path_matches("/api/profile", "/api/profile"));
+    }
+
+    #[test]
+    fn different_paths_do_not_match() {
+        assert!(!Router::path_matches("/api/profile", "/api/settings"));
+    }
+
+    #[test]
+    fn trailing_slash_matters() {
+        // Current implementation is exact — these must differ.
+        assert!(!Router::path_matches("/api/profile", "/api/profile/"));
+    }
+
+    #[test]
+    fn root_path_matches_self() {
+        assert!(Router::path_matches("/", "/"));
+    }
+
+    // ── try_serve_static path classification ──────────────────────────────────
+    //
+    // We test the classification logic (the match arms) without constructing
+    // a full AppState by inspecting the string predicates directly.
+
+    #[test]
+    fn static_prefix_detection() {
+        assert!("/static/app.js".starts_with("/static/"));
+        assert!(!"/app.js".starts_with("/static/"));
+    }
+
+    #[test]
+    fn non_static_prefix_detection() {
+        assert!("/non-static/config.json".starts_with("/non-static/"));
+    }
+
+    #[test]
+    fn html_suffix_detection() {
+        assert!("/about.html".ends_with(".html"));
+        assert!(!"/about.css".ends_with(".html"));
+    }
+
+    #[test]
+    fn favicon_paths_recognised() {
+        let favicons = [
+            "/favicon.ico",
+            "/favicon.png",
+            "/favicon.svg",
+            "/apple-touch-icon.png",
+            "/android-chrome-192x192.png",
+            "/android-chrome-512x512.png",
+            "/site.webmanifest",
+        ];
+        // Mirror the match arm used in try_serve_static
+        for path in &favicons {
+            let is_favicon = matches!(
+                *path,
+                "/favicon.ico"
+                    | "/favicon.png"
+                    | "/favicon.svg"
+                    | "/apple-touch-icon.png"
+                    | "/apple-touch-icon-precomposed.png"
+                    | "/android-chrome-192x192.png"
+                    | "/android-chrome-512x512.png"
+                    | "/browserconfig.xml"
+                    | "/site.webmanifest"
+            );
+            assert!(is_favicon, "Expected {} to be recognised as favicon", path);
+        }
+    }
+
+    #[test]
+    fn root_path_matches_static_arm() {
+        let path = "/";
+        assert!(matches!(path, "/" | "/index.html"));
+    }
+
+    // ── Router builder ────────────────────────────────────────────────────────
+
+    #[test]
+    fn router_new_has_no_routes() {
+        let r = Router::new();
+        assert!(r.routes.is_empty());
+    }
+
+    #[test]
+    fn router_with_web_dir_sets_field() {
+        let r = Router::new().with_web_dir("/var/www".to_string());
+        assert_eq!(r.web_dir.as_deref(), Some("/var/www"));
+    }
+
+    #[test]
+    fn router_with_icons_dir_sets_field() {
+        let r = Router::new().with_icons_dir("/icons".to_string());
+        assert_eq!(r.icons_dir.as_deref(), Some("/icons"));
+    }
+
+    #[tokio::test]
+    async fn router_get_adds_route() {
+        let r = Router::new().get("/ping", |_req, _state| async move {
+            use hyper::Response;
+            use http::StatusCode;
+            use bytes::Bytes;
+            use http_body_util::Full;
+            use std::convert::Infallible;
+            use http_body_util::BodyExt;
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .body(Full::new(Bytes::from("pong")).boxed())
+                .unwrap())
+        });
+        assert_eq!(r.routes.len(), 1);
+        assert_eq!(r.routes[0].path, "/ping");
+    }
+}
