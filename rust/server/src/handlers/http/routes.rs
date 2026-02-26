@@ -6,11 +6,11 @@ use anyhow::{Context, Result};
 use bytes::Bytes;
 use http_body_util::{BodyExt, combinators::BoxBody};
 use hyper::{Method, Request, Response, StatusCode};
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::AppState;
 use crate::handlers::http::utils::headers::{decode_jwt_claims, validate_jwt_secure};
-use crate::handlers::http::{admin, auth, messaging, profile, utils::*};
+use crate::handlers::http::{admin, messaging, profile, utils::*};
 
 use shared::types::cache::*;
 use shared::types::jwt::JwtClaims;
@@ -383,8 +383,17 @@ impl Router {
         state: &AppState,
     ) -> Result<Option<Response<BoxBody<Bytes, Infallible>>>> {
         let cfg = state.config.read().await.clone();
-        let web_dir = self.web_dir.as_ref().unwrap_or(&cfg.paths.web_dir);
-        let icons = self.icons_dir.as_ref().unwrap_or(&cfg.paths.icons);
+        let web_dir = self
+            .web_dir
+            .as_ref()
+            .unwrap_or(&cfg.paths.web_dir)
+            .trim_end_matches('/');
+        let icons = self
+            .icons_dir
+            .as_ref()
+            .unwrap_or(&cfg.paths.icons)
+            .trim_start_matches('/')
+            .trim_end_matches('/');
 
         match path {
             "/" | "/index.html" => {
@@ -411,8 +420,8 @@ impl Router {
             | "/android-chrome-512x512.png"
             | "/browserconfig.xml"
             | "/site.webmanifest" => {
-                let filename = path.trim_start_matches('/');
-                let file_path = format!("{}{}{}", web_dir, icons, filename);
+                info!("icons: {}", icons);
+                let file_path = format!("{}/{}{}", web_dir, icons, path);
                 Ok(Some(
                     deliver_page_with_status(&file_path, StatusCode::OK, CacheStrategy::Yes)
                         .context("Failed to deliver browser icon")?,
@@ -515,16 +524,6 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
                 )
                 .unwrap())
         })
-        .post("/api/register", |req, state| async move {
-            auth::handle_register(req, state)
-                .await
-                .context("Register failed")
-        })
-        .post("/register", |req, state| async move {
-            auth::handle_register(req, state)
-                .await
-                .context("Register failed")
-        })
         // ── Light auth: JWT decode only, zero DB reads ────────────────────────
         //
         // Safe for GET requests because reading stale data carries no real
@@ -549,26 +548,6 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
             messaging::handle_get_groups(req, state, claims)
                 .await
                 .context("Group get failed")
-        })
-        .get_light("/api/groups/:id/members", |req, state, claims| async move {
-            // Extract :id from path.
-            let group_id = req
-                .uri()
-                .path()
-                .split('/')
-                .nth(3)
-                .and_then(|s| s.parse::<i64>().ok());
-            match group_id {
-                Some(id) => messaging::handle_get_members(req, state, claims, id)
-                    .await
-                    .context("Get members failed"),
-                None => json_response::deliver_error_json(
-                    "BAD_REQUEST",
-                    "Invalid group id",
-                    StatusCode::BAD_REQUEST,
-                )
-                .context("Bad request"),
-            }
         })
         // ── Hard auth: JWT + DB session lookup + IP binding ───────────────────
         //

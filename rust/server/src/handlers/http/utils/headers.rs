@@ -81,9 +81,6 @@ pub fn set_cookie(
     }
 
     cookie.push_str("; SameSite=Strict");
-    cookie.push_str("; Partitioned");
-
-    debug!("Setting cookie: {}", name);
 
     HeaderValue::from_str(&cookie).map_err(|e| {
         warn!("Failed to create cookie header for {}: {}", name, e);
@@ -114,7 +111,14 @@ pub fn create_persistent_cookie(
 /// Clear a cookie by setting its max-age to 0.
 pub fn delete_cookie(name: &str) -> Result<HeaderValue> {
     debug!("Deleting cookie: {}", name);
-    set_cookie(name, "", Some(Duration::from_secs(0)), Some("/"), true, false)
+    set_cookie(
+        name,
+        "",
+        Some(Duration::from_secs(0)),
+        Some("/"),
+        true,
+        false,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -206,8 +210,7 @@ pub fn decode_jwt_claims(
 
     debug!(
         "JWT fast-path OK: user_id={} session_id={}",
-        token_data.claims.user_id,
-        token_data.claims.session_id
+        token_data.claims.user_id, token_data.claims.session_id
     );
 
     Ok(token_data.claims)

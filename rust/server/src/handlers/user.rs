@@ -152,11 +152,11 @@ pub fn build_user_router_with_config(
             let path = format!("{}/register.html", web_dir);
             deliver_html_page(path).context("failed to deliver register page")
         })
-        .get("/settings", move |_req, _| async move {
+        .get_light("/settings", move |_req, _, _| async move {
             let path = format!("{}/settings.html", web_dir);
             deliver_html_page(path).context("failed to deliver settings page")
         })
-        .get("/chat", move |_req, _| async move {
+        .get_light("/chat", move |_req, _, _| async move {
             let path = format!("{}/chat.html", web_dir);
             deliver_html_page(path).context("failed to deliver chat page")
         })
@@ -181,10 +181,16 @@ pub fn build_user_router_with_config(
         //   1. Validates the session token
         //   2. Loads and replays chat history as history_message events
         //   3. Parks on the broadcast channel for live message_sent events
-        .get("/api/stream", |req, state| async move {
+        .get_light("/api/stream", |req, state, claims| async move {
             sse::handle_sse_subscribe(req, state)
                 .await
                 .map_err(|e| anyhow::anyhow!("SSE subscription failed: {:?}", e))
+        })
+        .post("/api/register", |req, state| async move {
+            handle_register(req, state).await.context("Register failed")
+        })
+        .post("/register", |req, state| async move {
+            handle_register(req, state).await.context("Register failed")
         });
 
     router

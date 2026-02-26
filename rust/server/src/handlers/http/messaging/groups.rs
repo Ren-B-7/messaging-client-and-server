@@ -38,8 +38,10 @@ pub async fn handle_get_groups(
         .await
         .context("Failed to fetch groups")?;
 
+    // Only return proper group chats from this endpoint, not DMs.
     let groups_json: Vec<serde_json::Value> = groups
         .into_iter()
+        .filter(|g| g.chat_type == "group")
         .map(|g| {
             serde_json::json!({
                 "id":          g.id,
@@ -47,6 +49,7 @@ pub async fn handle_get_groups(
                 "description": g.description,
                 "created_by":  g.created_by,
                 "created_at":  g.created_at,
+                "chat_type":   g.chat_type,
             })
         })
         .collect();
@@ -58,7 +61,7 @@ pub async fn handle_get_groups(
     )
 }
 
-/// POST /api/groups — create a new group.
+/// POST /api/groups — create a new group chat.
 ///
 /// Hard-auth route: `user_id` is pre-verified (JWT + DB session lookup + IP).
 pub async fn handle_create_group(
@@ -100,6 +103,7 @@ pub async fn handle_create_group(
             name: name.clone(),
             created_by: user_id,
             description: description.clone(),
+            chat_type: "group".to_string(),
         },
     )
     .await
@@ -112,6 +116,7 @@ pub async fn handle_create_group(
             "group_id":    group_id,
             "name":        name,
             "description": description,
+            "chat_type":   "group",
         })),
         Some("Group created successfully"),
         StatusCode::CREATED,
@@ -184,6 +189,11 @@ pub async fn handle_add_member(
         .and_then(|id| id.parse::<i64>().ok())
         .ok_or_else(|| anyhow::anyhow!("Invalid or missing user_id"))?;
 
+    // For group chats new members join as regular members; the caller can
+    // promote them separately via update_member_role if needed.
+    // For direct chats this endpoint shouldn't normally be called, but if it
+    // is the role will default to "member" — the client should use the DM
+    // creation flow instead.
     let role = params
         .get("role")
         .cloned()
@@ -275,16 +285,6 @@ mod tests {
             .filter_map(|p| p.trim().parse::<i64>().ok())
             .collect();
         assert!(ids.is_empty());
-    }
-
-    #[test]
-    fn creator_added_when_not_in_list() {
-        let user_id: i64 = 99;
-        let mut participants: Vec<i64> = vec![1, 2, 3];
-        if !participants.contains(&user_id) {
-            participants.push(user_id);
-        }
-        assert!(participants.contains(&99));
     }
 
     #[test]

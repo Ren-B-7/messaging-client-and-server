@@ -214,7 +214,7 @@ fn extract_token(req: &Request<hyper::body::Incoming>) -> Option<String> {
             cookies.split(';').find_map(|cookie| {
                 let cookie = cookie.trim();
                 // auth_id wins; fall through to auth_token
-                for prefix in &["auth_id=", "auth_token="] {
+                for prefix in &["auth_id="] {
                     if let Some(val) = cookie.strip_prefix(prefix) {
                         if !val.is_empty() {
                             return Some(val.to_string());
@@ -266,8 +266,7 @@ pub async fn handle_sse_subscribe(
         SseError::ChannelSendFailed("Unauthorized".to_string())
     })?;
 
-    let session: Session =
-        db_login::validate_session_id(&state.db, token)
+    let session: Session = db_login::validate_session_id(&state.db, token)
         .await
         .map_err(|e| {
             error!("SSE auth DB error: {}", e);

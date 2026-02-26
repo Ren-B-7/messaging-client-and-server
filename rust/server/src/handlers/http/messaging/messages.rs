@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 use std::convert::Infallible;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use bytes::Bytes;
 use http_body_util::{BodyExt, combinators::BoxBody};
 use hyper::{Request, Response, StatusCode};
 use tracing::{error, info, warn};
 
 use crate::AppState;
-use crate::handlers::http::utils::deliver_serialized_json;
+use crate::handlers::http::utils::{deliver_error_json, deliver_serialized_json, deliver_success_json};
 use shared::types::jwt::JwtClaims;
 use shared::types::message::*;
 
@@ -21,9 +21,13 @@ use shared::types::message::*;
 // Neither calls any auth function internally.
 // ---------------------------------------------------------------------------
 
-/// GET /api/chats — list all direct + group chats for the authenticated user.
+/// GET /api/chats — list all chats (both direct and group) for the authenticated user.
 ///
 /// Light-auth route: `claims` are pre-verified by the router (JWT only, no DB).
+///
+/// Returns a unified list — no separate DM vs group split.  The `chat_type`
+/// field on each entry (`"direct"` or `"group"`) lets the client decide how
+/// to render it.
 pub async fn handle_get_chats(
     _req: Request<hyper::body::Incoming>,
     state: AppState,
@@ -33,51 +37,42 @@ pub async fn handle_get_chats(
     info!("Processing get chats request for user {}", user_id);
 
     use crate::database::groups as db_groups;
-    use crate::database::messages as db_messages;
 
-    let conversations = db_messages::get_recent_conversations(&state.db, user_id, 50)
+    let chats = db_groups::get_user_groups(&state.db, user_id)
         .await
-        .map_err(|e| anyhow::anyhow!("Database error getting conversations: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Database error getting chats: {}", e))?;
 
-    let dm_chats: Vec<serde_json::Value> = conversations
-        .into_iter()
-        .map(|(other_user_id, last_message_time)| {
-            serde_json::json!({
-                "type":            "direct",
-                "other_user_id":   other_user_id,
-                "last_message_at": last_message_time,
-            })
-        })
-        .collect();
-
-    let groups = db_groups::get_user_groups(&state.db, user_id)
-        .await
-        .map_err(|e| anyhow::anyhow!("Database error getting groups: {}", e))?;
-
-    let group_chats: Vec<serde_json::Value> = groups
+    let chats_json: Vec<serde_json::Value> = chats
         .into_iter()
         .map(|g| {
             serde_json::json!({
-                "type":       "group",
-                "group_id":   g.id,
-                "name":       g.name,
-                "created_at": g.created_at,
+                "chat_id":     g.id,
+                "name":        g.name,
+                "description": g.description,
+                "chat_type":   g.chat_type,
+                "created_by":  g.created_by,
+                "created_at":  g.created_at,
             })
         })
         .collect();
 
-    let mut chats = dm_chats;
-    chats.extend(group_chats);
-
     deliver_serialized_json(
-        &serde_json::json!({ "status": "success", "data": { "chats": chats } }),
+        &serde_json::json!({ "status": "success", "data": { "chats": chats_json } }),
         StatusCode::OK,
     )
 }
 
-/// POST /api/chats — create a new group chat.
+/// POST /api/chats — create a new direct chat.
 ///
 /// Hard-auth route: `user_id` is pre-verified by the router (JWT + DB + IP).
+///
+/// Body parameters:
+///   - `name`         — chat name (required; typically the other user's display name for DMs)
+///   - `participants` — comma-separated user IDs to add (required; must not be empty)
+///   - `description`  — optional description
+///
+/// All participants (including the creator) are added as `"admin"` because
+/// there is no meaningful moderation hierarchy in a direct message.
 pub async fn handle_create_chat(
     req: Request<hyper::body::Incoming>,
     state: AppState,
@@ -85,76 +80,90 @@ pub async fn handle_create_chat(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing create chat request from user {}", user_id);
 
+    use crate::database::groups as db_groups;
+
     let body = req
         .collect()
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to read request body: {}", e))?
+        .context("Failed to read request body")?
         .to_bytes();
 
     let params: HashMap<String, String> =
         form_urlencoded::parse(body.as_ref()).into_owned().collect();
 
-    let name = params.get("name").map(|s| s.to_string());
+    let name = match params.get("name").map(|s| s.trim().to_string()) {
+        Some(n) if !n.is_empty() => n,
+        _ => {
+            return deliver_error_json(
+                "INVALID_INPUT",
+                "Chat name is required",
+                StatusCode::BAD_REQUEST,
+            );
+        }
+    };
 
+    // Parse participants, excluding the creator — create_group already adds
+    // them as the first member.
     let participants: Vec<i64> = params
         .get("participants")
-        .map(|s| s.split(',').filter_map(|p| p.trim().parse().ok()).collect())
+        .map(|s| {
+            s.split(',')
+                .filter_map(|p| p.trim().parse::<i64>().ok())
+                .filter(|&id| id != user_id)
+                .collect()
+        })
         .unwrap_or_default();
 
     if participants.is_empty() {
-        return deliver_serialized_json(
-            &MessageError::MissingField("participants".to_string()).to_send_response(),
+        return deliver_error_json(
+            "INVALID_INPUT",
+            "At least one other participant is required",
             StatusCode::BAD_REQUEST,
         );
     }
 
-    let mut all_participants = participants;
-    if !all_participants.contains(&user_id) {
-        all_participants.push(user_id);
-    }
+    let description: Option<String> = params.get("description").map(|s| s.to_string());
 
-    use crate::database::groups as db_groups;
-
+    // Create the group row — creator is added as admin by create_group.
     let group_id = db_groups::create_group(
         &state.db,
         db_groups::NewGroup {
-            name: name.clone().unwrap_or_else(|| "Direct Chat".to_string()),
+            name: name.clone(),
             created_by: user_id,
-            description: None,
+            description: description.clone(),
+            chat_type: "direct".to_string(),
         },
     )
     .await
-    .map_err(|e| {
-        error!("Failed to create chat group: {}", e);
-        anyhow::anyhow!("Database error: {}", e)
-    })?;
+    .context("Failed to create chat")?;
 
-    for &participant_id in all_participants.iter().filter(|&&id| id != user_id) {
-        db_groups::add_group_member(
-            &state.db,
-            group_id,
-            participant_id,
-            "member".to_string(),
-        )
-        .await
-        .map_err(|e| {
-            error!("Failed to add participant {}: {}", participant_id, e);
-            anyhow::anyhow!("Database error: {}", e)
-        })?;
+    // Every other participant is also an admin — DMs have no hierarchy.
+    for &participant_id in &participants {
+        db_groups::add_group_member(&state.db, group_id, participant_id, "admin".to_string())
+            .await
+            .context(format!("Failed to add participant {}", participant_id))?;
     }
 
-    info!("Chat {} created by user {}", group_id, user_id);
+    info!(
+        "Direct chat {} ('{}') created by user {} with {} participant(s)",
+        group_id,
+        name,
+        user_id,
+        participants.len()
+    );
 
-    deliver_serialized_json(
-        &serde_json::json!({
-            "status":  "success",
-            "message": "Chat created successfully",
-            "data": {
-                "chat_id":      group_id,
-                "name":         name,
-                "participants": all_participants,
-            }
-        }),
+    let mut all_participants = participants;
+    all_participants.push(user_id);
+
+    deliver_success_json(
+        Some(serde_json::json!({
+            "chat_id":      group_id,
+            "name":         name,
+            "description":  description,
+            "chat_type":    "direct",
+            "participants": all_participants,
+        })),
+        Some("Chat created successfully"),
         StatusCode::CREATED,
     )
 }
@@ -196,10 +205,7 @@ pub async fn handle_send_message(
         }
         Err(err) => {
             error!("Failed to send message: {:?}", err.to_code());
-            deliver_serialized_json(
-                &err.to_send_response(),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            )
+            deliver_serialized_json(&err.to_send_response(), StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
 }
@@ -234,10 +240,7 @@ pub async fn handle_get_messages(
         }
         Err(err) => {
             error!("Failed to retrieve messages: {:?}", err.to_code());
-            deliver_serialized_json(
-                &err.to_list_response(),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            )
+            deliver_serialized_json(&err.to_list_response(), StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
 }
@@ -256,16 +259,14 @@ pub async fn handle_mark_read(
     use crate::database::messages as db_messages;
 
     match db_messages::mark_read(&state.db, message_id).await {
-        Ok(_) => {
-            deliver_serialized_json(
-                &SendMessageResponse::Success {
-                    message_id,
-                    sent_at: crate::database::utils::get_timestamp(),
-                    message: "Message marked as read".to_string(),
-                },
-                StatusCode::OK,
-            )
-        }
+        Ok(_) => deliver_serialized_json(
+            &SendMessageResponse::Success {
+                message_id,
+                sent_at: crate::database::utils::get_timestamp(),
+                message: "Message marked as read".to_string(),
+            },
+            StatusCode::OK,
+        ),
         Err(e) => {
             error!("Failed to mark message {} as read: {}", message_id, e);
             deliver_serialized_json(
@@ -299,7 +300,7 @@ async fn parse_message_form(
 
     Ok(SendMessageData {
         recipient_id: params.get("recipient_id").and_then(|s| s.parse().ok()),
-        group_id:     params
+        group_id: params
             .get("group_id")
             .or_else(|| params.get("chat_id"))
             .and_then(|s| s.parse().ok()),
@@ -328,8 +329,8 @@ async fn send_message(
 ) -> std::result::Result<(i64, i64), MessageError> {
     use crate::database::messages as db_messages;
 
-    let compressed_content =
-        crate::database::utils::compress_data(data.content.as_bytes()).map_err(|e| {
+    let compressed_content = crate::database::utils::compress_data(data.content.as_bytes())
+        .map_err(|e| {
             error!("Failed to compress message: {}", e);
             MessageError::InternalError
         })?;
@@ -338,11 +339,11 @@ async fn send_message(
         &state.db,
         shared::types::message::NewMessage {
             sender_id,
-            recipient_id:  data.recipient_id,
-            group_id:      data.group_id,
-            content:       compressed_content,
-            is_encrypted:  true,
-            message_type:  data
+            recipient_id: data.recipient_id,
+            group_id: data.group_id,
+            content: compressed_content,
+            is_encrypted: true,
+            message_type: data
                 .message_type
                 .clone()
                 .unwrap_or_else(|| "text".to_string()),
@@ -365,12 +366,12 @@ fn parse_query_params(req: &Request<hyper::body::Incoming>) -> GetMessagesQuery 
 
     GetMessagesQuery {
         other_user_id: params.get("other_user_id").and_then(|s| s.parse().ok()),
-        group_id:      params
+        group_id: params
             .get("group_id")
             .or_else(|| params.get("chat_id"))
             .and_then(|s| s.parse().ok()),
-        limit:         params.get("limit").and_then(|s| s.parse().ok()),
-        offset:        params.get("offset").and_then(|s| s.parse().ok()),
+        limit: params.get("limit").and_then(|s| s.parse().ok()),
+        offset: params.get("offset").and_then(|s| s.parse().ok()),
     }
 }
 
@@ -381,22 +382,16 @@ async fn retrieve_messages(
 ) -> std::result::Result<Vec<MessageResponse>, MessageError> {
     use crate::database::messages as db_messages;
 
-    let limit  = query.limit.unwrap_or(50).min(100);
+    let limit = query.limit.unwrap_or(50).min(100);
     let offset = query.offset.unwrap_or(0);
 
     let messages = if let Some(other_user_id) = query.other_user_id {
-        db_messages::get_direct_messages(
-            &state.db,
-            user_id,
-            other_user_id,
-            limit,
-            offset,
-        )
-        .await
-        .map_err(|e| {
-            error!("Database error getting direct messages: {}", e);
-            MessageError::DatabaseError
-        })?
+        db_messages::get_direct_messages(&state.db, user_id, other_user_id, limit, offset)
+            .await
+            .map_err(|e| {
+                error!("Database error getting direct messages: {}", e);
+                MessageError::DatabaseError
+            })?
     } else if let Some(group_id) = query.group_id {
         db_messages::get_group_messages(&state.db, group_id, limit, offset)
             .await
@@ -411,21 +406,20 @@ async fn retrieve_messages(
     messages
         .into_iter()
         .map(|msg| {
-            let content =
-                crate::database::utils::decompress_data(&msg.content).map_err(|e| {
-                    error!("Failed to decompress message {}: {}", msg.id, e);
-                    MessageError::InternalError
-                })?;
+            let content = crate::database::utils::decompress_data(&msg.content).map_err(|e| {
+                error!("Failed to decompress message {}: {}", msg.id, e);
+                MessageError::InternalError
+            })?;
 
             Ok(MessageResponse {
-                id:           msg.id,
-                sender_id:    msg.sender_id,
+                id: msg.id,
+                sender_id: msg.sender_id,
                 recipient_id: msg.recipient_id,
-                group_id:     msg.group_id,
-                content:      String::from_utf8_lossy(&content).to_string(),
-                sent_at:      msg.sent_at,
+                group_id: msg.group_id,
+                content: String::from_utf8_lossy(&content).to_string(),
+                sent_at: msg.sent_at,
                 delivered_at: msg.delivered_at,
-                read_at:      msg.read_at,
+                read_at: msg.read_at,
                 message_type: msg.message_type,
             })
         })
@@ -444,8 +438,8 @@ mod tests {
     fn valid_direct_message_passes() {
         let data = SendMessageData {
             recipient_id: Some(42),
-            group_id:     None,
-            content:      "Hello!".to_string(),
+            group_id: None,
+            content: "Hello!".to_string(),
             message_type: None,
         };
         assert!(validate_message(&data).is_ok());
@@ -455,8 +449,8 @@ mod tests {
     fn missing_recipient_and_group_fails() {
         let data = SendMessageData {
             recipient_id: None,
-            group_id:     None,
-            content:      "Nobody home".to_string(),
+            group_id: None,
+            content: "Nobody home".to_string(),
             message_type: None,
         };
         assert!(matches!(
@@ -469,8 +463,8 @@ mod tests {
     fn empty_content_fails() {
         let data = SendMessageData {
             recipient_id: Some(1),
-            group_id:     None,
-            content:      "".to_string(),
+            group_id: None,
+            content: "".to_string(),
             message_type: None,
         };
         assert!(matches!(
@@ -483,8 +477,8 @@ mod tests {
     fn oversized_content_fails() {
         let data = SendMessageData {
             recipient_id: Some(1),
-            group_id:     None,
-            content:      "x".repeat(10_001),
+            group_id: None,
+            content: "x".repeat(10_001),
             message_type: None,
         };
         assert!(matches!(
@@ -502,5 +496,26 @@ mod tests {
     fn limit_defaults_to_50() {
         let effective = None::<usize>.unwrap_or(50).min(100);
         assert_eq!(effective, 50);
+    }
+
+    #[test]
+    fn creator_excluded_from_participant_add_loop() {
+        let user_id: i64 = 99;
+        let raw = "1,2,99,3";
+        let participants: Vec<i64> = raw
+            .split(',')
+            .filter_map(|p| p.trim().parse::<i64>().ok())
+            .filter(|&id| id != user_id)
+            .collect();
+        assert_eq!(participants, vec![1, 2, 3]);
+        assert!(!participants.contains(&user_id));
+    }
+
+    #[test]
+    fn direct_chat_participants_all_get_admin_role() {
+        // Verify the role string used for DM participants.
+        let chat_type = "direct";
+        let role = if chat_type == "direct" { "admin" } else { "member" };
+        assert_eq!(role, "admin");
     }
 }
