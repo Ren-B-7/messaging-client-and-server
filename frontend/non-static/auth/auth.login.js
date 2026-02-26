@@ -1,3 +1,10 @@
+/**
+ * Auth — Login
+ * Handles the login form: validation, fetch, server error mapping,
+ * and URL-error-param fallback for non-JS server redirects.
+ * Depends on: AuthPassword
+ */
+
 const AuthLogin = {
   setup() {
     const form = document.getElementById("loginForm");
@@ -10,27 +17,30 @@ const AuthLogin = {
 
       const username = document.getElementById("username")?.value.trim();
       const password = document.getElementById("password")?.value;
+      const submitBtn = form.querySelector('button[type="submit"]');
 
       AuthLogin.clearErrors();
-
       if (!AuthLogin.validate(username, password)) return;
 
-      const submitBtn = form.querySelector('button[type="submit"]');
       AuthLogin._setLoading(submitBtn, true);
 
       try {
         const response = await fetch("/api/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username: username, password: password }),
+          body: JSON.stringify({ username, password }),
         });
 
-        // Server sent a redirect (302) — fetch followed it, navigate the browser there
+        // fetch followed a server-side 302 redirect automatically.
         if (response.redirected) {
-          console.log("response");
-          localStorage.setItem("allowed", "true");
           window.location.href = response.url;
           return;
+        }
+
+        // Guard against non-JSON error pages.
+        const contentType = response.headers.get("content-type") || "";
+        if (!contentType.includes("application/json")) {
+          throw new Error(`Unexpected response (${response.status})`);
         }
 
         const data = await response.json();
@@ -40,17 +50,21 @@ const AuthLogin = {
           return;
         }
 
-        // Success response with explicit redirect field
         if (data.redirect) {
-          console.log("Data");
-          localStorage.setItem("allowed", "true");
           window.location.href = data.redirect;
+          return;
         }
-      } catch (err) {
-        // Network failure or non-JSON response
+
+        // Success but no redirect — shouldn't normally happen.
         AuthLogin.showError(
           "username",
-          "Could not reach the server. Please try again.",
+          "Login succeeded but no redirect was provided.",
+        );
+      } catch (err) {
+        console.error("[login] error:", err);
+        AuthLogin.showError(
+          "username",
+          "Could not reach the server. Please check your connection and try again.",
         );
       } finally {
         AuthLogin._setLoading(submitBtn, false);
@@ -60,39 +74,49 @@ const AuthLogin = {
     this._checkUrlError();
   },
 
+  // ── Server error mapping ──────────────────────────────────────────────────
+
   _handleServerError(data) {
+    const msg = data.message ?? "An unexpected error occurred.";
     switch (data.code) {
       case "INVALID_CREDENTIALS":
-        AuthLogin.showError("username", data.message);
-        AuthLogin.showError("password", " "); // mark field red without duplicate text
+        AuthLogin.showError("username", msg);
+        AuthLogin.showError("password", " "); // mark field red, text shown on username
         break;
       case "USER_BANNED":
-        AuthLogin.showError("username", data.message);
+        AuthLogin.showError("username", msg);
+        break;
+      case "RATE_LIMITED":
+        AuthLogin.showError(
+          "username",
+          msg || "Too many attempts. Please wait a moment.",
+        );
         break;
       case "MISSING_FIELD":
       case "INVALID_INPUT":
-        AuthLogin.showError("username", data.message);
+        AuthLogin.showError("username", msg);
         break;
       default:
-        AuthLogin.showError(
-          "username",
-          data.message ?? "An unexpected error occurred.",
-        );
+        AuthLogin.showError("username", msg);
     }
   },
 
-  // ─── URL error param (fallback for non-JS redirects) ────────────────────────
+  // ── URL error param (server-side redirect fallback) ───────────────────────
 
   _checkUrlError() {
     const error = new URLSearchParams(window.location.search).get("error");
-    if (error === "invalid_credentials") {
-      this.showError("username", "Invalid username or password");
-    } else if (error === "invalid_input") {
-      this.showError("username", "Please check your input");
-    } else if (error === "invalid_request") {
-      this.showError("username", "Invalid request. Please try again.");
-    }
+    const map = {
+      invalid_credentials: "Invalid username or password",
+      invalid_input: "Please check your input",
+      invalid_request: "Invalid request. Please try again.",
+      rate_limited: "Too many attempts. Please wait a moment.",
+      banned: "Your account has been suspended.",
+    };
+    const msg = map[error];
+    if (msg) this.showError("username", msg);
   },
+
+  // ── Client-side validation ────────────────────────────────────────────────
 
   validate(username, password) {
     let valid = true;
@@ -110,17 +134,13 @@ const AuthLogin = {
     return valid;
   },
 
-  // ─── UI helpers ─────────────────────────────────────────────────────────────
-
-  _setLoading(btn, isLoading) {
-    if (!btn) return;
-    btn.disabled = isLoading;
-    btn.textContent = isLoading ? "Signing in..." : "Sign in";
-  },
+  // ── Shared UI helpers (also used by auth.register.js) ────────────────────
 
   /**
-   * Display an error message below a field and mark it invalid.
-   * Automatically clears on next input.
+   * Show an error message below a field and mark the input red.
+   * The error clears automatically on the next input event.
+   * @param {string} fieldId  The input element's id (error el is `${fieldId}Error`)
+   * @param {string} message
    */
   showError(fieldId, message) {
     const errorEl = document.getElementById(`${fieldId}Error`);
@@ -137,14 +157,17 @@ const AuthLogin = {
         "input",
         () => {
           inputEl.classList.remove("error");
-          if (errorEl) errorEl.style.display = "none";
+          if (errorEl) {
+            errorEl.textContent = "";
+            errorEl.style.display = "none";
+          }
         },
         { once: true },
       );
     }
   },
 
-  /** Clear all visible form errors on the page. */
+  /** Clear all visible form errors and error styling on the page. */
   clearErrors() {
     document.querySelectorAll(".form-error").forEach((el) => {
       el.textContent = "";
@@ -153,5 +176,13 @@ const AuthLogin = {
     document
       .querySelectorAll(".form-input")
       .forEach((el) => el.classList.remove("error"));
+  },
+
+  // ── Loading state ─────────────────────────────────────────────────────────
+
+  _setLoading(btn, isLoading) {
+    if (!btn) return;
+    btn.disabled = isLoading;
+    btn.textContent = isLoading ? "Signing in…" : "Sign In";
   },
 };

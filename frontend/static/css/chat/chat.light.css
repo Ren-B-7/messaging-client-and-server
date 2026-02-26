@@ -497,3 +497,16 @@
   flex: 1;
   flex-direction: column;
 }
+
+/* ── Message send error banner ── */
+.message-send-error {
+  align-self: center;
+  background: var(--danger-light);
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  padding: var(--space-2) var(--space-4);
+  margin: var(--space-2) 0;
+  animation: fadeIn var(--duration-base) ease-out;
+}

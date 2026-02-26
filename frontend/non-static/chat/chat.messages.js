@@ -5,7 +5,8 @@
  */
 
 const ChatMessages = {
-  // ─── Rendering ────────────────────────────────────────────────────────────
+
+  // ── Rendering ────────────────────────────────────────────────────────────
 
   /**
    * Render all messages for the active conversation into #messagesContainer.
@@ -15,7 +16,7 @@ const ChatMessages = {
     const container = document.getElementById('messagesContainer');
     if (!container) return;
 
-    if (messages.length === 0) {
+    if (!messages.length) {
       container.innerHTML = `
         <div class="text-center" style="padding: var(--space-8); color: var(--fg-tertiary);">
           <p>No messages yet</p>
@@ -31,24 +32,49 @@ const ChatMessages = {
   },
 
   /** @returns {string} HTML for a single message bubble. */
-  _renderItem(message) {
-    const { text, timestamp, isSent } = message;
-    const timeStr = Utils.formatTime(new Date(timestamp));
+  _renderItem({ text, timestamp, isSent }) {
     return `
       <div class="message ${isSent ? 'sent' : 'received'}">
         <div class="message-bubble">${Utils.escapeHtml(text)}</div>
-        <div class="message-time">${timeStr}</div>
+        <div class="message-time">${Utils.formatTime(new Date(timestamp))}</div>
       </div>`;
   },
 
-  // ─── Sending ──────────────────────────────────────────────────────────────
+  /** Show a temporary inline error banner inside the message area. */
+  _showSendError(message) {
+    const container = document.getElementById('messagesContainer');
+    if (!container) return;
 
-  /** Read the textarea, build a message, persist it, and update the UI. */
+    const banner = document.createElement('div');
+    banner.className   = 'message-send-error';
+    banner.textContent = message;
+    container.appendChild(banner);
+    container.scrollTop = container.scrollHeight;
+
+    // Auto-dismiss after 4 s.
+    setTimeout(() => banner.remove(), 4000);
+  },
+
+  // ── Sending ──────────────────────────────────────────────────────────────
+
   send() {
     const input = document.getElementById('messageInput');
     const text  = input?.value.trim();
-    if (!text || !ChatState.currentConversation) return;
 
+    if (!text) return;
+
+    if (!ChatState.currentConversation) {
+      this._showSendError('No conversation selected. Please select one first.');
+      return;
+    }
+
+    // Basic length guard.
+    if (text.length > 4000) {
+      this._showSendError('Message is too long (max 4,000 characters).');
+      return;
+    }
+
+    const convId  = ChatState.currentConversation.id;
     const message = {
       id:        Utils.generateId(),
       text,
@@ -56,24 +82,29 @@ const ChatMessages = {
       isSent:    true,
     };
 
-    const convId = ChatState.currentConversation.id;
     ChatState.addMessage(convId, message);
 
-    // Update the conversation's last-message preview.
-    const conv = ChatState.findConversation(convId);
+    // Update conversation preview in the sidebar.
+    const conv = ChatState.findConversation(convId)
+               ?? ChatState.findGroup?.(convId);
     if (conv) {
       conv.lastMessage = text;
       conv.timestamp   = Date.now();
     }
 
-    ChatState.save();
+    try {
+      ChatState.save();
+    } catch (e) {
+      console.warn('[messages] Could not persist message to localStorage:', e);
+    }
+
     this.render(ChatState.getMessages(convId));
     ChatConversations.render();
 
-    // Reset input.
-    input.value              = '';
-    input.style.height       = 'auto';
-    const sendBtn            = document.getElementById('sendBtn');
+    // Reset the input field.
+    input.value        = '';
+    input.style.height = 'auto';
+    const sendBtn = document.getElementById('sendBtn');
     if (sendBtn) sendBtn.disabled = true;
 
     // Demo: simulate a reply after 1 s.
@@ -91,6 +122,7 @@ const ChatMessages = {
       'Absolutely!',
     ];
 
+    const convId  = ChatState.currentConversation.id;
     const message = {
       id:        Utils.generateId(),
       text:      replies[Math.floor(Math.random() * replies.length)],
@@ -98,23 +130,27 @@ const ChatMessages = {
       isSent:    false,
     };
 
-    const convId = ChatState.currentConversation.id;
     ChatState.addMessage(convId, message);
 
-    const conv = ChatState.findConversation(convId);
+    const conv = ChatState.findConversation(convId)
+               ?? ChatState.findGroup?.(convId);
     if (conv) {
       conv.lastMessage = message.text;
       conv.timestamp   = Date.now();
     }
 
-    ChatState.save();
+    try {
+      ChatState.save();
+    } catch (e) {
+      console.warn('[messages] Could not persist reply:', e);
+    }
+
     this.render(ChatState.getMessages(convId));
     ChatConversations.render();
   },
 
-  // ─── Input setup ──────────────────────────────────────────────────────────
+  // ── Input setup ──────────────────────────────────────────────────────────
 
-  /** Wire the textarea auto-resize, Enter-to-send, and send button. */
   setupInput() {
     const input   = document.getElementById('messageInput');
     const sendBtn = document.getElementById('sendBtn');

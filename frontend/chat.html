@@ -10,49 +10,32 @@
     />
 
     <!-- Primary CSS -->
-    <link rel="stylesheet" href="static/css/var.css" fetchpriority="high" />
-    <link
-      rel="stylesheet"
-      href="static/css/base/base.light.css"
-      fetchpriority="high"
-    />
-    <link
-      rel="stylesheet"
-      href="static/css/chat/chat.light.css"
-      fetchpriority="high"
-    />
+    <link rel="stylesheet" href="static/css/var.css"              fetchpriority="high" />
+    <link rel="stylesheet" href="static/css/base/base.light.css"  fetchpriority="high" />
+    <link rel="stylesheet" href="static/css/chat/chat.light.css"  fetchpriority="high" />
 
     <!-- Synchronous theme detection — runs before render to avoid flash -->
     <script>
       (function () {
-        var t =
-          localStorage.getItem("theme") ||
-          (matchMedia("(prefers-color-scheme: dark)").matches
-            ? "dark"
-            : "light");
-        document.documentElement.setAttribute("data-theme", t);
-        if (t === "dark") {
-          ["base", "chat"].forEach(function (m) {
-            var l = document.createElement("link");
-            l.rel = "stylesheet";
-            l.href = "static/css/" + m + "/" + m + ".dark.css";
-            l.fetchPriority = "high";
+        var t = localStorage.getItem('theme') ||
+          (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-theme', t);
+        if (t === 'dark') {
+          ['base', 'chat'].forEach(function (m) {
+            var l = document.createElement('link');
+            l.rel  = 'stylesheet';
+            l.href = 'static/css/' + m + '/' + m + '.dark.css';
+            l.fetchPriority = 'high';
             document.head.appendChild(l);
           });
         }
         var ld = function (v) {
-          var e = document.getElementById("loading");
+          var e = document.getElementById('loading');
           if (e) e.style.display = v;
         };
-        window.addEventListener("beforeunload", function () {
-          ld("flex");
-        });
-        window.addEventListener("load", function () {
-          ld("none");
-        });
-        window.addEventListener("pageshow", function (e) {
-          if (e.persisted) ld("none");
-        });
+        window.addEventListener('beforeunload', function () { ld('flex'); });
+        window.addEventListener('load',         function () { ld('none'); });
+        window.addEventListener('pageshow',     function (e) { if (e.persisted) ld('none'); });
       })();
     </script>
 
@@ -103,14 +86,8 @@
         transition: all var(--transition-fast);
         flex-shrink: 0;
       }
-      .refresh-btn:hover {
-        background: var(--hover);
-        color: var(--fg-primary);
-      }
-      .refresh-btn:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-      }
+      .refresh-btn:hover    { background: var(--hover); color: var(--fg-primary); }
+      .refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
       /* ── Conversation modals ── */
       .conv-modal-backdrop {
@@ -123,9 +100,7 @@
         justify-content: center;
         padding: var(--space-4);
       }
-      .conv-modal-backdrop.open {
-        display: flex;
-      }
+      .conv-modal-backdrop.open { display: flex; }
       .conv-modal {
         background: var(--bg-primary);
         border: 1px solid var(--border);
@@ -157,12 +132,8 @@
         padding: 0 var(--space-1);
         transition: color var(--transition-fast);
       }
-      .conv-modal-close:hover {
-        color: var(--fg-primary);
-      }
-      .conv-modal-body {
-        padding: var(--space-6);
-      }
+      .conv-modal-close:hover { color: var(--fg-primary); }
+      .conv-modal-body { padding: var(--space-6); }
       .conv-modal-body p {
         font-size: var(--text-sm);
         color: var(--fg-secondary);
@@ -185,22 +156,14 @@
     </style>
 
     <!-- Preloads -->
-    <link rel="preload" href="static/js/utils/theme.manager.js" as="script" />
-    <link
-      rel="preload"
-      href="static/js/config/platform.config.js"
-      as="script"
-    />
-    <link rel="preload" href="static/js/utils/utils.js" as="script" />
-    <link rel="preload" href="non-static/chat/chat.state.js" as="script" />
-    <link rel="preload" href="non-static/chat/chat.ui.js" as="script" />
-    <link rel="preload" href="non-static/chat/chat.messages.js" as="script" />
-    <link
-      rel="preload"
-      href="non-static/chat/chat.conversations.js"
-      as="script"
-    />
-    <link rel="preload" href="non-static/chat/chat.init.js" as="script" />
+    <link rel="preload" href="static/js/utils/theme.manager.js"    as="script" />
+    <link rel="preload" href="static/js/config/platform.config.js" as="script" />
+    <link rel="preload" href="static/js/utils/utils.js"            as="script" />
+    <link rel="preload" href="non-static/chat/chat.state.js"        as="script" />
+    <link rel="preload" href="non-static/chat/chat.ui.js"           as="script" />
+    <link rel="preload" href="non-static/chat/chat.messages.js"     as="script" />
+    <link rel="preload" href="non-static/chat/chat.conversations.js" as="script" />
+    <link rel="preload" href="non-static/chat/chat.init.js"         as="script" />
 
     <!-- Scripts (deferred — execute after HTML is parsed, in order) -->
     <script defer src="static/js/utils/theme.manager.js"></script>
@@ -222,40 +185,26 @@
       </a>
       <div class="navbar-menu">
         <a href="/chat" class="active">Messages</a>
-        <a href="/contacts">Contacts</a>
       </div>
       <div class="navbar-end">
-        <button
-          class="btn btn-ghost btn-icon"
-          id="themeToggle"
-          title="Toggle theme"
-        >
-          <img
-            src="static/icons/icons/sun.svg"
-            alt="Toggle theme"
-            width="20"
-            height="20"
-          />
+        <button class="btn btn-ghost btn-icon" id="themeToggle" title="Toggle theme">
+          <img src="static/icons/icons/sun.svg" alt="Toggle theme" width="20" height="20" />
         </button>
         <a href="/settings" class="btn btn-ghost btn-icon" title="Settings">
-          <img
-            src="static/icons/icons/settings.svg"
-            alt="Settings"
-            width="20"
-            height="20"
-          />
+          <img src="static/icons/icons/settings.svg" alt="Settings" width="20" height="20" />
         </a>
         <div class="avatar avatar-sm" id="userInitials">U</div>
       </div>
     </nav>
 
     <div class="chat-container">
+
       <!-- ── Sidebar: conversation list ── -->
       <aside class="conversations-panel">
         <div class="panel-header">
           <div class="panel-tabs">
             <button class="panel-tab active" data-tab="dm">Messages</button>
-            <button class="panel-tab" data-tab="groups">Groups</button>
+            <button class="panel-tab"        data-tab="groups">Groups</button>
           </div>
           <div class="panel-actions">
             <div class="search-box">
@@ -278,9 +227,7 @@
               id="refreshConvsBtn"
               title="Refresh"
               aria-label="Refresh conversations"
-            >
-              ↺
-            </button>
+            >↺</button>
             <button class="new-chat-btn" id="newChatBtn" title="New">+</button>
           </div>
         </div>
@@ -289,30 +236,23 @@
 
       <!-- ── Main: message area ── -->
       <main class="chat-area">
+
         <!-- Shown when no conversation is selected -->
-        <div
-          id="emptyChatState"
-          style="
-            display: flex;
-            flex: 1;
-            align-items: center;
-            justify-content: center;
-          "
-        >
-          <div style="text-align: center; color: var(--fg-tertiary)">
-            <div style="font-size: 64px; margin-bottom: var(--space-4)">💬</div>
-            <h2 style="color: var(--fg-secondary)">Select a conversation</h2>
+        <div id="emptyChatState" style="display: flex; flex: 1; align-items: center; justify-content: center;">
+          <div style="text-align: center; color: var(--fg-tertiary);">
+            <div style="font-size: 64px; margin-bottom: var(--space-4);">💬</div>
+            <h2 style="color: var(--fg-secondary);">Select a conversation</h2>
             <p>Choose a conversation from the sidebar to start messaging</p>
           </div>
         </div>
 
         <!-- Shown when a conversation is active -->
-        <div id="activeChatView" class="active-chat-view" style="display: none">
+        <div id="activeChatView" class="active-chat-view" style="display: none;">
           <div class="chat-header">
             <div class="chat-info">
               <div class="avatar" id="chatAvatar">U</div>
               <div class="chat-details">
-                <div class="chat-name" id="chatName">User</div>
+                <div class="chat-name"   id="chatName">User</div>
                 <div class="chat-status">
                   <span class="status-dot" id="statusDot"></span>
                   <span id="statusText">Offline</span>
@@ -320,29 +260,20 @@
               </div>
             </div>
             <div class="chat-actions">
-              <button
-                class="chat-action-btn"
-                id="voiceCallBtn"
-                title="Voice call"
-              >
-                <img
-                  src="static/icons/icons/phone.svg"
-                  alt="Voice call"
-                  width="20"
-                  height="20"
-                />
+              <!-- Only visible for group conversations -->
+              <button class="chat-action-btn" id="addMemberBtn" title="Add member" style="display:none;">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                  <circle cx="9" cy="7" r="4"/>
+                  <line x1="19" y1="8" x2="19" y2="14"/>
+                  <line x1="16" y1="11" x2="22" y2="11"/>
+                </svg>
               </button>
-              <button
-                class="chat-action-btn"
-                id="videoCallBtn"
-                title="Video call"
-              >
-                <img
-                  src="static/icons/icons/video.svg"
-                  alt="Video call"
-                  width="20"
-                  height="20"
-                />
+              <button class="chat-action-btn" id="voiceCallBtn" title="Voice call">
+                <img src="static/icons/icons/phone.svg" alt="Voice call" width="20" height="20" />
+              </button>
+              <button class="chat-action-btn" id="videoCallBtn" title="Video call">
+                <img src="static/icons/icons/video.svg" alt="Video call" width="20" height="20" />
               </button>
             </div>
           </div>
@@ -351,17 +282,8 @@
 
           <div class="message-input-area">
             <div class="input-tools">
-              <button
-                class="input-tool-btn"
-                id="attachFileBtn"
-                title="Attach file"
-              >
-                <img
-                  src="static/icons/icons/paperclip.svg"
-                  alt="Attach file"
-                  width="20"
-                  height="20"
-                />
+              <button class="input-tool-btn" id="attachFileBtn" title="Attach file">
+                <img src="static/icons/icons/paperclip.svg" alt="Attach file" width="20" height="20" />
               </button>
             </div>
             <div class="message-input-wrapper">
@@ -372,16 +294,12 @@
                 rows="1"
               ></textarea>
               <button class="send-btn" id="sendBtn" disabled>
-                <img
-                  src="static/icons/icons/send.svg"
-                  alt="Send"
-                  width="20"
-                  height="20"
-                />
+                <img src="static/icons/icons/send.svg" alt="Send" width="20" height="20" />
               </button>
             </div>
           </div>
         </div>
+
       </main>
     </div>
 
@@ -394,16 +312,12 @@
             class="conv-modal-close"
             data-close-conv-modal="new-dm-modal"
             aria-label="Close"
-          >
-            ×
-          </button>
+          >×</button>
         </div>
         <div class="conv-modal-body">
           <p>Start a new direct message conversation.</p>
           <div class="form-group">
-            <label class="form-label" for="dmRecipientInput"
-              >Name or username</label
-            >
+            <label class="form-label" for="dmRecipientInput">Name or username</label>
             <input
               type="text"
               class="form-input"
@@ -415,15 +329,8 @@
           </div>
         </div>
         <div class="conv-modal-footer">
-          <button
-            class="btn btn-secondary btn-sm"
-            data-close-conv-modal="new-dm-modal"
-          >
-            Cancel
-          </button>
-          <button class="btn btn-primary btn-sm" id="newDmSubmitBtn">
-            Start Chat
-          </button>
+          <button class="btn btn-secondary btn-sm" data-close-conv-modal="new-dm-modal">Cancel</button>
+          <button class="btn btn-primary btn-sm"   id="newDmSubmitBtn">Start Chat</button>
         </div>
       </div>
     </div>
@@ -437,9 +344,7 @@
             class="conv-modal-close"
             data-close-conv-modal="new-group-modal"
             aria-label="Close"
-          >
-            ×
-          </button>
+          >×</button>
         </div>
         <div class="conv-modal-body">
           <p>Create a new group conversation.</p>
@@ -456,17 +361,46 @@
           </div>
         </div>
         <div class="conv-modal-footer">
-          <button
-            class="btn btn-secondary btn-sm"
-            data-close-conv-modal="new-group-modal"
-          >
-            Cancel
-          </button>
-          <button class="btn btn-primary btn-sm" id="newGroupSubmitBtn">
-            Create Group
-          </button>
+          <button class="btn btn-secondary btn-sm" data-close-conv-modal="new-group-modal">Cancel</button>
+          <button class="btn btn-primary btn-sm"   id="newGroupSubmitBtn">Create Group</button>
         </div>
       </div>
     </div>
+
+  </body>
+</html>
+
+    <!-- ── Modal: Add Group Member ── -->
+    <div class="conv-modal-backdrop" id="add-member-modal">
+      <div class="conv-modal">
+        <div class="conv-modal-head">
+          <span class="conv-modal-title">Add Member</span>
+          <button
+            class="conv-modal-close"
+            data-close-conv-modal="add-member-modal"
+            aria-label="Close"
+          >×</button>
+        </div>
+        <div class="conv-modal-body">
+          <p>Add someone to <strong id="addMemberGroupName"></strong>.</p>
+          <div class="form-group">
+            <label class="form-label" for="addMemberInput">Name or username</label>
+            <input
+              type="text"
+              class="form-input"
+              id="addMemberInput"
+              placeholder="e.g. jane_doe"
+              autocomplete="off"
+            />
+            <div class="conv-modal-error" id="addMemberError"></div>
+          </div>
+        </div>
+        <div class="conv-modal-footer">
+          <button class="btn btn-secondary btn-sm" data-close-conv-modal="add-member-modal">Cancel</button>
+          <button class="btn btn-primary btn-sm"   id="addMemberSubmitBtn">Add Member</button>
+        </div>
+      </div>
+    </div>
+
   </body>
 </html>
