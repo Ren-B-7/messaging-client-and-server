@@ -1,45 +1,50 @@
 /**
  * Chat — Initialiser
- * Checks authentication, loads user data into the UI, and boots all
- * chat sub-modules in the correct order.
+ * Loads user data from storage, boots all chat sub-modules in the correct
+ * order, fetches conversations from the API on first load, and renders
+ * the initial state.
  *
  * Load order (all deferred):
- *   utils.js → chat.state.js → chat.ui.js → chat.messages.js
- *            → chat.conversations.js → chat.init.js
+ *   theme.manager.js → platform.config.js → utils.js
+ *   → chat.state.js → chat.ui.js → chat.messages.js
+ *   → chat.conversations.js → chat.init.js
  */
 
-document.addEventListener("DOMContentLoaded", () => {
-  // ── Auth guard ─────────────────────────────────────────────────────────────
-  const allowed = localStorage.getStorage("allowed") === "true";
+document.addEventListener('DOMContentLoaded', async () => {
+  // ── Theme ──────────────────────────────────────────────────────────────────
+  themeManager.init(['base', 'chat']);
 
-  console.log("Allowed value:", allowed);
+  document.getElementById('themeToggle')?.addEventListener('click', () => {
+    themeManager.toggle();
+  });
 
-  if (!allowed) {
-    console.log("User NOT allowed — redirecting");
-    window.location.href = "/";
-    return;
-  }
+  // ── User data ──────────────────────────────────────────────────────────────
+  // Read from storage — never rely on a bare `user` global.
+  const user = Utils.getStorage('user') || {};
 
-  console.log("User IS allowed — continuing boot");
+  const initialsEl = document.getElementById('userInitials');
+  if (initialsEl) initialsEl.textContent = Utils.getInitials(user.name || user.email || '?');
 
-  // ── Populate navbar avatar ─────────────────────────────────────────────────
-  const initialsEl = document.getElementById("userInitials");
-  if (initialsEl)
-    initialsEl.textContent = Utils.getInitials(user.name || user.email);
-
-  // ── Load persisted data ────────────────────────────────────────────────────
+  // ── Load persisted state ───────────────────────────────────────────────────
   ChatState.load();
 
   // ── Boot sub-modules ───────────────────────────────────────────────────────
   ChatMessages.setupInput();
+  ChatConversations.setupTabs();
   ChatConversations.setupSearch();
-  ChatConversations.setupNewChatButton();
+  ChatConversations.setupNewButtons();
   ChatUI.setupActionButtons();
 
-  // ── Render initial state ───────────────────────────────────────────────────
-  ChatConversations.render();
+  // ── Fetch fresh data from API on every page load ───────────────────────────
+  // Always hits /api/messages on load so the DM list is current.
+  // Groups are fetched lazily when the groups tab is first clicked.
+  await ChatConversations.refresh();
 
-  if (ChatState.conversations.length === 0) {
-    ChatUI.showEmptyState();
+  // ── Restore previously open conversation (if any) ─────────────────────────
+  if (ChatState.currentConversation) {
+    ChatConversations.open(
+      ChatState.currentConversation.id,
+      ChatState.currentConversationType,
+    );
   }
 });

@@ -22,43 +22,175 @@
       fetchpriority="high"
     />
 
-    <!-- Synchronous theme detection -->
+    <!-- Synchronous theme detection — runs before render to avoid flash -->
     <script>
-      var t =
-        localStorage.getItem("theme") ||
-        (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-      document.documentElement.setAttribute("data-theme", t);
-      if (t === "dark")
-        ["base", "chat"].forEach(function (m) {
-          var l = document.createElement("link");
-          l.rel = "stylesheet";
-          l.href = "static/css/" + m + "/" + m + ".dark.css";
-          l.fetchPriority = "high";
-          document.head.appendChild(l);
+      (function () {
+        var t =
+          localStorage.getItem("theme") ||
+          (matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light");
+        document.documentElement.setAttribute("data-theme", t);
+        if (t === "dark") {
+          ["base", "chat"].forEach(function (m) {
+            var l = document.createElement("link");
+            l.rel = "stylesheet";
+            l.href = "static/css/" + m + "/" + m + ".dark.css";
+            l.fetchPriority = "high";
+            document.head.appendChild(l);
+          });
+        }
+        var ld = function (v) {
+          var e = document.getElementById("loading");
+          if (e) e.style.display = v;
+        };
+        window.addEventListener("beforeunload", function () {
+          ld("flex");
         });
-      var ld = function (v) {
-        var e = document.getElementById("loading");
-        if (e) e.style.display = v;
-      };
-      window.addEventListener("beforeunload", function () {
-        ld("flex");
-      });
-      window.addEventListener("load", function () {
-        ld("none");
-      });
-      window.addEventListener("pageshow", function (e) {
-        if (e.persisted) ld("none");
-      });
+        window.addEventListener("load", function () {
+          ld("none");
+        });
+        window.addEventListener("pageshow", function (e) {
+          if (e.persisted) ld("none");
+        });
+      })();
     </script>
 
+    <!-- Panel tabs, refresh button, and conversation modal styles -->
+    <style>
+      /* ── Panel tabs ── */
+      .panel-tabs {
+        display: flex;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: var(--space-3);
+      }
+      .panel-tab {
+        flex: 1;
+        background: transparent;
+        border: none;
+        border-bottom: 2px solid transparent;
+        padding: var(--space-2) var(--space-3);
+        font-family: var(--font-sans);
+        font-size: var(--text-sm);
+        font-weight: 500;
+        color: var(--fg-secondary);
+        cursor: pointer;
+        transition: all var(--transition-fast);
+        margin-bottom: -1px;
+      }
+      .panel-tab.active {
+        color: var(--accent);
+        border-bottom-color: var(--accent);
+      }
+      .panel-tab:hover:not(.active) {
+        color: var(--fg-primary);
+        background: var(--hover);
+      }
+
+      /* ── Refresh button ── */
+      .refresh-btn {
+        width: 36px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: transparent;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        color: var(--fg-secondary);
+        cursor: pointer;
+        font-size: var(--text-base);
+        transition: all var(--transition-fast);
+        flex-shrink: 0;
+      }
+      .refresh-btn:hover {
+        background: var(--hover);
+        color: var(--fg-primary);
+      }
+      .refresh-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      /* ── Conversation modals ── */
+      .conv-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: var(--backdrop);
+        z-index: var(--z-modal-backdrop);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: var(--space-4);
+      }
+      .conv-modal-backdrop.open {
+        display: flex;
+      }
+      .conv-modal {
+        background: var(--bg-primary);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-xl);
+        width: 100%;
+        max-width: 400px;
+        box-shadow: var(--shadow-xl);
+        overflow: hidden;
+      }
+      .conv-modal-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: var(--space-5) var(--space-6);
+        border-bottom: 1px solid var(--border);
+      }
+      .conv-modal-title {
+        font-weight: 600;
+        font-size: var(--text-lg);
+        color: var(--fg-primary);
+      }
+      .conv-modal-close {
+        background: transparent;
+        border: none;
+        font-size: var(--text-xl);
+        cursor: pointer;
+        color: var(--fg-tertiary);
+        line-height: 1;
+        padding: 0 var(--space-1);
+        transition: color var(--transition-fast);
+      }
+      .conv-modal-close:hover {
+        color: var(--fg-primary);
+      }
+      .conv-modal-body {
+        padding: var(--space-6);
+      }
+      .conv-modal-body p {
+        font-size: var(--text-sm);
+        color: var(--fg-secondary);
+        margin-bottom: var(--space-5);
+      }
+      .conv-modal-error {
+        font-size: var(--text-xs);
+        color: var(--danger);
+        margin-top: var(--space-2);
+        min-height: 1rem;
+      }
+      .conv-modal-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: var(--space-3);
+        padding: var(--space-4) var(--space-6);
+        border-top: 1px solid var(--border);
+        background: var(--bg-secondary);
+      }
+    </style>
+
     <!-- Preloads -->
-    <link rel="preload" href="static/js/utils/theme_manager.js" as="script" />
+    <link rel="preload" href="static/js/utils/theme.manager.js" as="script" />
     <link
       rel="preload"
       href="static/js/config/platform.config.js"
       as="script"
     />
-    <link rel="preload" href="static/js/config/route.config.js" as="script" />
     <link rel="preload" href="static/js/utils/utils.js" as="script" />
     <link rel="preload" href="non-static/chat/chat.state.js" as="script" />
     <link rel="preload" href="non-static/chat/chat.ui.js" as="script" />
@@ -70,10 +202,9 @@
     />
     <link rel="preload" href="non-static/chat/chat.init.js" as="script" />
 
-    <!-- Scripts -->
-    <script defer src="static/js/utils/theme_manager.js"></script>
+    <!-- Scripts (deferred — execute after HTML is parsed, in order) -->
+    <script defer src="static/js/utils/theme.manager.js"></script>
     <script defer src="static/js/config/platform.config.js"></script>
-    <script defer src="static/js/config/route.config.js"></script>
     <script defer src="static/js/utils/utils.js"></script>
     <script defer src="non-static/chat/chat.state.js"></script>
     <script defer src="non-static/chat/chat.ui.js"></script>
@@ -119,9 +250,13 @@
     </nav>
 
     <div class="chat-container">
+      <!-- ── Sidebar: conversation list ── -->
       <aside class="conversations-panel">
         <div class="panel-header">
-          <h2>Messages</h2>
+          <div class="panel-tabs">
+            <button class="panel-tab active" data-tab="dm">Messages</button>
+            <button class="panel-tab" data-tab="groups">Groups</button>
+          </div>
           <div class="panel-actions">
             <div class="search-box">
               <img
@@ -134,19 +269,27 @@
               <input
                 type="text"
                 class="search-input"
-                placeholder="Search..."
                 id="conversationSearch"
+                placeholder="Search..."
               />
             </div>
-            <button class="new-chat-btn" id="newChatBtn" title="New chat">
-              +
+            <button
+              class="refresh-btn"
+              id="refreshConvsBtn"
+              title="Refresh"
+              aria-label="Refresh conversations"
+            >
+              ↺
             </button>
+            <button class="new-chat-btn" id="newChatBtn" title="New">+</button>
           </div>
         </div>
         <div class="conversations-list" id="conversationsList"></div>
       </aside>
 
+      <!-- ── Main: message area ── -->
       <main class="chat-area">
+        <!-- Shown when no conversation is selected -->
         <div
           id="emptyChatState"
           style="
@@ -163,10 +306,8 @@
           </div>
         </div>
 
-        <div
-          id="activeChatView"
-          style="display: none; flex: 1; flex-direction: column"
-        >
+        <!-- Shown when a conversation is active -->
+        <div id="activeChatView" class="active-chat-view" style="display: none">
           <div class="chat-header">
             <div class="chat-info">
               <div class="avatar" id="chatAvatar">U</div>
@@ -242,6 +383,90 @@
           </div>
         </div>
       </main>
+    </div>
+
+    <!-- ── Modal: New Direct Message ── -->
+    <div class="conv-modal-backdrop" id="new-dm-modal">
+      <div class="conv-modal">
+        <div class="conv-modal-head">
+          <span class="conv-modal-title">New Message</span>
+          <button
+            class="conv-modal-close"
+            data-close-conv-modal="new-dm-modal"
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+        <div class="conv-modal-body">
+          <p>Start a new direct message conversation.</p>
+          <div class="form-group">
+            <label class="form-label" for="dmRecipientInput"
+              >Name or username</label
+            >
+            <input
+              type="text"
+              class="form-input"
+              id="dmRecipientInput"
+              placeholder="e.g. jane_doe"
+              autocomplete="off"
+            />
+            <div class="conv-modal-error" id="dmRecipientError"></div>
+          </div>
+        </div>
+        <div class="conv-modal-footer">
+          <button
+            class="btn btn-secondary btn-sm"
+            data-close-conv-modal="new-dm-modal"
+          >
+            Cancel
+          </button>
+          <button class="btn btn-primary btn-sm" id="newDmSubmitBtn">
+            Start Chat
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Modal: New Group ── -->
+    <div class="conv-modal-backdrop" id="new-group-modal">
+      <div class="conv-modal">
+        <div class="conv-modal-head">
+          <span class="conv-modal-title">New Group</span>
+          <button
+            class="conv-modal-close"
+            data-close-conv-modal="new-group-modal"
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+        <div class="conv-modal-body">
+          <p>Create a new group conversation.</p>
+          <div class="form-group">
+            <label class="form-label" for="groupNameInput">Group name</label>
+            <input
+              type="text"
+              class="form-input"
+              id="groupNameInput"
+              placeholder="e.g. Team Updates"
+              autocomplete="off"
+            />
+            <div class="conv-modal-error" id="groupNameError"></div>
+          </div>
+        </div>
+        <div class="conv-modal-footer">
+          <button
+            class="btn btn-secondary btn-sm"
+            data-close-conv-modal="new-group-modal"
+          >
+            Cancel
+          </button>
+          <button class="btn btn-primary btn-sm" id="newGroupSubmitBtn">
+            Create Group
+          </button>
+        </div>
+      </div>
     </div>
   </body>
 </html>

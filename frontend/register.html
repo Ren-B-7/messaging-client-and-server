@@ -22,53 +22,56 @@
       fetchpriority="high"
     />
 
-    <!-- Theme detection logic updated for relative paths -->
+    <!-- Synchronous theme detection — runs before render to avoid flash -->
     <script>
-      var t =
-        localStorage.getItem("theme") ||
-        (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-      document.documentElement.setAttribute("data-theme", t);
-      if (t === "dark")
-        ["base", "auth"].forEach(function (m) {
-          var l = document.createElement("link");
-          l.rel = "stylesheet";
-          l.href = "static/css/" + m + "/" + m + ".dark.css";
-          l.fetchPriority = "high";
-          document.head.appendChild(l);
+      (function () {
+        var t =
+          localStorage.getItem("theme") ||
+          (matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light");
+        document.documentElement.setAttribute("data-theme", t);
+        if (t === "dark") {
+          ["base", "auth"].forEach(function (m) {
+            var l = document.createElement("link");
+            l.rel = "stylesheet";
+            l.href = "static/css/" + m + "/" + m + ".dark.css";
+            l.fetchPriority = "high";
+            document.head.appendChild(l);
+          });
+        }
+        var ld = function (v) {
+          var e = document.getElementById("loading");
+          if (e) e.style.display = v;
+        };
+        window.addEventListener("beforeunload", function () {
+          ld("flex");
         });
-      var ld = function (v) {
-        var e = document.getElementById("loading");
-        if (e) e.style.display = v;
-      };
-      window.addEventListener("beforeunload", function () {
-        ld("flex");
-      });
-      window.addEventListener("load", function () {
-        ld("none");
-      });
-      window.addEventListener("pageshow", function (e) {
-        if (e.persisted) ld("none");
-      });
+        window.addEventListener("load", function () {
+          ld("none");
+        });
+        window.addEventListener("pageshow", function (e) {
+          if (e.persisted) ld("none");
+        });
+      })();
     </script>
 
     <!-- Preloads -->
-    <link rel="preload" href="static/js/utils/theme_manager.js" as="script" />
+    <link rel="preload" href="static/js/utils/theme.manager.js" as="script" />
     <link
       rel="preload"
       href="static/js/config/platform.config.js"
       as="script"
     />
-    <link rel="preload" href="static/js/config/route.config.js" as="script" />
     <link rel="preload" href="static/js/utils/utils.js" as="script" />
     <link rel="preload" href="static/js/auth/auth.password.js" as="script" />
     <link rel="preload" href="non-static/auth/auth.login.js" as="script" />
     <link rel="preload" href="non-static/auth/auth.register.js" as="script" />
     <link rel="preload" href="non-static/auth/auth.init.js" as="script" />
 
-    <!-- Scripts -->
-    <script defer src="static/js/utils/theme_manager.js"></script>
+    <!-- Scripts (deferred — execute after HTML is parsed, in order) -->
+    <script defer src="static/js/utils/theme.manager.js"></script>
     <script defer src="static/js/config/platform.config.js"></script>
-    <script defer src="static/js/config/route.config.js"></script>
     <script defer src="static/js/utils/utils.js"></script>
     <script defer src="static/js/auth/auth.password.js"></script>
     <script defer src="non-static/auth/auth.login.js"></script>
@@ -77,6 +80,7 @@
   </head>
   <body>
     <div id="loading">Loading...</div>
+
     <div class="auth-page">
       <div class="auth-container">
         <div class="auth-card">
@@ -86,7 +90,7 @@
             <p class="auth-subtitle">Join our community today</p>
           </div>
 
-          <!-- Progress steps -->
+          <!-- Step indicators -->
           <div class="steps-container">
             <div class="step active" data-step="1">
               <div class="step-circle">1</div>
@@ -105,8 +109,7 @@
           </div>
 
           <form id="registerForm" class="auth-form" novalidate>
-
-            <!-- ── Step 1: Account ── -->
+            <!-- ── Step 1: Account credentials ── -->
             <div class="form-step active" data-step="1">
               <div class="form-group">
                 <label class="form-label" for="regEmail">Email Address</label>
@@ -139,19 +142,28 @@
                     class="password-toggle"
                     aria-label="Toggle password visibility"
                   >
-                    <img src="static/icons/icons/eye.svg" alt="" width="20" height="20" />
+                    <img
+                      src="static/icons/icons/eye.svg"
+                      alt=""
+                      width="20"
+                      height="20"
+                    />
                   </button>
                 </div>
                 <div class="password-strength">
                   <div class="strength-bar">
                     <div class="strength-fill" id="strengthFill"></div>
                   </div>
-                  <span class="strength-text" id="strengthText">Password strength: Weak</span>
+                  <span class="strength-text" id="strengthText"
+                    >Password strength: Weak</span
+                  >
                 </div>
               </div>
 
               <div class="form-group">
-                <label class="form-label" for="regConfirmPassword">Confirm Password</label>
+                <label class="form-label" for="regConfirmPassword"
+                  >Confirm Password</label
+                >
                 <div class="password-input-wrapper">
                   <input
                     type="password"
@@ -167,20 +179,29 @@
                     class="password-toggle"
                     aria-label="Toggle password visibility"
                   >
-                    <img src="static/icons/icons/eye.svg" alt="" width="20" height="20" />
+                    <img
+                      src="static/icons/icons/eye.svg"
+                      alt=""
+                      width="20"
+                      height="20"
+                    />
                   </button>
                 </div>
                 <div class="form-error" id="regConfirmPasswordError"></div>
               </div>
 
               <div class="form-actions">
-                <button type="button" id="nextBtn1" class="btn btn-primary btn-block btn-lg">
+                <button
+                  type="button"
+                  id="nextBtn1"
+                  class="btn btn-primary btn-block btn-lg"
+                >
                   Continue
                 </button>
               </div>
             </div>
 
-            <!-- ── Step 2: Profile ── -->
+            <!-- ── Step 2: Profile details ── -->
             <div class="form-step" data-step="2">
               <div class="form-group">
                 <label class="form-label" for="fullName">Full Name</label>
@@ -197,55 +218,106 @@
               </div>
 
               <div class="form-group">
-                <label class="form-label" for="username">Username</label>
+                <label class="form-label" for="regUsername">Username</label>
                 <input
                   type="text"
-                  id="username"
+                  id="regUsername"
                   name="username"
                   class="form-input"
                   placeholder="Choose a unique username"
                   required
                   autocomplete="username"
                 />
-                <div class="form-hint">At least 3 characters. Letters, numbers and underscores only.</div>
+                <div class="form-hint">
+                  At least 3 characters. Letters, numbers and underscores only.
+                </div>
                 <div class="form-error" id="usernameError"></div>
               </div>
 
               <div class="form-actions">
-                <button type="button" id="prevBtn2" class="btn btn-secondary btn-lg">
+                <button
+                  type="button"
+                  id="prevBtn2"
+                  class="btn btn-secondary btn-lg"
+                >
                   Back
                 </button>
-                <button type="button" id="nextBtn2" class="btn btn-primary btn-lg">
+                <button
+                  type="button"
+                  id="nextBtn2"
+                  class="btn btn-primary btn-lg"
+                >
                   Continue
                 </button>
               </div>
             </div>
 
-            <!-- ── Step 3: Review & Submit ── -->
+            <!-- ── Step 3: Review & submit ── -->
             <div class="form-step" data-step="3">
-              <p class="text-secondary" style="margin-bottom: var(--space-5); font-size: var(--text-sm);">
+              <p
+                class="text-secondary"
+                style="margin-bottom: var(--space-5); font-size: var(--text-sm)"
+              >
                 Please confirm your details before creating your account.
               </p>
 
-              <div class="card" style="margin-bottom: var(--space-6);">
-                <div class="card-body" style="display: flex; flex-direction: column; gap: var(--space-3);">
-                  <div style="display: flex; justify-content: space-between;">
-                    <span class="text-tertiary" style="font-size: var(--text-sm);">Email</span>
-                    <span id="reviewEmail" style="font-size: var(--text-sm); font-weight: 500;">—</span>
+              <div class="card" style="margin-bottom: var(--space-6)">
+                <div
+                  class="card-body"
+                  style="
+                    display: flex;
+                    flex-direction: column;
+                    gap: var(--space-3);
+                  "
+                >
+                  <div style="display: flex; justify-content: space-between">
+                    <span
+                      class="text-tertiary"
+                      style="font-size: var(--text-sm)"
+                      >Email</span
+                    >
+                    <span
+                      id="reviewEmail"
+                      style="font-size: var(--text-sm); font-weight: 500"
+                      >—</span
+                    >
                   </div>
-                  <div style="display: flex; justify-content: space-between;">
-                    <span class="text-tertiary" style="font-size: var(--text-sm);">Full name</span>
-                    <span id="reviewName" style="font-size: var(--text-sm); font-weight: 500;">—</span>
+                  <div style="display: flex; justify-content: space-between">
+                    <span
+                      class="text-tertiary"
+                      style="font-size: var(--text-sm)"
+                      >Full name</span
+                    >
+                    <span
+                      id="reviewName"
+                      style="font-size: var(--text-sm); font-weight: 500"
+                      >—</span
+                    >
                   </div>
-                  <div style="display: flex; justify-content: space-between;">
-                    <span class="text-tertiary" style="font-size: var(--text-sm);">Username</span>
-                    <span id="reviewUsername" style="font-size: var(--text-sm); font-weight: 500;">—</span>
+                  <div style="display: flex; justify-content: space-between">
+                    <span
+                      class="text-tertiary"
+                      style="font-size: var(--text-sm)"
+                      >Username</span
+                    >
+                    <span
+                      id="reviewUsername"
+                      style="font-size: var(--text-sm); font-weight: 500"
+                      >—</span
+                    >
                   </div>
                 </div>
               </div>
 
-              <label class="form-checkbox" style="margin-bottom: var(--space-5);">
-                <input type="checkbox" id="termsCheckbox" class="checkbox-input" />
+              <label
+                class="form-checkbox"
+                style="margin-bottom: var(--space-5)"
+              >
+                <input
+                  type="checkbox"
+                  id="termsCheckbox"
+                  class="checkbox-input"
+                />
                 <span class="checkbox-label">
                   I agree to the <a href="/terms">Terms of Service</a> and
                   <a href="/privacy">Privacy Policy</a>
@@ -254,19 +326,26 @@
               <div class="form-error" id="termsCheckboxError"></div>
 
               <div class="form-actions">
-                <button type="button" id="prevBtn3" class="btn btn-secondary btn-lg">
+                <button
+                  type="button"
+                  id="prevBtn3"
+                  class="btn btn-secondary btn-lg"
+                >
                   Back
                 </button>
-                <button type="submit" id="submitBtn" class="btn btn-primary btn-lg">
+                <button
+                  type="submit"
+                  id="submitBtn"
+                  class="btn btn-primary btn-lg"
+                >
                   Create Account
                 </button>
               </div>
             </div>
-
           </form>
 
           <div class="auth-link-text">
-            Already have an account? <a href="./login">Sign In</a>
+            Already have an account? <a href="/login">Sign In</a>
           </div>
         </div>
       </div>

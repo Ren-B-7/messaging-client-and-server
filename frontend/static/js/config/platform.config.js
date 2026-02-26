@@ -1,49 +1,46 @@
 /**
  * Platform Configuration
- * Detects and exposes platform information
+ * Detects and exposes device / browser capabilities.
+ * Loaded on every page so any module can read window.PlatformConfig.
  */
 
 const PlatformConfig = {
-  // Platform detection
+
+  /** Detected OS / platform string. */
   platform: (() => {
-    const userAgent = navigator.userAgent.toLowerCase();
-    const platform = navigator.platform.toLowerCase();
-
-    if (userAgent.includes("android")) return "android";
-    if (
-      userAgent.includes("iphone") ||
-      userAgent.includes("ipad") ||
-      userAgent.includes("ipod")
-    )
-      return "ios";
-    if (userAgent.includes("windows")) return "windows";
-    if (userAgent.includes("mac")) return "mac";
-    if (userAgent.includes("linux")) return "linux";
-
-    return "web";
+    const ua = navigator.userAgent.toLowerCase();
+    if (ua.includes('android'))                                          return 'android';
+    if (ua.includes('iphone') || ua.includes('ipad') || ua.includes('ipod')) return 'ios';
+    if (ua.includes('windows'))                                          return 'windows';
+    if (ua.includes('mac'))                                              return 'mac';
+    if (ua.includes('linux'))                                            return 'linux';
+    return 'web';
   })(),
 
-  // Capabilities
+  /** Browser capability flags. */
   capabilities: {
-    touch: "ontouchstart" in window || navigator.maxTouchPoints > 0,
-    webp: document.createElement("canvas").toDataURL("image/webp").indexOf("data:image/webp") === 0,
+    touch: 'ontouchstart' in window || navigator.maxTouchPoints > 0,
+
+    webp: document.createElement('canvas')
+      .toDataURL('image/webp')
+      .startsWith('data:image/webp'),
+
     localStorage: (() => {
       try {
-        localStorage.setItem("test", "test");
-        localStorage.removeItem("test");
+        localStorage.setItem('_test', '1');
+        localStorage.removeItem('_test');
         return true;
-      } catch (e) {
+      } catch {
         return false;
       }
     })(),
   },
 
-  // Feature detection
+  /** PWA / standalone display mode flags. */
   features: {
-    pwa: window.matchMedia("(display-mode: standalone)").matches,
+    pwa:        window.matchMedia('(display-mode: standalone)').matches,
     standalone: window.navigator.standalone === true,
   },
 };
 
-// Make available globally
 window.PlatformConfig = PlatformConfig;

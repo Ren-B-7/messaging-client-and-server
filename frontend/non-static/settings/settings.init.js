@@ -1,29 +1,33 @@
 /**
  * Settings — Initialiser
- * Auth guard, user data loading, and sub-module boot sequence.
+ * User data loading and sub-module boot sequence.
  *
  * Load order (all deferred):
- *   utils.js → settings.nav.js → settings.profile.js → settings.account.js
- *            → settings.preferences.js → settings.init.js
+ *   theme.manager.js → platform.config.js → utils.js
+ *   → settings.nav.js → settings.profile.js → settings.account.js
+ *   → settings.preferences.js → settings.init.js
  */
 
-document.addEventListener("DOMContentLoaded", () => {
-  // ── Auth guard ─────────────────────────────────────────────────────────────
-  const allowed = Utils.getStorage("allowed");
-  if (!allowed) {
-    window.location.href = "/";
-    return;
-  }
+document.addEventListener('DOMContentLoaded', () => {
+  // ── Theme ──────────────────────────────────────────────────────────────────
+  themeManager.init(['base', 'chat', 'settings']);
+
+  document.getElementById('themeToggle')?.addEventListener('click', () => {
+    themeManager.toggle();
+  });
+
+  // ── User data ──────────────────────────────────────────────────────────────
+  // Read from storage — never rely on a bare `user` global.
+  const user = Utils.getStorage('user') || {};
 
   // ── Navbar avatar ──────────────────────────────────────────────────────────
-  const initialsEl = document.getElementById("userInitials");
-  if (initialsEl)
-    initialsEl.textContent = Utils.getInitials(user.name || user.email);
+  const initialsEl = document.getElementById('userInitials');
+  if (initialsEl) initialsEl.textContent = Utils.getInitials(user.name || user.email || '?');
 
   // ── Platform info (Help tab) ───────────────────────────────────────────────
-  const platformInfoEl = document.getElementById("platformInfo");
-  if (platformInfoEl && window.PlatformConfig) {
-    platformInfoEl.textContent = window.PlatformConfig.platform || "Web";
+  const platformEl = document.getElementById('platformInfo');
+  if (platformEl && window.PlatformConfig) {
+    platformEl.textContent = window.PlatformConfig.platform || 'Web';
   }
 
   // ── Boot sub-modules ───────────────────────────────────────────────────────

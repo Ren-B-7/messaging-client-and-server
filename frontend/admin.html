@@ -10,6 +10,7 @@
     />
     <meta name="robots" content="noindex, nofollow" />
 
+    <!-- Primary CSS -->
     <link rel="stylesheet" href="static/css/var.css" fetchpriority="high" />
     <link
       rel="stylesheet"
@@ -22,40 +23,47 @@
       fetchpriority="high"
     />
 
+    <!-- Synchronous theme detection — runs before render to avoid flash -->
     <script>
-      var t =
-        localStorage.getItem("theme") ||
-        (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-      document.documentElement.setAttribute("data-theme", t);
-      if (t === "dark")
-        ["base", "admin"].forEach(function (m) {
-          var l = document.createElement("link");
-          l.rel = "stylesheet";
-          l.href = "static/css/" + m + "/" + m + ".dark.css";
-          l.fetchPriority = "high";
-          document.head.appendChild(l);
+      (function () {
+        var t =
+          localStorage.getItem("theme") ||
+          (matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light");
+        document.documentElement.setAttribute("data-theme", t);
+        if (t === "dark") {
+          ["base", "admin"].forEach(function (m) {
+            var l = document.createElement("link");
+            l.rel = "stylesheet";
+            l.href = "static/css/" + m + "/" + m + ".dark.css";
+            l.fetchPriority = "high";
+            document.head.appendChild(l);
+          });
+        }
+        var ld = function (v) {
+          var e = document.getElementById("loading");
+          if (e) e.style.display = v;
+        };
+        window.addEventListener("beforeunload", function () {
+          ld("flex");
         });
-      var ld = function (v) {
-        document.getElementById("loading").style.display = v;
-      };
-      window.addEventListener("beforeunload", function () {
-        ld("flex");
-      });
-      window.addEventListener("load", function () {
-        ld("none");
-      });
-      window.addEventListener("pageshow", function (e) {
-        if (e.persisted) ld("none");
-      });
+        window.addEventListener("load", function () {
+          ld("none");
+        });
+        window.addEventListener("pageshow", function (e) {
+          if (e.persisted) ld("none");
+        });
+      })();
     </script>
 
-    <link rel="preload" href="static/js/utils/theme_manager.js" as="script" />
+    <!-- Preloads -->
+    <link rel="preload" href="static/js/utils/theme.manager.js" as="script" />
     <link
       rel="preload"
       href="static/js/config/platform.config.js"
       as="script"
     />
-    <link rel="preload" href="static/js/config/route.config.js" as="script" />
     <link rel="preload" href="static/js/utils/utils.js" as="script" />
     <link rel="preload" href="non-static/admin/admin.state.js" as="script" />
     <link rel="preload" href="non-static/admin/admin.ui.js" as="script" />
@@ -63,9 +71,9 @@
     <link rel="preload" href="non-static/admin/admin.actions.js" as="script" />
     <link rel="preload" href="non-static/admin/admin.init.js" as="script" />
 
-    <script defer src="static/js/utils/theme_manager.js"></script>
+    <!-- Scripts (deferred — execute after HTML is parsed, in order) -->
+    <script defer src="static/js/utils/theme.manager.js"></script>
     <script defer src="static/js/config/platform.config.js"></script>
-    <script defer src="static/js/config/route.config.js"></script>
     <script defer src="static/js/utils/utils.js"></script>
     <script defer src="non-static/admin/admin.state.js"></script>
     <script defer src="non-static/admin/admin.ui.js"></script>
@@ -114,9 +122,9 @@
     </header>
 
     <div class="layout">
+      <!-- ── Sidebar ── -->
       <aside class="sidebar">
         <span class="sidebar-section-label">Actions</span>
-
         <button class="sidebar-item" data-open-modal="ban-modal">
           <span class="item-icon">⊘</span> Ban User
         </button>
@@ -128,7 +136,6 @@
         </button>
 
         <span class="sidebar-section-label">Navigate</span>
-
         <button class="sidebar-item" data-tab="dashboard">
           <span class="item-icon">◈</span> Dashboard
         </button>
@@ -143,7 +150,6 @@
         </button>
 
         <span class="sidebar-section-label">Quick</span>
-
         <button class="sidebar-item" id="refresh-btn">
           <span class="item-icon">↺</span> Refresh All
         </button>
@@ -155,8 +161,9 @@
         </a>
       </aside>
 
+      <!-- ── Main content ── -->
       <main class="main">
-        <!-- DASHBOARD TAB -->
+        <!-- Dashboard tab -->
         <section class="tab-section active" id="tab-dashboard">
           <div class="page-header">
             <div>
@@ -166,11 +173,7 @@
               </p>
             </div>
             <div class="page-actions">
-              <button
-                class="btn btn-secondary btn-sm"
-                id="refresh-btn-dash"
-                data-open-modal=""
-              >
+              <button class="btn btn-secondary btn-sm" id="refresh-btn-dash">
                 ↺ Refresh
               </button>
               <button class="btn btn-amber btn-sm" data-open-modal="ban-modal">
@@ -220,6 +223,7 @@
           </div>
         </section>
 
+        <!-- Users tab -->
         <section class="tab-section" id="tab-users">
           <div class="page-header">
             <div>
@@ -236,38 +240,45 @@
               <button class="btn btn-amber btn-sm" data-open-modal="ban-modal">
                 ⊘ Ban
               </button>
-              <button
-                class="btn btn-green btn-sm"
-                data-open-modal="unban-modal"
-              >
-                ✓ Unban
-              </button>
-              <button class="btn btn-red btn-sm" data-open-modal="delete-modal">
-                ✕ Delete
-              </button>
             </div>
           </div>
 
           <div class="panel">
-            <div class="filter-row">
-              <input
-                class="search-input"
-                type="text"
-                id="user-search"
-                placeholder="Search by name, email, or ID…"
-              />
-              <select class="filter-select" id="status-filter">
-                <option value="all">All users</option>
-                <option value="active">Active only</option>
-                <option value="banned">Banned only</option>
-              </select>
+            <div class="panel-head">
+              <span class="panel-title">⊞ Users</span>
+              <div class="panel-actions">
+                <input
+                  class="form-input"
+                  type="text"
+                  id="user-search"
+                  placeholder="Search by name, email, or ID…"
+                  style="
+                    width: 220px;
+                    padding: var(--space-2) var(--space-3);
+                    font-size: var(--text-sm);
+                  "
+                />
+                <select
+                  class="form-input"
+                  id="status-filter"
+                  style="
+                    width: 120px;
+                    padding: var(--space-2) var(--space-3);
+                    font-size: var(--text-sm);
+                  "
+                >
+                  <option value="all">All</option>
+                  <option value="active">Active</option>
+                  <option value="banned">Banned</option>
+                </select>
+              </div>
             </div>
             <div class="table-wrap">
-              <table>
+              <table class="data-table">
                 <thead>
                   <tr>
                     <th>User</th>
-                    <th class="sortable">ID</th>
+                    <th>ID</th>
                     <th>Email</th>
                     <th>Joined</th>
                     <th>Status</th>
@@ -289,6 +300,7 @@
           </div>
         </section>
 
+        <!-- Server tab -->
         <section class="tab-section" id="tab-server">
           <div class="page-header">
             <div>
@@ -342,6 +354,7 @@
           </div>
         </section>
 
+        <!-- Activity Log tab -->
         <section class="tab-section" id="tab-log">
           <div class="page-header">
             <div>
@@ -367,6 +380,7 @@
       </main>
     </div>
 
+    <!-- ── Modal: Ban User ── -->
     <div class="modal-backdrop" id="ban-modal">
       <div class="modal">
         <div class="modal-head">
@@ -415,6 +429,7 @@
       </div>
     </div>
 
+    <!-- ── Modal: Unban User ── -->
     <div class="modal-backdrop" id="unban-modal">
       <div class="modal">
         <div class="modal-head">
@@ -454,6 +469,7 @@
       </div>
     </div>
 
+    <!-- ── Modal: Delete User ── -->
     <div class="modal-backdrop" id="delete-modal">
       <div class="modal">
         <div class="modal-head">

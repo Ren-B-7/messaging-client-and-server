@@ -194,11 +194,18 @@
 }
 
 /* ===== PROGRESS STEPS ===== */
+
+/*
+ * Layout: steps-container uses a single flex row.
+ * Each .step is a column (circle on top, label below).
+ * Each .step-connector is a plain flex child that sits between two steps
+ * and is aligned to the vertical centre of the circles via align-items on
+ * the parent — no magic top offsets needed.
+ */
 .steps-container {
   display: flex;
+  align-items: flex-start;   /* align to top so labels don't affect connector height */
   justify-content: center;
-  align-items: center;
-  gap: 0;
   margin-bottom: var(--space-8);
 }
 
@@ -207,7 +214,6 @@
   flex-direction: column;
   align-items: center;
   gap: var(--space-2);
-  position: relative;
 }
 
 .step-circle {
@@ -223,7 +229,9 @@
   font-size: var(--text-sm);
   color: var(--fg-tertiary);
   transition: all var(--transition-base);
+  position: relative;
   z-index: 2;
+  flex-shrink: 0;
 }
 
 .step.active .step-circle {
@@ -242,6 +250,7 @@
   font-size: var(--text-xs);
   color: var(--fg-tertiary);
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .step.active .step-label {
@@ -249,17 +258,19 @@
   font-weight: 600;
 }
 
+/* The connector sits between two .step elements.
+ * margin-top centres it against the 40px circle (40/2 - 1px line/2 = 19px). */
 .step-connector {
   width: 48px;
   height: 2px;
   background: var(--border);
-  position: relative;
-  top: -28px;
+  margin-top: 19px;         /* vertically centres the line with the circles */
+  flex-shrink: 0;
+  transition: background var(--transition-base);
   z-index: 1;
 }
 
-.step.completed ~ .step-connector,
-.step.active ~ .step-connector {
+.step.completed + .step-connector {
   background: var(--accent);
 }
 
@@ -378,15 +389,11 @@
     grid-template-columns: 1fr;
   }
 
-  .steps-container {
-    gap: 0;
-  }
-
   .step-label {
     display: none;
   }
 
   .step-connector {
-    width: 32px;
+    width: 24px;
   }
 }

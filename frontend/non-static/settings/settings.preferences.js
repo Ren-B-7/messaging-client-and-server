@@ -6,34 +6,38 @@
  */
 
 const SettingsPreferences = {
+
   /**
    * Read stored preferences and pre-check the relevant controls.
    */
   load() {
     const prefs = Utils.getStorage('preferences') || {};
 
+    // Toggles default to on if not yet stored.
     this._setChecked('pushNotifications', prefs.pushNotifications !== false);
     this._setChecked('notificationSound', prefs.notificationSound !== false);
     this._setChecked('showLastSeen',      prefs.showLastSeen      !== false);
     this._setChecked('showProfilePhoto',  prefs.showProfilePhoto  !== false);
 
-    // Set the active theme radio.
-    const currentTheme = themeManager.getTheme();
-    const radio = document.getElementById(`${currentTheme}Theme`);
+    // Pre-select the active theme radio.
+    const radio = document.getElementById(`${themeManager.getTheme()}Theme`);
     if (radio) radio.checked = true;
   },
 
   /** Wire theme radios and all toggle switches. */
   setup() {
-    this._setupTheme();
+    this._setupThemeRadios();
     this._setupToggles();
   },
 
-  _setupTheme() {
+  // ── Private ───────────────────────────────────────────────────────────────
+
+  _setupThemeRadios() {
     document.querySelectorAll('input[name="theme"]').forEach(radio => {
       radio.addEventListener('change', e => {
         if (e.target.checked) {
-          themeManager.setTheme(e.target.value, ['base', 'chat', 'settings']);
+          // setTheme() persists the choice and reloads — no modules arg needed.
+          themeManager.setTheme(e.target.value);
         }
       });
     });
@@ -48,10 +52,8 @@ const SettingsPreferences = {
     };
 
     bind('pushNotifications', 'pushNotifications', enabled => {
-      if (enabled && window.PlatformConfig?.hasFeature('pushNotifications')) {
-        if ('Notification' in window && Notification.permission === 'default') {
-          Notification.requestPermission();
-        }
+      if (enabled && 'Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
       }
     });
 

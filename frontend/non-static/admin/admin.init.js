@@ -1,31 +1,34 @@
 /**
- * Admin — Init
+ * Admin — Initialiser
  * Entry point. Boots all sub-modules and attaches event listeners.
  *
- * Load order (all deferred, in sequence):
- *   theme_manager.js → platform.config.js → route.config.js → utils.js
- *   → admin.state.js → admin.ui.js → admin.users.js → admin.actions.js
- *   → admin.init.js
+ * Load order (all deferred):
+ *   theme.manager.js → platform.config.js → utils.js
+ *   → admin.state.js → admin.ui.js → admin.users.js
+ *   → admin.actions.js → admin.init.js
  */
 
 window.addEventListener('DOMContentLoaded', () => {
-  // ── Theme ────────────────────────────────────────────────────────────────
+  // ── Theme ──────────────────────────────────────────────────────────────────
   themeManager.init(['base', 'admin']);
 
   document.getElementById('theme-toggle')?.addEventListener('click', () => {
     themeManager.toggle();
   });
 
-  // ── Clock ─────────────────────────────────────────────────────────────────
+  // ── Clock ──────────────────────────────────────────────────────────────────
   AdminUI.startClock();
 
   // ── Tab navigation ─────────────────────────────────────────────────────────
+  // Both the topbar buttons and sidebar items share the same data-tab attribute,
+  // so we bind them with one loop each and route through AdminUI.switchTab.
   document.querySelectorAll('.nav-btn[data-tab]').forEach(btn => {
     btn.addEventListener('click', () => AdminUI.switchTab(btn.dataset.tab, btn));
   });
 
   document.querySelectorAll('.sidebar-item[data-tab]').forEach(item => {
     item.addEventListener('click', () => {
+      // Keep the topbar active state in sync with the sidebar click.
       const navBtn = document.querySelector(`.nav-btn[data-tab="${item.dataset.tab}"]`);
       AdminUI.switchTab(item.dataset.tab, navBtn);
     });
@@ -35,6 +38,7 @@ window.addEventListener('DOMContentLoaded', () => {
   AdminActions.setupBackdropDismiss();
   AdminActions.setupKeyboard();
 
+  // data-open-modal buttons (both topbar and sidebar use these)
   document.querySelectorAll('[data-open-modal]').forEach(el => {
     el.addEventListener('click', () => {
       const target = el.dataset.openModal;
@@ -65,10 +69,18 @@ window.addEventListener('DOMContentLoaded', () => {
     () => AdminUsers.filter());
 
   // ── Misc buttons ───────────────────────────────────────────────────────────
+  // refresh-btn exists in both the sidebar and the dashboard header (refresh-btn-dash);
+  // bind each separately so both trigger a full refresh.
   document.getElementById('refresh-btn')?.addEventListener('click',
+    () => AdminActions.refreshAll());
+  document.getElementById('refresh-btn-dash')?.addEventListener('click',
     () => AdminActions.refreshAll());
   document.getElementById('reload-users-btn')?.addEventListener('click',
     () => AdminUsers.reload());
+  document.getElementById('reload-users-btn-tab')?.addEventListener('click',
+    () => AdminUsers.reload());
+  document.getElementById('reload-stats-btn')?.addEventListener('click',
+    () => AdminUsers.loadStats());
   document.getElementById('clear-log-btn')?.addEventListener('click',
     () => AdminUI.clearLog());
 

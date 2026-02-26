@@ -27,43 +27,47 @@
       fetchpriority="high"
     />
 
-    <!-- Synchronous theme detection -->
+    <!-- Synchronous theme detection — runs before render to avoid flash -->
     <script>
-      var t =
-        localStorage.getItem("theme") ||
-        (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-      document.documentElement.setAttribute("data-theme", t);
-      if (t === "dark")
-        ["base", "chat", "settings"].forEach(function (m) {
-          var l = document.createElement("link");
-          l.rel = "stylesheet";
-          l.href = "static/css/" + m + "/" + m + ".dark.css";
-          l.fetchPriority = "high";
-          document.head.appendChild(l);
+      (function () {
+        var t =
+          localStorage.getItem("theme") ||
+          (matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light");
+        document.documentElement.setAttribute("data-theme", t);
+        if (t === "dark") {
+          ["base", "chat", "settings"].forEach(function (m) {
+            var l = document.createElement("link");
+            l.rel = "stylesheet";
+            l.href = "static/css/" + m + "/" + m + ".dark.css";
+            l.fetchPriority = "high";
+            document.head.appendChild(l);
+          });
+        }
+        var ld = function (v) {
+          var e = document.getElementById("loading");
+          if (e) e.style.display = v;
+        };
+        window.addEventListener("beforeunload", function () {
+          ld("flex");
         });
-      var ld = function (v) {
-        var e = document.getElementById("loading");
-        if (e) e.style.display = v;
-      };
-      window.addEventListener("beforeunload", function () {
-        ld("flex");
-      });
-      window.addEventListener("load", function () {
-        ld("none");
-      });
-      window.addEventListener("pageshow", function (e) {
-        if (e.persisted) ld("none");
-      });
+        window.addEventListener("load", function () {
+          ld("none");
+        });
+        window.addEventListener("pageshow", function (e) {
+          if (e.persisted) ld("none");
+        });
+      })();
     </script>
 
     <!-- Preloads -->
-    <link rel="preload" href="static/js/utils/theme_manager.js" as="script" />
+    <link rel="preload" href="static/js/utils/theme.manager.js" as="script" />
     <link
       rel="preload"
       href="static/js/config/platform.config.js"
       as="script"
     />
-    <link rel="preload" href="static/js/config/route.config.js" as="script" />
     <link rel="preload" href="static/js/utils/utils.js" as="script" />
     <link
       rel="preload"
@@ -91,10 +95,9 @@
       as="script"
     />
 
-    <!-- Scripts -->
-    <script defer src="static/js/utils/theme_manager.js"></script>
+    <!-- Scripts (deferred — execute after HTML is parsed, in order) -->
+    <script defer src="static/js/utils/theme.manager.js"></script>
     <script defer src="static/js/config/platform.config.js"></script>
-    <script defer src="static/js/config/route.config.js"></script>
     <script defer src="static/js/utils/utils.js"></script>
     <script defer src="non-static/settings/settings.nav.js"></script>
     <script defer src="non-static/settings/settings.profile.js"></script>
@@ -106,16 +109,14 @@
     <div id="loading">Loading...</div>
 
     <nav class="navbar">
-      <a href="chat" class="navbar-brand">
+      <a href="/chat" class="navbar-brand">
         <div class="navbar-logo">💬</div>
         <span>Chat</span>
       </a>
-
       <div class="navbar-menu">
-        <a href="chat">Messages</a>
-        <a href="contacts">Contacts</a>
+        <a href="/chat">Messages</a>
+        <a href="/contacts">Contacts</a>
       </div>
-
       <div class="navbar-end">
         <button
           class="btn btn-ghost btn-icon"
@@ -129,13 +130,14 @@
             height="20"
           />
         </button>
-        <a href="settings" class="avatar avatar-sm active" title="Settings">
+        <a href="/settings" class="avatar avatar-sm active" title="Settings">
           <span id="userInitials"></span>
         </a>
       </div>
     </nav>
 
     <div class="settings-layout">
+      <!-- ── Sidebar navigation ── -->
       <div class="settings-sidebar">
         <span class="settings-section-title">Account</span>
         <a
@@ -205,7 +207,9 @@
         </a>
       </div>
 
+      <!-- ── Tab panels ── -->
       <div class="settings-content">
+        <!-- Profile tab -->
         <div id="profileTab" class="settings-tab active">
           <div class="page-header">
             <h1>Profile</h1>
@@ -251,7 +255,217 @@
                   />
                 </div>
               </div>
+              <div class="form-group">
+                <label class="form-label" for="username">Username</label>
+                <input
+                  type="text"
+                  id="username"
+                  name="username"
+                  class="form-input"
+                />
+              </div>
+              <div class="form-actions">
+                <button
+                  type="button"
+                  id="cancelProfileBtn"
+                  class="btn btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  id="saveProfileBtn"
+                  class="btn btn-primary"
+                  disabled
+                >
+                  Save Changes
+                </button>
+              </div>
             </form>
+          </div>
+        </div>
+
+        <!-- Account tab -->
+        <div id="accountTab" class="settings-tab">
+          <div class="page-header">
+            <h1>Account</h1>
+            <p>Manage your account security and credentials</p>
+          </div>
+
+          <div class="settings-section">
+            <div class="section-header">
+              <h2>Email Address</h2>
+              <p>The email associated with your account</p>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="accountEmail">Email</label>
+              <input
+                type="email"
+                id="accountEmail"
+                name="email"
+                class="form-input"
+                readonly
+              />
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <div class="section-header">
+              <h2>Password</h2>
+              <p>Change your account password</p>
+            </div>
+            <button class="btn btn-secondary" id="changePasswordBtn">
+              Change Password
+            </button>
+          </div>
+
+          <div class="settings-section danger-zone">
+            <div class="section-header">
+              <h2>Danger Zone</h2>
+              <p>Permanent and irreversible actions</p>
+            </div>
+            <div class="danger-actions">
+              <button class="btn btn-danger" id="deleteAccountBtn">
+                Delete Account
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Appearance tab -->
+        <div id="appearanceTab" class="settings-tab">
+          <div class="page-header">
+            <h1>Appearance</h1>
+            <p>Choose how the app looks</p>
+          </div>
+
+          <div class="settings-section">
+            <div class="section-header">
+              <h2>Theme</h2>
+              <p>Select a colour scheme</p>
+            </div>
+            <div class="theme-grid">
+              <label class="theme-preview light">
+                <input
+                  type="radio"
+                  name="theme"
+                  value="light"
+                  id="lightTheme"
+                />
+                <div class="theme-preview-content">
+                  <span class="theme-label">Light</span>
+                </div>
+              </label>
+              <label class="theme-preview dark">
+                <input type="radio" name="theme" value="dark" id="darkTheme" />
+                <div class="theme-preview-content">
+                  <span class="theme-label">Dark</span>
+                </div>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Notifications tab -->
+        <div id="notificationsTab" class="settings-tab">
+          <div class="page-header">
+            <h1>Notifications</h1>
+            <p>Control how and when you are notified</p>
+          </div>
+
+          <div class="settings-section">
+            <div class="setting-option">
+              <div class="option-info">
+                <h3>Push Notifications</h3>
+                <p>Receive notifications for new messages</p>
+              </div>
+              <label class="toggle">
+                <input
+                  type="checkbox"
+                  class="toggle-input"
+                  id="pushNotifications"
+                />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div class="setting-option">
+              <div class="option-info">
+                <h3>Notification Sound</h3>
+                <p>Play a sound when a message arrives</p>
+              </div>
+              <label class="toggle">
+                <input
+                  type="checkbox"
+                  class="toggle-input"
+                  id="notificationSound"
+                />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Privacy tab -->
+        <div id="privacyTab" class="settings-tab">
+          <div class="page-header">
+            <h1>Privacy</h1>
+            <p>Control what others can see about you</p>
+          </div>
+
+          <div class="settings-section">
+            <div class="setting-option">
+              <div class="option-info">
+                <h3>Show Last Seen</h3>
+                <p>Let others see when you were last active</p>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" class="toggle-input" id="showLastSeen" />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div class="setting-option">
+              <div class="option-info">
+                <h3>Show Profile Photo</h3>
+                <p>Allow others to see your avatar</p>
+              </div>
+              <label class="toggle">
+                <input
+                  type="checkbox"
+                  class="toggle-input"
+                  id="showProfilePhoto"
+                />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Help tab -->
+        <div id="helpTab" class="settings-tab">
+          <div class="page-header">
+            <h1>Help</h1>
+            <p>App information and support resources</p>
+          </div>
+
+          <div class="settings-section">
+            <div class="section-header">
+              <h2>About</h2>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Version</label>
+              <p style="font-size: var(--text-sm); color: var(--fg-secondary)">
+                1.0.0
+              </p>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Platform</label>
+              <p
+                id="platformInfo"
+                style="font-size: var(--text-sm); color: var(--fg-secondary)"
+              >
+                Web
+              </p>
+            </div>
           </div>
         </div>
       </div>

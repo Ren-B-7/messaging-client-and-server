@@ -6,7 +6,6 @@
 const RouteConfig = {
   // Route definitions
   routes: {
-    home: "/",
     login: "/",
     register: "/register",
     chat: "/chat",

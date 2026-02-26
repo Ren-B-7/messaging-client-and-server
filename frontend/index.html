@@ -22,52 +22,55 @@
       fetchpriority="high"
     />
 
-    <!-- Synchronous theme detection -->
+    <!-- Synchronous theme detection — runs before render to avoid flash -->
     <script>
-      var t =
-        localStorage.getItem("theme") ||
-        (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-      document.documentElement.setAttribute("data-theme", t);
-      if (t === "dark")
-        ["base", "auth"].forEach(function (m) {
-          var l = document.createElement("link");
-          l.rel = "stylesheet";
-          l.href = "static/css/" + m + "/" + m + ".dark.css";
-          l.fetchPriority = "high";
-          document.head.appendChild(l);
+      (function () {
+        var t =
+          localStorage.getItem("theme") ||
+          (matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light");
+        document.documentElement.setAttribute("data-theme", t);
+        if (t === "dark") {
+          ["base", "auth"].forEach(function (m) {
+            var l = document.createElement("link");
+            l.rel = "stylesheet";
+            l.href = "static/css/" + m + "/" + m + ".dark.css";
+            l.fetchPriority = "high";
+            document.head.appendChild(l);
+          });
+        }
+        var ld = function (v) {
+          var e = document.getElementById("loading");
+          if (e) e.style.display = v;
+        };
+        window.addEventListener("beforeunload", function () {
+          ld("flex");
         });
-      var ld = function (v) {
-        var e = document.getElementById("loading");
-        if (e) e.style.display = v;
-      };
-      window.addEventListener("beforeunload", function () {
-        ld("flex");
-      });
-      window.addEventListener("load", function () {
-        ld("none");
-      });
-      window.addEventListener("pageshow", function (e) {
-        if (e.persisted) ld("none");
-      });
+        window.addEventListener("load", function () {
+          ld("none");
+        });
+        window.addEventListener("pageshow", function (e) {
+          if (e.persisted) ld("none");
+        });
+      })();
     </script>
 
     <!-- Preloads -->
-    <link rel="preload" href="static/js/utils/theme_manager.js" as="script" />
+    <link rel="preload" href="static/js/utils/theme.manager.js" as="script" />
     <link
       rel="preload"
       href="static/js/config/platform.config.js"
       as="script"
     />
-    <link rel="preload" href="static/js/config/route.config.js" as="script" />
     <link rel="preload" href="static/js/utils/utils.js" as="script" />
     <link rel="preload" href="static/js/auth/auth.password.js" as="script" />
     <link rel="preload" href="non-static/auth/auth.login.js" as="script" />
     <link rel="preload" href="non-static/auth/auth.init.js" as="script" />
 
-    <!-- Scripts -->
-    <script defer src="static/js/utils/theme_manager.js"></script>
+    <!-- Scripts (deferred — execute after HTML is parsed, in order) -->
+    <script defer src="static/js/utils/theme.manager.js"></script>
     <script defer src="static/js/config/platform.config.js"></script>
-    <script defer src="static/js/config/route.config.js"></script>
     <script defer src="static/js/utils/utils.js"></script>
     <script defer src="static/js/auth/auth.password.js"></script>
     <script defer src="non-static/auth/auth.login.js"></script>
@@ -75,6 +78,7 @@
   </head>
   <body>
     <div id="loading">Loading...</div>
+
     <div class="auth-page">
       <div class="auth-container">
         <div class="auth-card">
@@ -88,11 +92,11 @@
             <div class="form-group">
               <label class="form-label" for="username">Username</label>
               <input
-                type="username"
+                type="text"
                 id="username"
                 name="username"
                 class="form-input"
-                placeholder="user-name"
+                placeholder="your-username"
                 required
                 autocomplete="username"
                 autofocus
@@ -139,7 +143,7 @@
           </form>
 
           <div class="auth-link-text">
-            Don't have an account? <a href="./register">Create account</a>
+            Don't have an account? <a href="/register">Create account</a>
           </div>
         </div>
       </div>

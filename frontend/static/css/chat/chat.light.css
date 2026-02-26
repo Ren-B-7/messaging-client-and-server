@@ -490,3 +490,10 @@
     padding: var(--space-3) var(--space-4);
   }
 }
+
+/* ── Active chat view ── */
+/* Flex properties live in CSS so JS toggles (display:none/flex) don't clobber them. */
+.active-chat-view {
+  flex: 1;
+  flex-direction: column;
+}
