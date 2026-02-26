@@ -11,7 +11,7 @@ license = "MIT"
 async-stream = "0.3"
 futures-util = "0.3"
 
-# Ipfiltering
+# IP filtering
 ipnet = "2.11.0"
 
 # Password hashing
@@ -38,18 +38,18 @@ tower = { version = "0.5.3", default-features = false, features = [
 tower-http = { version = "0.6.8", default-features = false, features = [
     "compression-gzip",
     "compression-deflate",
-    "cors"
+    "cors",
 ] }
 
 # Hyper (HTTP + SSE)
 hyper = { version = "1.2", default-features = false, features = [
     "http1",
-    "server"
+    "server",
 ] }
 
 hyper-util = { version = "0.1", default-features = false, features = [
     "tokio",
-    "service"
+    "service",
 ] }
 
 tokio-rusqlite = "0.7.0"
@@ -57,7 +57,9 @@ tokio-rusqlite = "0.7.0"
 # Used for tests
 tempfile = "3.26.0"
 
-tokio = { workspace = true }
+# Workspace deps — `signal` added here for SIGHUP hot-reload; absent from the
+# workspace set because tui and shared have no use for it.
+tokio = { workspace = true, features = ["signal"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 jsonwebtoken = { workspace = true }

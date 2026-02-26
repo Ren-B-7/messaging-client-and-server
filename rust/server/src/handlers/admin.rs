@@ -153,47 +153,83 @@ pub fn build_admin_router_with_config(
             deliver_html_page(path).context("failed to deliver admin dashboard page")
         })
         // ── Stats ───────────────────────────────────────────────────────────
-        .get("/admin/stats", |req, state| async move {
-            handle_server_config(req, state).await
+        .get_light("/admin/stats", |req, state, claims| async move {
+            if !claims.is_admin {
+                return deliver_error_json("FORBIDDEN", "Insufficient privileges", StatusCode::FORBIDDEN);
+            }
+            handle_server_config(req, state, 0).await
         })
-        .get("/admin/api/stats", |req, state| async move {
-            handle_server_config(req, state).await
+        .get_light("/admin/api/stats", |req, state, claims| async move {
+            if !claims.is_admin {
+                return deliver_error_json("FORBIDDEN", "Insufficient privileges", StatusCode::FORBIDDEN);
+            }
+            handle_server_config(req, state, 0).await
         })
         // ── User list ────────────────────────────────────────────────────────
-        .get("/admin/users", |req, state| async move {
-            handle_get_users(req, state).await
+        .get_light("/admin/users", |req, state, claims| async move {
+            if !claims.is_admin {
+                return deliver_error_json("FORBIDDEN", "Insufficient privileges", StatusCode::FORBIDDEN);
+            }
+            handle_get_users(req, state, 0).await
         })
-        .get("/admin/api/users", |req, state| async move {
-            handle_get_users(req, state).await
+        .get_light("/admin/api/users", |req, state, claims| async move {
+            if !claims.is_admin {
+                return deliver_error_json("FORBIDDEN", "Insufficient privileges", StatusCode::FORBIDDEN);
+            }
+            handle_get_users(req, state, 0).await
         })
         // ── Ban / unban ──────────────────────────────────────────────────────
-        .post("/admin/ban", |req, state| async move {
-            handle_ban_user(req, state).await
+        .post_hard("/admin/ban", |req, state, user_id, claims| async move {
+            if !claims.is_admin {
+                return deliver_error_json("FORBIDDEN", "Insufficient privileges", StatusCode::FORBIDDEN);
+            }
+            handle_ban_user(req, state, user_id).await
         })
-        .post("/admin/api/users/ban", |req, state| async move {
-            handle_ban_user(req, state).await
+        .post_hard("/admin/api/users/ban", |req, state, user_id, claims| async move {
+            if !claims.is_admin {
+                return deliver_error_json("FORBIDDEN", "Insufficient privileges", StatusCode::FORBIDDEN);
+            }
+            handle_ban_user(req, state, user_id).await
         })
-        .post("/admin/unban", |req, state| async move {
-            handle_unban_user(req, state).await
+        .post_hard("/admin/unban", |req, state, user_id, claims| async move {
+            if !claims.is_admin {
+                return deliver_error_json("FORBIDDEN", "Insufficient privileges", StatusCode::FORBIDDEN);
+            }
+            handle_unban_user(req, state, user_id).await
         })
-        .post("/admin/api/users/unban", |req, state| async move {
-            handle_unban_user(req, state).await
+        .post_hard("/admin/api/users/unban", |req, state, user_id, claims| async move {
+            if !claims.is_admin {
+                return deliver_error_json("FORBIDDEN", "Insufficient privileges", StatusCode::FORBIDDEN);
+            }
+            handle_unban_user(req, state, user_id).await
         })
         // ── Delete user ──────────────────────────────────────────────────────
-        .delete("/admin/users/:id", |req, state| async move {
-            handle_delete_user(req, state).await
+        .delete_hard("/admin/users/:id", |req, state, user_id, claims| async move {
+            if !claims.is_admin {
+                return deliver_error_json("FORBIDDEN", "Insufficient privileges", StatusCode::FORBIDDEN);
+            }
+            handle_delete_user(req, state, user_id).await
         })
-        .delete("/admin/api/users/:id", |req, state| async move {
-            handle_delete_user(req, state).await
+        .delete_hard("/admin/api/users/:id", |req, state, user_id, claims| async move {
+            if !claims.is_admin {
+                return deliver_error_json("FORBIDDEN", "Insufficient privileges", StatusCode::FORBIDDEN);
+            }
+            handle_delete_user(req, state, user_id).await
         })
         // ── Promote / demote ─────────────────────────────────────────────────
-        .post("/admin/api/users/promote", |req, state| async move {
-            handle_promote_user(req, state)
+        .post_hard("/admin/api/users/promote", |req, state, user_id, claims| async move {
+            if !claims.is_admin {
+                return deliver_error_json("FORBIDDEN", "Insufficient privileges", StatusCode::FORBIDDEN);
+            }
+            handle_promote_user(req, state, user_id)
                 .await
                 .context("Promote failed")
         })
-        .post("/admin/api/users/demote", |req, state| async move {
-            handle_demote_user(req, state)
+        .post_hard("/admin/api/users/demote", |req, state, user_id, claims| async move {
+            if !claims.is_admin {
+                return deliver_error_json("FORBIDDEN", "Insufficient privileges", StatusCode::FORBIDDEN);
+            }
+            handle_demote_user(req, state, user_id)
                 .await
                 .context("Demote failed")
         })

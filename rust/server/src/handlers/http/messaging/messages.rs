@@ -8,26 +8,29 @@ use hyper::{Request, Response, StatusCode};
 use tracing::{error, info, warn};
 
 use crate::AppState;
-use crate::handlers::http::utils::{
-    decode_jwt_claims, deliver_serialized_json, validate_jwt_secure,
-};
+use crate::handlers::http::utils::deliver_serialized_json;
+use shared::types::jwt::JwtClaims;
 use shared::types::message::*;
 
-/// Get all chats (direct + group) for the authenticated user.
-pub async fn handle_get_chats(
-    req: Request<hyper::body::Incoming>,
-    state: AppState,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    info!("Processing get chats request");
+// ---------------------------------------------------------------------------
+// Handlers
+//
+// Auth is performed by the router BEFORE these handlers are called.
+// Every handler that mutates state receives a verified `user_id: i64`.
+// Every handler that only reads receives the decoded `JwtClaims`.
+// Neither calls any auth function internally.
+// ---------------------------------------------------------------------------
 
-    // FAST PATH — GET request.
-    let user_id = match extract_user_from_request(&req, &state) {
-        Ok(id) => id,
-        Err(err) => {
-            warn!("Unauthorized get chats attempt");
-            return deliver_serialized_json(&err.to_list_response(), StatusCode::UNAUTHORIZED);
-        }
-    };
+/// GET /api/chats — list all direct + group chats for the authenticated user.
+///
+/// Light-auth route: `claims` are pre-verified by the router (JWT only, no DB).
+pub async fn handle_get_chats(
+    _req: Request<hyper::body::Incoming>,
+    state: AppState,
+    claims: JwtClaims,
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    let user_id = claims.user_id;
+    info!("Processing get chats request for user {}", user_id);
 
     use crate::database::groups as db_groups;
     use crate::database::messages as db_messages;
@@ -72,24 +75,15 @@ pub async fn handle_get_chats(
     )
 }
 
-/// Create a new group chat.
+/// POST /api/chats — create a new group chat.
+///
+/// Hard-auth route: `user_id` is pre-verified by the router (JWT + DB + IP).
 pub async fn handle_create_chat(
     req: Request<hyper::body::Incoming>,
     state: AppState,
+    user_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    info!("Processing create chat request");
-
-    // SECURE PATH — POST (state-changing).
-    let user_id = match extract_user_from_request_secure(&req, &state).await {
-        Ok(id) => id,
-        Err(err) => {
-            warn!("Unauthorized create chat attempt: {err}");
-            return deliver_serialized_json(
-                &MessageError::Unauthorized.to_send_response(),
-                StatusCode::UNAUTHORIZED,
-            );
-        }
-    };
+    info!("Processing create chat request from user {}", user_id);
 
     let body = req
         .collect()
@@ -136,43 +130,44 @@ pub async fn handle_create_chat(
     })?;
 
     for &participant_id in all_participants.iter().filter(|&&id| id != user_id) {
-        db_groups::add_group_member(&state.db, group_id, participant_id, "member".to_string())
-            .await
-            .map_err(|e| {
-                error!("Failed to add participant {}: {}", participant_id, e);
-                anyhow::anyhow!("Database error: {}", e)
-            })?;
+        db_groups::add_group_member(
+            &state.db,
+            group_id,
+            participant_id,
+            "member".to_string(),
+        )
+        .await
+        .map_err(|e| {
+            error!("Failed to add participant {}: {}", participant_id, e);
+            anyhow::anyhow!("Database error: {}", e)
+        })?;
     }
 
     info!("Chat {} created by user {}", group_id, user_id);
+
     deliver_serialized_json(
         &serde_json::json!({
-            "status": "success",
+            "status":  "success",
             "message": "Chat created successfully",
-            "data": { "chat_id": group_id, "name": name, "participants": all_participants }
+            "data": {
+                "chat_id":      group_id,
+                "name":         name,
+                "participants": all_participants,
+            }
         }),
         StatusCode::CREATED,
     )
 }
 
-/// Send a message to a direct recipient or a group.
+/// POST /api/messages/send — send a message to a direct recipient or group.
+///
+/// Hard-auth route: `user_id` is pre-verified by the router (JWT + DB + IP).
 pub async fn handle_send_message(
     req: Request<hyper::body::Incoming>,
     state: AppState,
+    user_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    info!("Processing send message request");
-
-    // SECURE PATH — POST (state-changing).
-    let user_id = match extract_user_from_request_secure(&req, &state).await {
-        Ok(id) => id,
-        Err(_) => {
-            warn!("Unauthorized message send attempt");
-            return deliver_serialized_json(
-                &MessageError::Unauthorized.to_send_response(),
-                StatusCode::UNAUTHORIZED,
-            );
-        }
-    };
+    info!("Processing send message request from user {}", user_id);
 
     let message_data = match parse_message_form(req).await {
         Ok(data) => data,
@@ -189,7 +184,7 @@ pub async fn handle_send_message(
 
     match send_message(user_id, &message_data, &state).await {
         Ok((message_id, sent_at)) => {
-            info!("Message sent successfully: ID {}", message_id);
+            info!("Message {} sent by user {}", message_id, user_id);
             deliver_serialized_json(
                 &SendMessageResponse::Success {
                     message_id,
@@ -201,27 +196,25 @@ pub async fn handle_send_message(
         }
         Err(err) => {
             error!("Failed to send message: {:?}", err.to_code());
-            deliver_serialized_json(&err.to_send_response(), StatusCode::INTERNAL_SERVER_ERROR)
+            deliver_serialized_json(
+                &err.to_send_response(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
         }
     }
 }
 
-/// Get messages for a direct conversation or a group.
+/// GET /api/messages — retrieve messages for a conversation or group.
+///
+/// Light-auth route: `claims` are pre-verified by the router (JWT only, no DB).
 pub async fn handle_get_messages(
     req: Request<hyper::body::Incoming>,
     state: AppState,
+    claims: JwtClaims,
     chat_id: Option<i64>,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    info!("Processing get messages request");
-
-    // FAST PATH — GET request.
-    let user_id = match extract_user_from_request(&req, &state) {
-        Ok(id) => id,
-        Err(err) => {
-            warn!("Unauthorized get messages attempt");
-            return deliver_serialized_json(&err.to_list_response(), StatusCode::UNAUTHORIZED);
-        }
-    };
+    let user_id = claims.user_id;
+    info!("Processing get messages request for user {}", user_id);
 
     let mut query = parse_query_params(&req);
     if let Some(id) = chat_id {
@@ -230,7 +223,7 @@ pub async fn handle_get_messages(
 
     match retrieve_messages(user_id, &query, &state).await {
         Ok(messages) => {
-            info!("Retrieved {} messages", messages.len());
+            info!("Retrieved {} messages for user {}", messages.len(), user_id);
             deliver_serialized_json(
                 &MessagesResponse::Success {
                     total: messages.len(),
@@ -241,35 +234,29 @@ pub async fn handle_get_messages(
         }
         Err(err) => {
             error!("Failed to retrieve messages: {:?}", err.to_code());
-            deliver_serialized_json(&err.to_list_response(), StatusCode::INTERNAL_SERVER_ERROR)
+            deliver_serialized_json(
+                &err.to_list_response(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
         }
     }
 }
 
-/// Mark a message as read.
+/// POST /api/messages/:id/read — mark a message as read.
+///
+/// Hard-auth route: `user_id` is pre-verified by the router (JWT + DB + IP).
 pub async fn handle_mark_read(
-    req: Request<hyper::body::Incoming>,
+    _req: Request<hyper::body::Incoming>,
     state: AppState,
+    user_id: i64,
     message_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    info!("Processing mark as read request for message {}", message_id);
-
-    // SECURE PATH — POST (state-changing).
-    let _user_id = match extract_user_from_request_secure(&req, &state).await {
-        Ok(id) => id,
-        Err(_) => {
-            return deliver_serialized_json(
-                &MessageError::Unauthorized.to_send_response(),
-                StatusCode::UNAUTHORIZED,
-            );
-        }
-    };
+    info!("User {} marking message {} as read", user_id, message_id);
 
     use crate::database::messages as db_messages;
 
     match db_messages::mark_read(&state.db, message_id).await {
         Ok(_) => {
-            info!("Message {} marked as read", message_id);
             deliver_serialized_json(
                 &SendMessageResponse::Success {
                     message_id,
@@ -280,7 +267,7 @@ pub async fn handle_mark_read(
             )
         }
         Err(e) => {
-            error!("Failed to mark message as read: {}", e);
+            error!("Failed to mark message {} as read: {}", message_id, e);
             deliver_serialized_json(
                 &MessageError::DatabaseError.to_send_response(),
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -292,30 +279,6 @@ pub async fn handle_mark_read(
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
-
-/// FAST PATH — decode JWT signature only, no DB.  Used on GET requests.
-fn extract_user_from_request(
-    req: &Request<hyper::body::Incoming>,
-    state: &AppState,
-) -> std::result::Result<i64, MessageError> {
-    decode_jwt_claims(req, &state.jwt_secret)
-        .map(|claims| {
-            info!("JWT fast-path OK for user_id={}", claims.user_id);
-            claims.user_id
-        })
-        .map_err(|_| MessageError::Unauthorized)
-}
-
-/// SECURE PATH — JWT + DB session_id lookup + IP check.  Used on POST/PUT/DELETE.
-async fn extract_user_from_request_secure(
-    req: &Request<hyper::body::Incoming>,
-    state: &AppState,
-) -> std::result::Result<i64, MessageError> {
-    validate_jwt_secure(req, state)
-        .await
-        .map(|(id, _)| id)
-        .map_err(|_| MessageError::Unauthorized)
-}
 
 async fn parse_message_form(
     req: Request<hyper::body::Incoming>,
@@ -336,7 +299,7 @@ async fn parse_message_form(
 
     Ok(SendMessageData {
         recipient_id: params.get("recipient_id").and_then(|s| s.parse().ok()),
-        group_id: params
+        group_id:     params
             .get("group_id")
             .or_else(|| params.get("chat_id"))
             .and_then(|s| s.parse().ok()),
@@ -375,11 +338,11 @@ async fn send_message(
         &state.db,
         shared::types::message::NewMessage {
             sender_id,
-            recipient_id: data.recipient_id,
-            group_id: data.group_id,
-            content: compressed_content,
-            is_encrypted: true,
-            message_type: data
+            recipient_id:  data.recipient_id,
+            group_id:      data.group_id,
+            content:       compressed_content,
+            is_encrypted:  true,
+            message_type:  data
                 .message_type
                 .clone()
                 .unwrap_or_else(|| "text".to_string()),
@@ -402,12 +365,12 @@ fn parse_query_params(req: &Request<hyper::body::Incoming>) -> GetMessagesQuery 
 
     GetMessagesQuery {
         other_user_id: params.get("other_user_id").and_then(|s| s.parse().ok()),
-        group_id: params
+        group_id:      params
             .get("group_id")
             .or_else(|| params.get("chat_id"))
             .and_then(|s| s.parse().ok()),
-        limit: params.get("limit").and_then(|s| s.parse().ok()),
-        offset: params.get("offset").and_then(|s| s.parse().ok()),
+        limit:         params.get("limit").and_then(|s| s.parse().ok()),
+        offset:        params.get("offset").and_then(|s| s.parse().ok()),
     }
 }
 
@@ -418,16 +381,22 @@ async fn retrieve_messages(
 ) -> std::result::Result<Vec<MessageResponse>, MessageError> {
     use crate::database::messages as db_messages;
 
-    let limit = query.limit.unwrap_or(50).min(100);
+    let limit  = query.limit.unwrap_or(50).min(100);
     let offset = query.offset.unwrap_or(0);
 
     let messages = if let Some(other_user_id) = query.other_user_id {
-        db_messages::get_direct_messages(&state.db, user_id, other_user_id, limit, offset)
-            .await
-            .map_err(|e| {
-                error!("Database error getting direct messages: {}", e);
-                MessageError::DatabaseError
-            })?
+        db_messages::get_direct_messages(
+            &state.db,
+            user_id,
+            other_user_id,
+            limit,
+            offset,
+        )
+        .await
+        .map_err(|e| {
+            error!("Database error getting direct messages: {}", e);
+            MessageError::DatabaseError
+        })?
     } else if let Some(group_id) = query.group_id {
         db_messages::get_group_messages(&state.db, group_id, limit, offset)
             .await
@@ -449,14 +418,14 @@ async fn retrieve_messages(
                 })?;
 
             Ok(MessageResponse {
-                id: msg.id,
-                sender_id: msg.sender_id,
+                id:           msg.id,
+                sender_id:    msg.sender_id,
                 recipient_id: msg.recipient_id,
-                group_id: msg.group_id,
-                content: String::from_utf8_lossy(&content).to_string(),
-                sent_at: msg.sent_at,
+                group_id:     msg.group_id,
+                content:      String::from_utf8_lossy(&content).to_string(),
+                sent_at:      msg.sent_at,
                 delivered_at: msg.delivered_at,
-                read_at: msg.read_at,
+                read_at:      msg.read_at,
                 message_type: msg.message_type,
             })
         })
@@ -464,7 +433,7 @@ async fn retrieve_messages(
 }
 
 // ---------------------------------------------------------------------------
-// Tests  (unchanged from original)
+// Tests
 // ---------------------------------------------------------------------------
 #[cfg(test)]
 mod tests {
@@ -473,26 +442,55 @@ mod tests {
 
     #[test]
     fn valid_direct_message_passes() {
-        let data = SendMessageData { recipient_id: Some(42), group_id: None, content: "Hello!".to_string(), message_type: None };
+        let data = SendMessageData {
+            recipient_id: Some(42),
+            group_id:     None,
+            content:      "Hello!".to_string(),
+            message_type: None,
+        };
         assert!(validate_message(&data).is_ok());
     }
 
     #[test]
     fn missing_recipient_and_group_fails() {
-        let data = SendMessageData { recipient_id: None, group_id: None, content: "Nobody home".to_string(), message_type: None };
-        assert!(matches!(validate_message(&data).unwrap_err(), MessageError::MissingRecipient));
+        let data = SendMessageData {
+            recipient_id: None,
+            group_id:     None,
+            content:      "Nobody home".to_string(),
+            message_type: None,
+        };
+        assert!(matches!(
+            validate_message(&data).unwrap_err(),
+            MessageError::MissingRecipient
+        ));
     }
 
     #[test]
     fn empty_content_fails() {
-        let data = SendMessageData { recipient_id: Some(1), group_id: None, content: "".to_string(), message_type: None };
-        assert!(matches!(validate_message(&data).unwrap_err(), MessageError::EmptyMessage));
+        let data = SendMessageData {
+            recipient_id: Some(1),
+            group_id:     None,
+            content:      "".to_string(),
+            message_type: None,
+        };
+        assert!(matches!(
+            validate_message(&data).unwrap_err(),
+            MessageError::EmptyMessage
+        ));
     }
 
     #[test]
     fn oversized_content_fails() {
-        let data = SendMessageData { recipient_id: Some(1), group_id: None, content: "x".repeat(10_001), message_type: None };
-        assert!(matches!(validate_message(&data).unwrap_err(), MessageError::MessageTooLong));
+        let data = SendMessageData {
+            recipient_id: Some(1),
+            group_id:     None,
+            content:      "x".repeat(10_001),
+            message_type: None,
+        };
+        assert!(matches!(
+            validate_message(&data).unwrap_err(),
+            MessageError::MessageTooLong
+        ));
     }
 
     #[test]

@@ -1,10 +1,7 @@
-pub mod stats;
-pub mod users;
+pub mod admin;
 
 #[allow(unused_imports)]
-pub use stats::*;
-#[allow(unused_imports)]
-pub use users::{
+pub use admin::{
     handle_ban_user, handle_delete_user, handle_demote_user, handle_get_users, handle_promote_user,
-    handle_unban_user, require_admin,
+    handle_server_config, handle_unban_user,
 };

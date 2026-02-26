@@ -1,14 +1,8 @@
-pub mod get;
-pub mod settings;
-#[allow(dead_code)]
-pub mod update;
+pub mod profile;
 
 // Re-export main handlers
 #[allow(unused_imports)]
-pub use get::handle_get_profile;
-
-#[allow(unused_imports)]
-pub use settings::{handle_change_password, handle_logout, handle_logout_all};
-
-#[allow(unused_imports)]
-pub use update::handle_update_profile;
+pub use profile::{
+    handle_change_password, handle_get_profile, handle_logout, handle_logout_all,
+    handle_update_profile,
+};
