@@ -3,7 +3,7 @@ use tracing::{info, warn};
 
 /// Current schema version.  Bump this whenever the schema changes and add a
 /// corresponding migration arm in `run_migrations`.
-const SCHEMA_VERSION: u32 = 3;
+const SCHEMA_VERSION: u32 = 4;
 
 /// Initialize the database schema and run any pending migrations.
 pub async fn create_tables(conn: &Connection) -> Result<()> {
@@ -12,7 +12,7 @@ pub async fn create_tables(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-/// Create all tables for a brand-new database (version 3 schema).
+/// Create all tables for a brand-new database (version 4 schema).
 async fn create_schema(conn: &Connection) -> Result<()> {
     conn.call(|conn: &mut rusqlite::Connection| {
         // Users table — is_admin = 1 marks admin accounts (same table, separate server)
@@ -51,13 +51,14 @@ async fn create_schema(conn: &Connection) -> Result<()> {
             [],
         )?;
 
-        // Messages table
+        // Messages table (v4): unified under chat_id; recipient_id retained for
+        // potential legacy data but should be NULL for all new rows.
         conn.execute(
             "CREATE TABLE IF NOT EXISTS messages (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
                 sender_id    INTEGER NOT NULL,
                 recipient_id INTEGER,
-                group_id     INTEGER,
+                chat_id      INTEGER,
                 content      BLOB    NOT NULL,
                 sent_at      INTEGER NOT NULL,
                 delivered_at INTEGER,
@@ -66,7 +67,7 @@ async fn create_schema(conn: &Connection) -> Result<()> {
                 message_type TEXT    NOT NULL DEFAULT 'text',
                 FOREIGN KEY (sender_id)    REFERENCES users(id),
                 FOREIGN KEY (recipient_id) REFERENCES users(id),
-                FOREIGN KEY (group_id)     REFERENCES groups(id)
+                FOREIGN KEY (chat_id)      REFERENCES groups(id)
             )",
             [],
         )?;
@@ -87,17 +88,17 @@ async fn create_schema(conn: &Connection) -> Result<()> {
             [],
         )?;
 
-        // Group members table
+        // Group members table (v4): group_id renamed to chat_id.
         conn.execute(
             "CREATE TABLE IF NOT EXISTS group_members (
                 id        INTEGER PRIMARY KEY AUTOINCREMENT,
-                group_id  INTEGER NOT NULL,
+                chat_id   INTEGER NOT NULL,
                 user_id   INTEGER NOT NULL,
                 joined_at INTEGER NOT NULL,
                 role      TEXT    NOT NULL DEFAULT 'member',
-                FOREIGN KEY (group_id) REFERENCES groups(id)  ON DELETE CASCADE,
-                FOREIGN KEY (user_id)  REFERENCES users(id)   ON DELETE CASCADE,
-                UNIQUE(group_id, user_id)
+                FOREIGN KEY (chat_id) REFERENCES groups(id)  ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES users(id)   ON DELETE CASCADE,
+                UNIQUE(chat_id, user_id)
             )",
             [],
         )?;
@@ -117,15 +118,47 @@ async fn create_schema(conn: &Connection) -> Result<()> {
         )?;
 
         // --- Indexes --------------------------------------------------------
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_users_username      ON users(username)", [])?;
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_users_email         ON users(email)", [])?;
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_users_is_admin      ON users(is_admin)", [])?;
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_session_id ON sessions(session_id)", [])?;
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id    ON sessions(user_id)", [])?;
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_sender     ON messages(sender_id)", [])?;
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_recipient  ON messages(recipient_id)", [])?;
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_group      ON messages(group_id)", [])?;
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_groups_chat_type    ON groups(chat_type)", [])?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_users_username      ON users(username)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_users_email         ON users(email)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_users_is_admin      ON users(is_admin)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_session_id ON sessions(session_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_user_id    ON sessions(user_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_messages_sender     ON messages(sender_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_messages_chat       ON messages(chat_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_group_members_chat  ON group_members(chat_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_group_members_user  ON group_members(user_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_groups_chat_type    ON groups(chat_type)",
+            [],
+        )?;
+        conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
 
         Ok(())
     })
@@ -173,7 +206,9 @@ async fn run_migrations(conn: &Connection) -> Result<()> {
             .await?;
 
         if needs_migration {
-            warn!("Migrating sessions table from v1 to v2 (session_token → session_id, drop user_agent)…");
+            warn!(
+                "Migrating sessions table from v1 to v2 (session_token → session_id, drop user_agent)…"
+            );
 
             conn.call(|conn| {
                 conn.execute_batch("
@@ -222,10 +257,6 @@ async fn run_migrations(conn: &Connection) -> Result<()> {
     }
 
     // ── v2 → v3: add chat_type column to groups ───────────────────────────
-    //
-    // Uses ALTER TABLE (supported in SQLite 3.1.3+) rather than a full table
-    // rebuild.  The DEFAULT 'group' means every pre-existing row is correctly
-    // backfilled with no further work.
     if current_version < 3 {
         let needs_migration: bool = conn
             .call(|conn| {
@@ -245,17 +276,21 @@ async fn run_migrations(conn: &Connection) -> Result<()> {
             warn!("Migrating groups table from v2 to v3 (add chat_type)…");
 
             conn.call(|conn| {
-                conn.execute_batch("
+                conn.execute_batch(
+                    "
                     BEGIN;
                     ALTER TABLE groups ADD COLUMN chat_type TEXT NOT NULL DEFAULT 'group';
                     CREATE INDEX IF NOT EXISTS idx_groups_chat_type ON groups(chat_type);
                     COMMIT;
-                ")?;
+                ",
+                )?;
                 Ok::<_, rusqlite::Error>(())
             })
             .await?;
 
-            info!("Groups table migration complete (chat_type backfilled as 'group' for all existing rows).");
+            info!(
+                "Groups table migration complete (chat_type backfilled as 'group' for all existing rows)."
+            );
         }
 
         conn.call(|conn| {
@@ -267,8 +302,115 @@ async fn run_migrations(conn: &Connection) -> Result<()> {
         info!("Schema version set to 3.");
     }
 
+    // ── v3 → v4: rename group_members.group_id → chat_id,
+    //             rename messages.group_id → chat_id ────────────────────────
+    //
+    // SQLite doesn't support RENAME COLUMN before 3.25.0, so we do a full
+    // table rebuild for group_members.  For messages we use ALTER TABLE ADD
+    // COLUMN + UPDATE + a note that the old group_id column is left in place
+    // (SQLite cannot DROP columns before 3.35.0 — we just stop using it).
+    if current_version < 4 {
+        // ── group_members rebuild ──
+        let needs_members_migration: bool = conn
+            .call(|conn| {
+                let mut stmt = conn.prepare("PRAGMA table_info(group_members)")?;
+                let has_old_col = stmt
+                    .query_map([], |row| {
+                        let col_name: String = row.get(1)?;
+                        Ok(col_name)
+                    })?
+                    .flatten()
+                    .any(|name| name == "group_id");
+                Ok::<_, rusqlite::Error>(has_old_col)
+            })
+            .await?;
+
+        if needs_members_migration {
+            warn!("Migrating group_members table from v3 to v4 (group_id → chat_id)…");
+
+            conn.call(|conn| {
+                conn.execute_batch(
+                    "
+                    BEGIN;
+
+                    CREATE TABLE group_members_v4 (
+                        id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                        chat_id   INTEGER NOT NULL,
+                        user_id   INTEGER NOT NULL,
+                        joined_at INTEGER NOT NULL,
+                        role      TEXT    NOT NULL DEFAULT 'member',
+                        FOREIGN KEY (chat_id) REFERENCES groups(id)  ON DELETE CASCADE,
+                        FOREIGN KEY (user_id) REFERENCES users(id)   ON DELETE CASCADE,
+                        UNIQUE(chat_id, user_id)
+                    );
+
+                    INSERT INTO group_members_v4 (id, chat_id, user_id, joined_at, role)
+                    SELECT id, group_id, user_id, joined_at, role
+                    FROM group_members;
+
+                    DROP TABLE group_members;
+
+                    ALTER TABLE group_members_v4 RENAME TO group_members;
+
+                    CREATE INDEX IF NOT EXISTS idx_group_members_chat ON group_members(chat_id);
+                    CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members(user_id);
+
+                    COMMIT;
+                ",
+                )?;
+                Ok::<_, rusqlite::Error>(())
+            })
+            .await?;
+
+            info!("group_members migration complete.");
+        }
+
+        // ── messages: add chat_id, backfill from group_id ──
+        let needs_messages_migration: bool = conn
+            .call(|conn| {
+                let mut stmt = conn.prepare("PRAGMA table_info(messages)")?;
+                let has_chat_id = stmt
+                    .query_map([], |row| {
+                        let col_name: String = row.get(1)?;
+                        Ok(col_name)
+                    })?
+                    .flatten()
+                    .any(|name| name == "chat_id");
+                Ok::<_, rusqlite::Error>(!has_chat_id)
+            })
+            .await?;
+
+        if needs_messages_migration {
+            warn!("Migrating messages table from v3 to v4 (group_id → chat_id)…");
+
+            conn.call(|conn| {
+                conn.execute_batch(
+                    "
+                    BEGIN;
+                    ALTER TABLE messages ADD COLUMN chat_id INTEGER REFERENCES groups(id);
+                    UPDATE messages SET chat_id = group_id WHERE group_id IS NOT NULL;
+                    CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id);
+                    COMMIT;
+                ",
+                )?;
+                Ok::<_, rusqlite::Error>(())
+            })
+            .await?;
+
+            info!("messages migration complete (chat_id backfilled from group_id).");
+        }
+
+        conn.call(|conn| {
+            conn.execute_batch("PRAGMA user_version = 4")?;
+            Ok::<_, rusqlite::Error>(())
+        })
+        .await?;
+
+        info!("Schema version set to 4.");
+    }
+
     // Add future migration arms here:
-    // if current_version < 4 { ... }
+    // if current_version < 5 { ... }
 
     Ok(())
 }

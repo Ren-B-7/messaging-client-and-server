@@ -535,7 +535,7 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
                 .context("Profile get failed")
         })
         .get_light("/api/messages", |req, state, claims| async move {
-            messaging::handle_get_messages(req, state, claims, None)
+            messaging::handle_get_messages(req, state, claims)
                 .await
                 .context("Message get failed")
         })

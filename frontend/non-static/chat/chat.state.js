@@ -6,6 +6,7 @@
  */
 
 const ChatState = {
+  currentUser:             null,   // { id, username } — fetched from /api/profile on init
   currentConversation:     null,
   currentConversationType: 'dm',   // 'dm' | 'groups'
   conversations:           [],     // direct message threads

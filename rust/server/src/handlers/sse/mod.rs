@@ -265,7 +265,7 @@ mod tests {
         let mut p = std::collections::HashMap::new();
         p.insert("other_user_id".to_string(), "42".to_string());
         let ctx = ChatContext::from_params(&p).unwrap();
-        assert!(matches!(ctx, ChatContext::Direct { other_user_id: 42 }));
+        assert!(matches!(ctx, ChatContext::Chat { chat_id: 42 }));
     }
 
     #[test]
@@ -273,7 +273,7 @@ mod tests {
         let mut p = std::collections::HashMap::new();
         p.insert("group_id".to_string(), "7".to_string());
         let ctx = ChatContext::from_params(&p).unwrap();
-        assert!(matches!(ctx, ChatContext::Group { group_id: 7 }));
+        assert!(matches!(ctx, ChatContext::Chat { chat_id: 7 }));
     }
 
     #[test]
@@ -281,7 +281,7 @@ mod tests {
         let mut p = std::collections::HashMap::new();
         p.insert("chat_id".to_string(), "99".to_string());
         let ctx = ChatContext::from_params(&p).unwrap();
-        assert!(matches!(ctx, ChatContext::Group { group_id: 99 }));
+        assert!(matches!(ctx, ChatContext::Chat { chat_id: 99 }));
     }
 
     #[test]

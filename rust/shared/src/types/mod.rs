@@ -23,15 +23,13 @@ pub use self::login::{
 };
 #[allow(unused_imports)]
 pub use self::message::{
-    CreateChatRequest, GetMessagesQuery, MessageError, MessageResponse, MessagesResponse,
-    NewMessage, SendMessageData, SendMessageResponse,
+    GetMessagesQuery, MessageError, MessageResponse, MessagesResponse, NewMessage, SendMessageData,
+    SendMessageResponse,
 };
 #[allow(unused_imports)]
 pub use self::register::{RegisterData, RegisterError, RegisterResponse};
 #[allow(unused_imports)]
-pub use self::server_config::{
-    AppConfig, AuthConfig, ConfigError, PathsConfig, ServerConfig,
-};
+pub use self::server_config::{AppConfig, AuthConfig, ConfigError, PathsConfig, ServerConfig};
 #[allow(unused_imports)]
 pub use self::server_stats::{AuthInfo, DatabaseInfo, RuntimeInfo, ServerInfo, ServerStats};
 #[allow(unused_imports)]

@@ -118,7 +118,10 @@ const ChatConversations = {
 
     ChatUI.hideEmptyState();
     ChatUI.updateHeader(conv, type);
-    ChatMessages.render(ChatState.getMessages(id));
+    
+    // Load messages from backend
+    ChatMessages.loadMessages(id);
+    
     this._markAsRead(id, type);
   },
 
@@ -137,8 +140,8 @@ const ChatConversations = {
 
   /**
    * Fetch the active tab's data from the server and re-render.
-   *   DM tab     → GET /api/messages
-   *   Groups tab → GET /api/chats
+   *   DM tab     → GET /api/messages (or /api/chats)
+   *   Groups tab → GET /api/groups (or /api/chats)
    *
    * Called on page load (DM tab) and whenever the user clicks Refresh or
    * switches tabs.
@@ -152,9 +155,9 @@ const ChatConversations = {
 
     try {
       if (this.activeTab === "dm") {
-        await this._fetchMessages();
-      } else {
         await this._fetchChats();
+      } else {
+        await this._fetchGroups();
       }
     } catch (e) {
       console.error("[chat] refresh failed:", e);
@@ -168,38 +171,44 @@ const ChatConversations = {
     }
   },
 
-  async _fetchMessages() {
-    const res = await fetch("/api/messages");
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-
-    const convs = data.data?.conversations ?? data.conversations ?? [];
-    ChatState.conversations = convs.map((c) => ({
-      id: String(c.id),
-      name: c.name ?? c.username ?? "Unknown",
-      lastMessage: c.last_message ?? "",
-      timestamp: c.timestamp ?? Date.now(),
-      unreadCount: c.unread_count ?? 0,
-      isOnline: c.is_online ?? false,
-    }));
-    ChatState.save();
-    this.render();
-  },
-
   async _fetchChats() {
     const res = await fetch("/api/chats");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
 
-    const groups = data.data?.groups ?? data.groups ?? [];
-    ChatState.groups = groups.map((g) => ({
-      id: String(g.id),
-      name: g.name ?? "Unnamed group",
-      lastMessage: g.last_message ?? "",
-      timestamp: g.timestamp ?? Date.now(),
-      unreadCount: g.unread_count ?? 0,
-      memberCount: g.member_count ?? null,
-    }));
+    // Filter for direct chats only
+    const chats = data.data?.chats ?? data.chats ?? [];
+    ChatState.conversations = chats
+      .filter((c) => c.chat_type === "direct")
+      .map((c) => ({
+        id: String(c.chat_id || c.id),
+        name: c.name ?? "Unnamed chat",
+        lastMessage: c.last_message ?? "",
+        timestamp: c.created_at ?? Date.now(),
+        unreadCount: c.unread_count ?? 0,
+        isOnline: c.is_online ?? false,
+      }));
+    ChatState.save();
+    this.render();
+  },
+
+  async _fetchGroups() {
+    const res = await fetch("/api/chats");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    // Filter for group chats only
+    const chats = data.data?.chats ?? data.chats ?? [];
+    ChatState.groups = chats
+      .filter((c) => c.chat_type === "group")
+      .map((g) => ({
+        id: String(g.chat_id || g.id),
+        name: g.name ?? "Unnamed group",
+        lastMessage: g.last_message ?? "",
+        timestamp: g.created_at ?? Date.now(),
+        unreadCount: g.unread_count ?? 0,
+        memberCount: g.member_count ?? null,
+      }));
     ChatState.save();
     this.render();
   },
@@ -306,10 +315,10 @@ const ChatConversations = {
   async _submitDm() {
     const input = document.getElementById("dmRecipientInput");
     const errorEl = document.getElementById("dmRecipientError");
-    const name = input?.value.trim();
+    const username = input?.value.trim();
 
-    if (!name) {
-      if (errorEl) errorEl.textContent = "Please enter a name or username.";
+    if (!username) {
+      if (errorEl) errorEl.textContent = "Please enter a username.";
       return;
     }
 
@@ -317,28 +326,37 @@ const ChatConversations = {
       const response = await fetch("/api/chats", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name }), // Ensure this matches your Rust struct
+        body: JSON.stringify({ username: username }),
       });
 
       if (!response.ok) {
         const errData = await response.json();
-        throw new Error(errData.message || "Failed to create chat");
+        throw new Error(errData.message || "Failed to create DM");
       }
 
       const newChat = await response.json();
+      const chatData = newChat.data || newChat;
 
       // Add the server-returned chat to state and UI
-      ChatState.addConversation(newChat);
+      ChatState.addConversation({
+        id: String(chatData.id),
+        name: chatData.name || username,
+        lastMessage: "",
+        timestamp: chatData.created_at || Date.now(),
+        unreadCount: 0,
+        isOnline: false,
+      });
       ChatState.save();
 
       this._closeModal("new-dm-modal");
       this._switchTab("dm");
-      this.open(newChat.id, "dm");
+      this.open(String(chatData.id), "dm");
     } catch (err) {
       if (errorEl) errorEl.textContent = err.message;
       console.error("[conversations] Create DM error:", err);
     }
   },
+
   async _submitGroup() {
     const input = document.getElementById("groupNameInput");
     const errorEl = document.getElementById("groupNameError");
@@ -362,18 +380,27 @@ const ChatConversations = {
       }
 
       const newGroup = await response.json();
+      const groupData = newGroup.data || newGroup;
 
-      ChatState.addGroup(newGroup);
+      ChatState.addGroup({
+        id: String(groupData.group_id || groupData.id),
+        name: groupData.name || name,
+        lastMessage: "",
+        timestamp: groupData.created_at || Date.now(),
+        unreadCount: 0,
+        memberCount: 1,
+      });
       ChatState.save();
 
       this._closeModal("new-group-modal");
       this._switchTab("groups");
-      this.open(newGroup.id, "groups");
+      this.open(String(groupData.group_id || groupData.id), "groups");
     } catch (err) {
       if (errorEl) errorEl.textContent = err.message;
       console.error("[conversations] Create Group error:", err);
     }
   },
+
   /**
    * Programmatically switch the active tab without triggering a refresh.
    * Used after creating a new conversation/group locally.

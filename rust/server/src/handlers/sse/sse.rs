@@ -26,24 +26,15 @@ use shared::types::login::Session;
 /// is rejected.
 #[derive(Debug, Clone)]
 pub enum ChatContext {
-    /// Direct-message conversation between the authenticated user and another user
-    Direct { other_user_id: i64 },
-    /// Group / multi-user chat identified by its chat/group id
-    Group { group_id: i64 },
+    /// User / multi-user chat identified by its chat_id
+    Chat { chat_id: i64 },
 }
 
 impl ChatContext {
-    /// Parse from query-string params. Accepts `group_id` and `chat_id` as synonyms.
+    /// Parse from query-string params. Accepts `chat_id`.
     pub fn from_params(params: &HashMap<String, String>) -> Option<Self> {
-        if let Some(id) = params.get("other_user_id").and_then(|s| s.parse().ok()) {
-            return Some(Self::Direct { other_user_id: id });
-        }
-        if let Some(id) = params
-            .get("group_id")
-            .or_else(|| params.get("chat_id"))
-            .and_then(|s| s.parse().ok())
-        {
-            return Some(Self::Group { group_id: id });
+        if let Some(id) = params.get("chat_id").and_then(|s| s.parse().ok()) {
+            return Some(Self::Chat { chat_id: id });
         }
         None
     }
@@ -243,7 +234,7 @@ fn parse_query(req: &Request<hyper::body::Incoming>) -> HashMap<String, String> 
 /// | Param           | Description                                          |
 /// |-----------------|------------------------------------------------------|
 /// | `other_user_id` | Load DM history with this user                       |
-/// | `group_id`      | Load group-chat history (alias: `chat_id`)           |
+/// | `chat_id `      | Load chat history                                    |
 /// | `limit`         | Max history messages to replay (default 50, max 100) |
 /// | `offset`        | Pagination offset into history (default 0)           |
 ///
@@ -286,9 +277,7 @@ pub async fn handle_sse_subscribe(
             "SSE subscribe rejected for user {}: missing chat context",
             user_id
         );
-        SseError::ChannelSendFailed(
-            "Missing required param: other_user_id or group_id/chat_id".to_string(),
-        )
+        SseError::ChannelSendFailed("Missing required param: chat_id".to_string())
     })?;
 
     let limit: i64 = params
@@ -308,19 +297,11 @@ pub async fn handle_sse_subscribe(
 
     // ── 3. Fetch history ───────────────────────────────────────────────────
     let history = match &chat_ctx {
-        ChatContext::Direct { other_user_id } => {
-            db_messages::get_direct_messages(&state.db, user_id, *other_user_id, limit, offset)
+        ChatContext::Chat { chat_id } => {
+            db_messages::get_chat_messages(&state.db, *chat_id, limit, offset)
                 .await
                 .map_err(|e| {
-                    error!("SSE history fetch (DM) failed: {}", e);
-                    SseError::ChannelSendFailed("Failed to fetch message history".to_string())
-                })?
-        }
-        ChatContext::Group { group_id } => {
-            db_messages::get_group_messages(&state.db, *group_id, limit, offset)
-                .await
-                .map_err(|e| {
-                    error!("SSE history fetch (group) failed: {}", e);
+                    error!("SSE history fetch (chat) failed: {}", e);
                     SseError::ChannelSendFailed("Failed to fetch message history".to_string())
                 })?
         }
@@ -347,8 +328,7 @@ pub async fn handle_sse_subscribe(
             &serde_json::json!({
                 "id":           msg.id,
                 "sender_id":    msg.sender_id,
-                "recipient_id": msg.recipient_id,
-                "group_id":     msg.group_id,
+                "chat_id":      msg.chat_id,
                 "content":      content_str,
                 "message_type": msg.message_type,
                 "sent_at":      msg.sent_at,

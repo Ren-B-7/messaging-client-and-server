@@ -6,6 +6,26 @@
 
 const ChatMessages = {
 
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
+  /** Return the logged-in user's numeric ID, or null if unavailable. */
+  _currentUserId() {
+    return ChatState.currentUser?.id ?? null;
+  },
+
+  /** Map a raw API message object to the local format. */
+  _fromApi(msg) {
+    const myId = this._currentUserId();
+    return {
+      id:        msg.id,
+      text:      msg.content,
+      content:   msg.content,
+      timestamp: msg.sent_at * 1000,          // seconds → ms
+      isSent:    myId !== null && msg.sender_id === myId,
+      sender_id: msg.sender_id,
+    };
+  },
+
   // ── Rendering ────────────────────────────────────────────────────────────
 
   /**
@@ -32,11 +52,19 @@ const ChatMessages = {
   },
 
   /** @returns {string} HTML for a single message bubble. */
-  _renderItem({ text, timestamp, isSent }) {
+  _renderItem({ id, text, content, timestamp, isSent, sender_id }) {
+    const messageText = text || content || '';
+    const time = typeof timestamp === 'number' ? new Date(timestamp) : new Date();
+
+    // isSent drives the visual side (right = sent, left = received).
+    // Fall back to checking sender_id if isSent was not pre-computed.
+    const myId = this._currentUserId();
+    const sentByMe = isSent || (myId !== null && sender_id === myId);
+
     return `
-      <div class="message ${isSent ? 'sent' : 'received'}">
-        <div class="message-bubble">${Utils.escapeHtml(text)}</div>
-        <div class="message-time">${Utils.formatTime(new Date(timestamp))}</div>
+      <div class="message ${sentByMe ? 'sent' : 'received'}">
+        <div class="message-bubble">${Utils.escapeHtml(messageText)}</div>
+        <div class="message-time">${Utils.formatTime(time)}</div>
       </div>`;
   },
 
@@ -51,13 +79,12 @@ const ChatMessages = {
     container.appendChild(banner);
     container.scrollTop = container.scrollHeight;
 
-    // Auto-dismiss after 4 s.
     setTimeout(() => banner.remove(), 4000);
   },
 
   // ── Sending ──────────────────────────────────────────────────────────────
 
-  send() {
+  async send() {
     const input = document.getElementById('messageInput');
     const text  = input?.value.trim();
 
@@ -68,85 +95,92 @@ const ChatMessages = {
       return;
     }
 
-    // Basic length guard.
-    if (text.length > 4000) {
-      this._showSendError('Message is too long (max 4,000 characters).');
+    if (text.length > 10_000) {
+      this._showSendError('Message is too long (max 10,000 characters).');
       return;
     }
 
-    const convId  = ChatState.currentConversation.id;
-    const message = {
-      id:        Utils.generateId(),
-      text,
-      timestamp: Date.now(),
-      isSent:    true,
-    };
-
-    ChatState.addMessage(convId, message);
-
-    // Update conversation preview in the sidebar.
-    const conv = ChatState.findConversation(convId)
-               ?? ChatState.findGroup?.(convId);
-    if (conv) {
-      conv.lastMessage = text;
-      conv.timestamp   = Date.now();
-    }
-
-    try {
-      ChatState.save();
-    } catch (e) {
-      console.warn('[messages] Could not persist message to localStorage:', e);
-    }
-
-    this.render(ChatState.getMessages(convId));
-    ChatConversations.render();
-
-    // Reset the input field.
-    input.value        = '';
-    input.style.height = 'auto';
+    const chatId  = String(ChatState.currentConversation.id);
     const sendBtn = document.getElementById('sendBtn');
     if (sendBtn) sendBtn.disabled = true;
 
-    // Demo: simulate a reply after 1 s.
-    setTimeout(() => this._simulateReply(), 1000);
+    try {
+      const response = await fetch('/api/messages/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id:      parseInt(chatId),
+          content:      text,
+          message_type: 'text',
+        }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.message || 'Failed to send message');
+      }
+
+      const result      = await response.json();
+      const messageData = result.data || result;
+
+      // Optimistic local update — we know this one is ours.
+      const message = {
+        id:        messageData.message_id || Utils.generateId(),
+        text,
+        timestamp: (messageData.sent_at || Math.floor(Date.now() / 1000)) * 1000,
+        isSent:    true,
+        sender_id: this._currentUserId(),
+      };
+
+      ChatState.addMessage(chatId, message);
+
+      const conv = ChatState.findConversation(chatId) ?? ChatState.findGroup(chatId);
+      if (conv) {
+        conv.lastMessage = text;
+        conv.timestamp   = Date.now();
+      }
+
+      try { ChatState.save(); } catch (e) {
+        console.warn('[messages] Could not persist to localStorage:', e);
+      }
+
+      this.render(ChatState.getMessages(chatId));
+      ChatConversations.render();
+
+      input.value        = '';
+      input.style.height = 'auto';
+
+      console.info('[messages] Sent:', messageData.message_id);
+
+      // Re-sync from server shortly after so other clients' messages appear.
+      setTimeout(() => this._refreshMessages(chatId), 500);
+
+    } catch (err) {
+      console.error('[messages] Send failed:', err);
+      this._showSendError(err.message || 'Failed to send message. Please try again.');
+      this.render(ChatState.getMessages(chatId));
+    } finally {
+      if (sendBtn) sendBtn.disabled = text.trim() === '';
+    }
   },
 
-  _simulateReply() {
-    if (!ChatState.currentConversation) return;
-
-    const replies = [
-      'Thanks for your message!',
-      'Got it, will get back to you soon.',
-      'Sounds good!',
-      'Let me think about that.',
-      'Absolutely!',
-    ];
-
-    const convId  = ChatState.currentConversation.id;
-    const message = {
-      id:        Utils.generateId(),
-      text:      replies[Math.floor(Math.random() * replies.length)],
-      timestamp: Date.now(),
-      isSent:    false,
-    };
-
-    ChatState.addMessage(convId, message);
-
-    const conv = ChatState.findConversation(convId)
-               ?? ChatState.findGroup?.(convId);
-    if (conv) {
-      conv.lastMessage = message.text;
-      conv.timestamp   = Date.now();
-    }
-
+  /** Pull the latest messages from the server and update local state. */
+  async _refreshMessages(chatId) {
     try {
-      ChatState.save();
-    } catch (e) {
-      console.warn('[messages] Could not persist reply:', e);
-    }
+      const response = await fetch(`/api/messages?chat_id=${chatId}&limit=50`);
+      if (!response.ok) return;
 
-    this.render(ChatState.getMessages(convId));
-    ChatConversations.render();
+      const data     = await response.json();
+      const messages = data.data?.messages ?? data.messages ?? [];
+
+      ChatState.messages[chatId] = messages.map(m => this._fromApi(m));
+
+      try { ChatState.save(); } catch (_) {}
+      this.render(ChatState.getMessages(chatId));
+
+    } catch (err) {
+      console.warn('[messages] Refresh failed:', err);
+    }
   },
 
   // ── Input setup ──────────────────────────────────────────────────────────
@@ -170,5 +204,28 @@ const ChatMessages = {
     });
 
     sendBtn.addEventListener('click', () => ChatMessages.send());
+  },
+
+  /** Load messages for a chat from the backend. */
+  async loadMessages(chatId) {
+    try {
+      const response = await fetch(`/api/messages?chat_id=${chatId}&limit=50`);
+
+      if (!response.ok) {
+        console.warn('[messages] Load failed:', response.status);
+        return;
+      }
+
+      const data     = await response.json();
+      const messages = data.data?.messages ?? data.messages ?? [];
+
+      ChatState.messages[String(chatId)] = messages.map(m => this._fromApi(m));
+
+      try { ChatState.save(); } catch (_) {}
+      this.render(ChatState.getMessages(String(chatId)));
+
+    } catch (err) {
+      console.error('[messages] Error loading messages:', err);
+    }
   },
 };

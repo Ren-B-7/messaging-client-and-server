@@ -18,12 +18,35 @@ document.addEventListener('DOMContentLoaded', async () => {
     themeManager.toggle();
   });
 
-  // ── User data ──────────────────────────────────────────────────────────────
-  // Read from storage — never rely on a bare `user` global.
-  const user = Utils.getStorage('user') || {};
+  // ── Fetch current user from server ─────────────────────────────────────────
+  // localStorage may be empty (e.g. after a hard refresh or on a new device),
+  // so always resolve identity from the API using the session cookie.
+  try {
+    const res = await fetch('/api/profile');
+    if (res.ok) {
+      const data = await res.json();
+      const profile = data.data ?? data;
+      ChatState.currentUser = {
+        id:       Number(profile.user_id),   // API returns user_id not id
+        username: profile.username ?? '',
+        email:    profile.email ?? '',
+        isAdmin:  profile.is_admin ?? false,
+      };
+      // Persist so other pages can read it without another API call.
+      Utils.setStorage('user', ChatState.currentUser);
+      console.info('[init] Current user:', ChatState.currentUser);
+    } else {
+      console.warn('[init] Could not fetch profile, sent messages may render incorrectly');
+    }
+  } catch (e) {
+    console.error('[init] Profile fetch failed:', e);
+  }
 
+  // ── Update avatar initials now that we have a username ─────────────────────
   const initialsEl = document.getElementById('userInitials');
-  if (initialsEl) initialsEl.textContent = Utils.getInitials(user.name || user.email || '?');
+  if (initialsEl && ChatState.currentUser) {
+    initialsEl.textContent = Utils.getInitials(ChatState.currentUser.username);
+  }
 
   // ── Load persisted state ───────────────────────────────────────────────────
   ChatState.load();
@@ -36,8 +59,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   ChatUI.setupActionButtons();
 
   // ── Fetch fresh data from API on every page load ───────────────────────────
-  // Always hits /api/messages on load so the DM list is current.
-  // Groups are fetched lazily when the groups tab is first clicked.
   await ChatConversations.refresh();
 
   // ── Restore previously open conversation (if any) ─────────────────────────
@@ -47,4 +68,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       ChatState.currentConversationType,
     );
   }
+
+  // ── Clear transient data when the user leaves ──────────────────────────────
+  window.addEventListener('beforeunload', () => {
+    // Clear transient chat data — always re-fetched from the server on next load.
+    // Keep 'user' so other pages can read identity without an extra API call.
+    Utils.removeStorage('messages');
+    Utils.removeStorage('conversations');
+    Utils.removeStorage('groups');
+  });
 });

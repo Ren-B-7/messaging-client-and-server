@@ -4,7 +4,7 @@ use tokio_rusqlite::{Connection, Result, params, rusqlite};
 
 use shared::types::message::*;
 
-/// Send a message
+/// Send a message to a chat (group or direct).
 pub async fn send_message(conn: &Connection, new_message: NewMessage) -> Result<i64> {
     let sent_at = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -13,100 +13,60 @@ pub async fn send_message(conn: &Connection, new_message: NewMessage) -> Result<
 
     conn.call(move |conn: &mut rusqlite::Connection| {
         conn.execute(
-            "INSERT INTO messages (sender_id, recipient_id, group_id, content, sent_at, is_encrypted, message_type) 
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO messages (sender_id, chat_id, content, sent_at, is_encrypted, message_type)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 new_message.sender_id,
-                new_message.recipient_id,
-                new_message.group_id,
+                new_message.chat_id,
                 new_message.content,
                 sent_at,
                 if new_message.is_encrypted { 1 } else { 0 },
                 new_message.message_type,
             ],
         )?;
-
         Ok(conn.last_insert_rowid())
     })
     .await
 }
 
-/// Get messages between two users
-pub async fn get_direct_messages(
+/// Get messages for any chat (group or direct) by chat_id.
+pub async fn get_chat_messages(
     conn: &Connection,
-    user1_id: i64,
-    user2_id: i64,
+    chat_id: i64,
     limit: i64,
     offset: i64,
 ) -> Result<Vec<Message>> {
     conn.call(move |conn: &mut rusqlite::Connection| {
         let mut stmt = conn.prepare(
-            "SELECT id, sender_id, recipient_id, group_id, content, sent_at, delivered_at, read_at, is_encrypted, message_type
-             FROM messages 
-             WHERE (sender_id = ?1 AND recipient_id = ?2) OR (sender_id = ?2 AND recipient_id = ?1)
+            "SELECT id, sender_id, chat_id, content, sent_at, delivered_at, read_at, is_encrypted, message_type
+             FROM messages
+             WHERE chat_id = ?1
              ORDER BY sent_at DESC
-             LIMIT ?3 OFFSET ?4"
+             LIMIT ?2 OFFSET ?3",
         )?;
 
-        let messages = stmt.query_map(params![user1_id, user2_id, limit, offset], |row| {
-            Ok(Message {
-                id: row.get(0)?,
-                sender_id: row.get(1)?,
-                recipient_id: row.get(2)?,
-                group_id: row.get(3)?,
-                content: row.get(4)?,
-                sent_at: row.get(5)?,
-                delivered_at: row.get(6)?,
-                read_at: row.get(7)?,
-                is_encrypted: row.get::<_, i64>(8)? != 0,
-                message_type: row.get(9)?,
-            })
-        })?
-        .collect::<std::result::Result<Vec<Message>, rusqlite::Error>>()?;
+        let messages = stmt
+            .query_map(params![chat_id, limit, offset], |row| {
+                Ok(Message {
+                    id: row.get(0)?,
+                    sender_id: row.get(1)?,
+                    chat_id: row.get(2)?,
+                    content: row.get(3)?,
+                    sent_at: row.get(4)?,
+                    delivered_at: row.get(5)?,
+                    read_at: row.get(6)?,
+                    is_encrypted: row.get::<_, i64>(7)? != 0,
+                    message_type: row.get(8)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<Message>, rusqlite::Error>>()?;
 
         Ok(messages)
     })
     .await
 }
 
-/// Get group messages
-pub async fn get_group_messages(
-    conn: &Connection,
-    group_id: i64,
-    limit: i64,
-    offset: i64,
-) -> Result<Vec<Message>> {
-    conn.call(move |conn: &mut rusqlite::Connection| {
-        let mut stmt = conn.prepare(
-            "SELECT id, sender_id, recipient_id, group_id, content, sent_at, delivered_at, read_at, is_encrypted, message_type
-             FROM messages 
-             WHERE group_id = ?1
-             ORDER BY sent_at DESC
-             LIMIT ?2 OFFSET ?3"
-        )?;
-
-        let messages = stmt.query_map(params![group_id, limit, offset], |row| {
-            Ok(Message {
-                id: row.get(0)?,
-                sender_id: row.get(1)?,
-                recipient_id: row.get(2)?,
-                group_id: row.get(3)?,
-                content: row.get(4)?,
-                sent_at: row.get(5)?,
-                delivered_at: row.get(6)?,
-                read_at: row.get(7)?,
-                is_encrypted: row.get::<_, i64>(8)? != 0,
-                message_type: row.get(9)?,
-            })
-        })?
-        .collect::<std::result::Result<Vec<Message>, rusqlite::Error>>()?;
-
-        Ok(messages)
-    })
-    .await
-}
-
-/// Mark message as delivered
+/// Mark a message as delivered.
 pub async fn mark_delivered(conn: &Connection, message_id: i64) -> Result<()> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -123,7 +83,7 @@ pub async fn mark_delivered(conn: &Connection, message_id: i64) -> Result<()> {
     .await
 }
 
-/// Mark message as read
+/// Mark a message as read.
 pub async fn mark_read(conn: &Connection, message_id: i64) -> Result<()> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -140,21 +100,49 @@ pub async fn mark_read(conn: &Connection, message_id: i64) -> Result<()> {
     .await
 }
 
-/// Get unread message count for a user
+/// Get total unread message count for a user across all their chats.
+///
+/// A message is unread when `read_at IS NULL` and the sender is not the user
+/// themselves.  Uses `group_members` to find all chats the user belongs to.
 pub async fn get_unread_count(conn: &Connection, user_id: i64) -> Result<i64> {
     conn.call(move |conn: &mut rusqlite::Connection| {
-        let mut stmt = conn
-            .prepare("SELECT COUNT(*) FROM messages WHERE recipient_id = ?1 AND read_at IS NULL")?;
-        let count: i64 = stmt.query_row(params![user_id], |row: &rusqlite::Row| row.get(0))?;
+        let mut stmt = conn.prepare(
+            "SELECT COUNT(*)
+             FROM messages m
+             INNER JOIN group_members gm ON gm.chat_id = m.chat_id
+             WHERE gm.user_id = ?1
+               AND m.sender_id != ?1
+               AND m.read_at IS NULL",
+        )?;
+        let count: i64 = stmt.query_row(params![user_id], |row| row.get(0))?;
         Ok(count)
     })
     .await
 }
 
-/// Delete a message
+/// Get unread message count for a user in a specific chat.
+pub async fn get_unread_count_for_chat(
+    conn: &Connection,
+    chat_id: i64,
+    user_id: i64,
+) -> Result<i64> {
+    conn.call(move |conn: &mut rusqlite::Connection| {
+        let mut stmt = conn.prepare(
+            "SELECT COUNT(*)
+             FROM messages
+             WHERE chat_id = ?1
+               AND sender_id != ?2
+               AND read_at IS NULL",
+        )?;
+        let count: i64 = stmt.query_row(params![chat_id, user_id], |row| row.get(0))?;
+        Ok(count)
+    })
+    .await
+}
+
+/// Delete a message (only the sender may delete their own messages).
 pub async fn delete_message(conn: &Connection, message_id: i64, user_id: i64) -> Result<bool> {
     conn.call(move |conn: &mut rusqlite::Connection| {
-        // Only allow sender to delete
         let count = conn.execute(
             "DELETE FROM messages WHERE id = ?1 AND sender_id = ?2",
             params![message_id, user_id],
@@ -164,34 +152,33 @@ pub async fn delete_message(conn: &Connection, message_id: i64, user_id: i64) ->
     .await
 }
 
-/// Get recent conversations for a user
-pub async fn get_recent_conversations(
+/// Get all chats a user is in, ordered by the most recent message.
+///
+/// Returns `(chat_id, last_message_time)` pairs.  Replaces the old
+/// `get_recent_conversations` which relied on the removed `recipient_id` logic.
+pub async fn get_recent_chats(
     conn: &Connection,
     user_id: i64,
     limit: i64,
 ) -> Result<Vec<(i64, i64)>> {
     conn.call(move |conn: &mut rusqlite::Connection| {
         let mut stmt = conn.prepare(
-            "SELECT DISTINCT 
-                CASE 
-                    WHEN sender_id = ?1 THEN recipient_id 
-                    ELSE sender_id 
-                END as other_user_id,
-                MAX(sent_at) as last_message_time
-             FROM messages 
-             WHERE (sender_id = ?1 OR recipient_id = ?1) AND group_id IS NULL
-             GROUP BY other_user_id
+            "SELECT gm.chat_id, MAX(m.sent_at) as last_message_time
+             FROM group_members gm
+             LEFT JOIN messages m ON m.chat_id = gm.chat_id
+             WHERE gm.user_id = ?1
+             GROUP BY gm.chat_id
              ORDER BY last_message_time DESC
              LIMIT ?2",
         )?;
 
-        let conversations = stmt
+        let chats = stmt
             .query_map(params![user_id, limit], |row| {
-                Ok((row.get(0)?, row.get(1)?))
+                Ok((row.get(0)?, row.get(1).unwrap_or(0)))
             })?
             .collect::<std::result::Result<Vec<(i64, i64)>, rusqlite::Error>>()?;
 
-        Ok(conversations)
+        Ok(chats)
     })
     .await
 }

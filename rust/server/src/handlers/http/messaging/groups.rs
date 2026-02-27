@@ -3,7 +3,6 @@ use bytes::Bytes;
 use http_body_util::{BodyExt, combinators::BoxBody};
 use hyper::body::Incoming;
 use hyper::{Request, Response, StatusCode};
-use std::collections::HashMap;
 use std::convert::Infallible;
 use tracing::info;
 
@@ -79,8 +78,8 @@ pub async fn handle_create_group(
         .context("Failed to read request body")?
         .to_bytes();
 
-    let params: serde_json::Value = serde_json::from_slice(&body)
-        .context("Failed to parse JSON request body")?;
+    let params: serde_json::Value =
+        serde_json::from_slice(&body).context("Failed to parse JSON request body")?;
 
     let name = params
         .get("name")
@@ -101,7 +100,7 @@ pub async fn handle_create_group(
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    let group_id = db_groups::create_group(
+    let chat_id = db_groups::create_group(
         &state.db,
         db_groups::NewGroup {
             name: name.clone(),
@@ -113,11 +112,11 @@ pub async fn handle_create_group(
     .await
     .context("Failed to create group")?;
 
-    info!("Group {} created by user {}", group_id, user_id);
+    info!("Group {} created by user {}", chat_id, user_id);
 
     deliver_success_json(
         Some(serde_json::json!({
-            "group_id":    group_id,
+            "chat_id":    chat_id,
             "name":        name,
             "description": description,
             "chat_type":   "group",
@@ -134,13 +133,13 @@ pub async fn handle_get_members(
     _req: Request<Incoming>,
     state: AppState,
     _claims: JwtClaims,
-    group_id: i64,
+    chat_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     use crate::database::groups as db_groups;
 
-    info!("Fetching members for group {}", group_id);
+    info!("Fetching members for group {}", chat_id);
 
-    let members = db_groups::get_group_members(&state.db, group_id)
+    let members = db_groups::get_group_members(&state.db, chat_id)
         .await
         .context("Failed to fetch group members")?;
 
@@ -149,7 +148,7 @@ pub async fn handle_get_members(
         .map(|m| {
             serde_json::json!({
                 "user_id":   m.user_id,
-                "group_id":  m.group_id,
+                "chat_id":  m.chat_id,
                 "role":      m.role,
                 "joined_at": m.joined_at,
             })
@@ -158,7 +157,7 @@ pub async fn handle_get_members(
 
     deliver_success_json(
         Some(serde_json::json!({
-            "group_id": group_id,
+            "chat_id": chat_id,
             "members":  members_json,
         })),
         None,
@@ -173,11 +172,11 @@ pub async fn handle_add_member(
     req: Request<Incoming>,
     state: AppState,
     _user_id: i64,
-    group_id: i64,
+    chat_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     use crate::database::groups as db_groups;
 
-    info!("Adding member to group {}", group_id);
+    info!("Adding member to group {}", chat_id);
 
     let body = req
         .collect()
@@ -185,8 +184,8 @@ pub async fn handle_add_member(
         .context("Failed to read request body")?
         .to_bytes();
 
-    let params: serde_json::Value = serde_json::from_slice(&body)
-        .context("Failed to parse JSON request body")?;
+    let params: serde_json::Value =
+        serde_json::from_slice(&body).context("Failed to parse JSON request body")?;
 
     let target_user_id: i64 = params
         .get("user_id")
@@ -204,13 +203,13 @@ pub async fn handle_add_member(
         .unwrap_or("member")
         .to_string();
 
-    db_groups::add_group_member(&state.db, group_id, target_user_id, role)
+    db_groups::add_group_member(&state.db, chat_id, target_user_id, role)
         .await
         .context("Failed to add group member")?;
 
     deliver_success_json(
         Some(serde_json::json!({
-            "group_id": group_id,
+            "chat_id": chat_id,
             "user_id":  target_user_id,
         })),
         Some("Member added successfully"),
@@ -225,11 +224,11 @@ pub async fn handle_remove_member(
     req: Request<Incoming>,
     state: AppState,
     _user_id: i64,
-    group_id: i64,
+    chat_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     use crate::database::groups as db_groups;
 
-    info!("Removing member from group {}", group_id);
+    info!("Removing member from group {}", chat_id);
 
     let body = req
         .collect()
@@ -237,15 +236,15 @@ pub async fn handle_remove_member(
         .context("Failed to read request body")?
         .to_bytes();
 
-    let params: serde_json::Value = serde_json::from_slice(&body)
-        .context("Failed to parse JSON request body")?;
+    let params: serde_json::Value =
+        serde_json::from_slice(&body).context("Failed to parse JSON request body")?;
 
     let target_user_id: i64 = params
         .get("user_id")
         .and_then(|v| v.as_i64())
         .ok_or_else(|| anyhow::anyhow!("Invalid or missing user_id"))?;
 
-    let removed = db_groups::remove_group_member(&state.db, group_id, target_user_id)
+    let removed = db_groups::remove_group_member(&state.db, chat_id, target_user_id)
         .await
         .context("Failed to remove group member")?;
 
@@ -259,7 +258,7 @@ pub async fn handle_remove_member(
 
     deliver_success_json(
         Some(serde_json::json!({
-            "group_id": group_id,
+            "chat_id": chat_id,
             "user_id":  target_user_id,
         })),
         Some("Member removed successfully"),
@@ -294,8 +293,7 @@ mod tests {
 
     #[test]
     fn role_defaults_to_member() {
-        let params: std::collections::HashMap<String, String> =
-            std::collections::HashMap::new();
+        let params: std::collections::HashMap<String, String> = std::collections::HashMap::new();
         let role = params
             .get("role")
             .cloned()
