@@ -303,9 +303,9 @@ const ChatConversations = {
     document.getElementById(id)?.classList.remove("open");
   },
 
-  async _submitDM() {
-    const input = document.getElementById("newDmInput");
-    const errorEl = document.getElementById("newDmError");
+  async _submitDm() {
+    const input = document.getElementById("dmRecipientInput");
+    const errorEl = document.getElementById("dmRecipientError");
     const name = input?.value.trim();
 
     if (!name) {

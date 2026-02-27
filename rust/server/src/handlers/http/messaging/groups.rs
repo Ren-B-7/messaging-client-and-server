@@ -79,13 +79,14 @@ pub async fn handle_create_group(
         .context("Failed to read request body")?
         .to_bytes();
 
-    let params: HashMap<String, String> =
-        form_urlencoded::parse(body.as_ref()).into_owned().collect();
+    let params: serde_json::Value = serde_json::from_slice(&body)
+        .context("Failed to parse JSON request body")?;
 
     let name = params
         .get("name")
-        .ok_or_else(|| anyhow::anyhow!("Missing group name"))?
-        .clone();
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("Missing or invalid group name"))?
+        .to_string();
 
     if name.trim().is_empty() {
         return deliver_error_json(
@@ -95,7 +96,10 @@ pub async fn handle_create_group(
         );
     }
 
-    let description: Option<String> = params.get("description").map(|s| s.to_string());
+    let description: Option<String> = params
+        .get("description")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
 
     let group_id = db_groups::create_group(
         &state.db,
@@ -181,12 +185,12 @@ pub async fn handle_add_member(
         .context("Failed to read request body")?
         .to_bytes();
 
-    let params: HashMap<String, String> =
-        form_urlencoded::parse(body.as_ref()).into_owned().collect();
+    let params: serde_json::Value = serde_json::from_slice(&body)
+        .context("Failed to parse JSON request body")?;
 
     let target_user_id: i64 = params
         .get("user_id")
-        .and_then(|id| id.parse::<i64>().ok())
+        .and_then(|v| v.as_i64())
         .ok_or_else(|| anyhow::anyhow!("Invalid or missing user_id"))?;
 
     // For group chats new members join as regular members; the caller can
@@ -196,8 +200,9 @@ pub async fn handle_add_member(
     // creation flow instead.
     let role = params
         .get("role")
-        .cloned()
-        .unwrap_or_else(|| "member".to_string());
+        .and_then(|v| v.as_str())
+        .unwrap_or("member")
+        .to_string();
 
     db_groups::add_group_member(&state.db, group_id, target_user_id, role)
         .await
@@ -232,12 +237,12 @@ pub async fn handle_remove_member(
         .context("Failed to read request body")?
         .to_bytes();
 
-    let params: HashMap<String, String> =
-        form_urlencoded::parse(body.as_ref()).into_owned().collect();
+    let params: serde_json::Value = serde_json::from_slice(&body)
+        .context("Failed to parse JSON request body")?;
 
     let target_user_id: i64 = params
         .get("user_id")
-        .and_then(|id| id.parse::<i64>().ok())
+        .and_then(|v| v.as_i64())
         .ok_or_else(|| anyhow::anyhow!("Invalid or missing user_id"))?;
 
     let removed = db_groups::remove_group_member(&state.db, group_id, target_user_id)

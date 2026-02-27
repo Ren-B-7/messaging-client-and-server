@@ -88,10 +88,10 @@ pub async fn handle_create_chat(
         .context("Failed to read request body")?
         .to_bytes();
 
-    let params: HashMap<String, String> =
-        form_urlencoded::parse(body.as_ref()).into_owned().collect();
+    let params: serde_json::Value = serde_json::from_slice(&body)
+        .context("Failed to parse JSON request body")?;
 
-    let name = match params.get("name").map(|s| s.trim().to_string()) {
+    let name = match params.get("name").and_then(|v| v.as_str()).map(|s| s.trim().to_string()) {
         Some(n) if !n.is_empty() => n,
         _ => {
             return deliver_error_json(
@@ -106,9 +106,10 @@ pub async fn handle_create_chat(
     // them as the first member.
     let participants: Vec<i64> = params
         .get("participants")
-        .map(|s| {
-            s.split(',')
-                .filter_map(|p| p.trim().parse::<i64>().ok())
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_i64())
                 .filter(|&id| id != user_id)
                 .collect()
         })
@@ -290,22 +291,23 @@ async fn parse_message_form(
         .map_err(|_| MessageError::InternalError)?
         .to_bytes();
 
-    let params: HashMap<String, String> =
-        form_urlencoded::parse(body.as_ref()).into_owned().collect();
+    let params: serde_json::Value = serde_json::from_slice(&body)
+        .map_err(|_| MessageError::InternalError)?;
 
     let content = params
         .get("content")
+        .and_then(|v| v.as_str())
         .ok_or(MessageError::MissingField("content".to_string()))?
         .to_string();
 
     Ok(SendMessageData {
-        recipient_id: params.get("recipient_id").and_then(|s| s.parse().ok()),
+        recipient_id: params.get("recipient_id").and_then(|v| v.as_i64()),
         group_id: params
             .get("group_id")
             .or_else(|| params.get("chat_id"))
-            .and_then(|s| s.parse().ok()),
+            .and_then(|v| v.as_i64()),
         content,
-        message_type: params.get("message_type").cloned(),
+        message_type: params.get("message_type").and_then(|v| v.as_str()).map(|s| s.to_string()),
     })
 }
 
