@@ -14,6 +14,7 @@ use crate::AppState;
 use crate::database::login as db_login;
 use crate::database::messages as db_messages;
 use crate::database::utils as db_utils;
+use crate::handlers::http::utils::headers::decode_jwt_claims;
 use shared::types::login::Session;
 
 // ---------------------------------------------------------------------------
@@ -179,44 +180,6 @@ impl SseStreamBuilder {
 // Request helpers
 // ---------------------------------------------------------------------------
 
-/// Extract a session token from the request.
-///
-/// Checks, in order:
-/// 1. `Authorization: Bearer <token>` header
-/// 2. `auth_id=<token>` cookie  (set by login / register handlers)
-/// 3. `auth_token=<token>` cookie   (legacy fallback)
-fn extract_token(req: &Request<hyper::body::Incoming>) -> Option<String> {
-    // 1. Bearer header
-    if let Some(token) = req
-        .headers()
-        .get("authorization")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "))
-        .map(|s| s.to_string())
-    {
-        return Some(token);
-    }
-
-    // 2 & 3. Cookie jar — accept either name
-    req.headers()
-        .get("cookie")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|cookies| {
-            cookies.split(';').find_map(|cookie| {
-                let cookie = cookie.trim();
-                // auth_id wins; fall through to auth_token
-                for prefix in &["auth_id="] {
-                    if let Some(val) = cookie.strip_prefix(prefix) {
-                        if !val.is_empty() {
-                            return Some(val.to_string());
-                        }
-                    }
-                }
-                None
-            })
-        })
-}
-
 /// Parse query-string params into a `HashMap`
 fn parse_query(req: &Request<hyper::body::Incoming>) -> HashMap<String, String> {
     form_urlencoded::parse(req.uri().query().unwrap_or("").as_bytes())
@@ -230,13 +193,18 @@ fn parse_query(req: &Request<hyper::body::Incoming>) -> HashMap<String, String> 
 
 /// Authenticate, load history, then stream live events.
 ///
+/// ### Authentication
+/// The cookie / Bearer header carries a **JWT**.  The JWT is decoded to
+/// extract the `session_id` UUID, which is then validated against the
+/// `sessions` table.  This matches the hard-auth pattern used by the rest of
+/// the server — the JWT is never used directly as a DB lookup key.
+///
 /// ### Query parameters
-/// | Param           | Description                                          |
-/// |-----------------|------------------------------------------------------|
-/// | `other_user_id` | Load DM history with this user                       |
-/// | `chat_id `      | Load chat history                                    |
-/// | `limit`         | Max history messages to replay (default 50, max 100) |
-/// | `offset`        | Pagination offset into history (default 0)           |
+/// | Param      | Description                                          |
+/// |------------|------------------------------------------------------|
+/// | `chat_id`  | Load chat history for this chat                      |
+/// | `limit`    | Max history messages to replay (default 50, max 100) |
+/// | `offset`   | Pagination offset into history (default 0)           |
 ///
 /// ### Event sequence emitted
 /// ```
@@ -252,21 +220,31 @@ pub async fn handle_sse_subscribe(
     state: AppState,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>, SseError> {
     // ── 1. Authenticate ────────────────────────────────────────────────────
-    let token = extract_token(&req).ok_or_else(|| {
-        warn!("SSE subscribe rejected: missing auth token");
+    //
+    // The cookie / Bearer value is a JWT, NOT a raw session_id UUID.
+    // decode_jwt_claims decodes the JWT from the request's Authorization
+    // header or auth_id cookie, then we extract the session_id UUID from the
+    // claims and validate it against the sessions table.
+    //
+    // Previously the code passed the raw JWT string to validate_session_id,
+    // which looks up `session_id` (a UUID) in the DB — so it always failed
+    // because no row has a session_id equal to the full JWT string.
+    let claims = decode_jwt_claims(&req, &state.jwt_secret).map_err(|e| {
+        warn!("SSE subscribe rejected: invalid or expired JWT — {}", e);
         SseError::ChannelSendFailed("Unauthorized".to_string())
     })?;
 
-    let session: Session = db_login::validate_session_id(&state.db, token)
+    let session: Session = db_login::validate_session_id(&state.db, claims.session_id.clone())
         .await
         .map_err(|e| {
             error!("SSE auth DB error: {}", e);
             SseError::ChannelSendFailed("Database error".to_string())
         })?
         .ok_or_else(|| {
-            warn!("SSE subscribe rejected: invalid session");
+            warn!("SSE subscribe rejected: session {} not found or expired", claims.session_id);
             SseError::ChannelSendFailed("Unauthorized".to_string())
         })?;
+
     let user_id = session.user_id;
 
     // ── 2. Parse chat context & pagination ─────────────────────────────────
@@ -398,3 +376,5 @@ pub async fn handle_sse_subscribe(
             SseError::ChannelSendFailed("Failed to build SSE response".to_string())
         })
 }
+
+

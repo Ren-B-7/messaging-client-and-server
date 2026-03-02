@@ -220,16 +220,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!("User server listening on http://{}", user_sock);
 
         loop {
-            let (stream, _addr) = listener.accept().await.unwrap();
+            let (stream, addr) = listener.accept().await.unwrap();
 
             let user_tower_service = UserService::new(user_state.clone(), user_sock).await;
 
-            // Order matters: outer layers run last on request, first on response
+            // Order matters: outer layers run last on request, first on response.
+            // TimeoutLayer is intentionally absent — the connection-level timeout
+            // below handles regular requests, and SSE connections must stay open
+            // indefinitely (they are driven to completion after the loop exits).
             let tower_service = ServiceBuilder::new()
                 .layer(LoadShedLayer::new())
                 .layer(IpFilterLayer::new(user_state.ip_filter.clone()))
                 .layer(RateLimiterLayer::new(user_state.rate_limiter.clone()))
-                .layer(TimeoutLayer::new(Duration::from_secs(10)))
                 .layer(MetricsLayer::new(user_state.metrics.clone()))
                 .layer(create_cors_layer())
                 .layer(CompressionLayer::new().quality(CompressionLevel::Default))
@@ -247,13 +249,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     .serve_connection(io, final_service);
                 tokio::pin!(conn);
 
+                // Drive the graceful-shutdown sequence for normal HTTP requests.
+                // If the connection completes within the timeout windows it was a
+                // regular request and we are done.
+                //
+                // If it survives all graceful_shutdown calls it is a long-lived
+                // SSE stream — fall through and await it to completion so the
+                // stream stays open as long as the client is connected.
+                let mut completed = false;
                 for (iter, sleep) in timeout.iter().enumerate() {
                     tokio::select! {
                         res = conn.as_mut() => {
                             match res {
-                                Ok(()) => debug!("Connection closed"),
+                                Ok(()) => debug!("Connection closed: {}", addr),
                                 Err(e) => warn!("Error serving connection {:?}", e),
                             };
+                            completed = true;
                             break;
                         }
                         _ = tokio::time::sleep(*sleep) => {
@@ -263,6 +274,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             );
                             conn.as_mut().graceful_shutdown();
                         }
+                    }
+                }
+
+                // Connection outlived the timeout sequence -> it is a streaming
+                // response (SSE). Hold it open until the client disconnects.
+                if !completed {
+                    info!("Holding long-lived connection open: {}", addr);
+                    if let Err(e) = conn.await {
+                        warn!("Long-lived connection {} closed with error: {:?}", addr, e);
                     }
                 }
             });

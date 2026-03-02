@@ -176,12 +176,6 @@ impl Router {
     }
 
     // ── Light auth (JWT signature + expiry, zero DB reads) ───────────────────
-    //
-    // The router decodes and verifies the JWT before the handler is called.
-    // Handlers receive `JwtClaims` and must NOT call `decode_jwt_claims`
-    // themselves — the work is already done.
-    //
-    // Use for: GET / HEAD requests that only read data.
 
     /// GET guarded by **light** JWT auth.
     pub fn get_light<F, Fut>(mut self, path: &str, handler: F) -> Self
@@ -216,12 +210,6 @@ impl Router {
     }
 
     // ── Hard auth (JWT + DB session lookup + IP binding) ─────────────────────
-    //
-    // The router runs the full `validate_jwt_secure` pipeline before the
-    // handler is called.  Handlers receive the verified `user_id` (i64) and
-    // `JwtClaims` and must NOT call any auth function themselves.
-    //
-    // Use for: POST / PUT / DELETE — anything that mutates state.
 
     /// POST guarded by **hard** auth.
     pub fn post_hard<F, Fut>(mut self, path: &str, handler: F) -> Self
@@ -449,7 +437,7 @@ impl Router {
 }
 
 // ---------------------------------------------------------------------------
-// Helper
+// Helpers
 // ---------------------------------------------------------------------------
 
 fn unauthorized() -> Result<Response<BoxBody<Bytes, Infallible>>> {
@@ -471,10 +459,10 @@ fn forbidden() -> Result<Response<BoxBody<Bytes, Infallible>>> {
 }
 
 // ---------------------------------------------------------------------------
-// Shared base API router
+// Shared API routes
 //
-// Auth tier is enforced here at the routing level — handlers MUST NOT repeat
-// the auth call.  The contract is:
+// Registered on BOTH the user server and the admin server.  The auth tier for
+// each route is chosen by the router method:
 //
 //   .get(...)          → Open     — handler gets (req, state)
 //   .get_light(...)    → Light    — handler gets (req, state, claims)
@@ -496,10 +484,6 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
 
     router
         // ── Public: no auth ──────────────────────────────────────────────────
-        //
-        // These are the only routes where auth is intentionally absent.
-        // /api/register and /api/login are handled by the specific sub-routers
-        // (user.rs / admin.rs) so they are NOT registered here.
         .get("/api/config", |_req, state| async move {
             let config_json = serde_json::json!({
                 "status": "success",
@@ -526,9 +510,9 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
         })
         // ── Light auth: JWT decode only, zero DB reads ────────────────────────
         //
-        // Safe for GET requests because reading stale data carries no real
-        // risk and avoids a DB round-trip on every page load.  The JWT is
-        // still cryptographically verified (signature + expiry).
+        // Safe for GET requests because reading stale data carries no real risk
+        // and avoids a DB round-trip on every page load.  The JWT is still
+        // cryptographically verified (signature + expiry).
         .get_light("/api/profile", |req, state, claims| async move {
             profile::handle_get_profile(req, state, claims)
                 .await
@@ -549,12 +533,36 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
                 .await
                 .context("Group get failed")
         })
+        // GET /api/groups/:id/members — list members of a group
+        .get_light(
+            "/api/groups/:id/members",
+            |req, state, claims| async move {
+                let group_id = req
+                    .uri()
+                    .path()
+                    .split('/')
+                    .nth(3)
+                    .and_then(|s| s.parse::<i64>().ok());
+                match group_id {
+                    Some(id) => messaging::handle_get_members(req, state, claims, id)
+                        .await
+                        .context("Get members failed"),
+                    None => json_response::deliver_error_json(
+                        "BAD_REQUEST",
+                        "Invalid group id",
+                        StatusCode::BAD_REQUEST,
+                    )
+                    .context("Bad request"),
+                }
+            },
+        )
         // ── Hard auth: JWT + DB session lookup + IP binding ───────────────────
         //
-        // Every route that mutates state lives here.  Auth is performed by
-        // the router before the handler is invoked; handlers receive the
-        // verified user_id directly and must NOT repeat the auth call.
-        // Messaging
+        // Every route that mutates state lives here.  Auth is performed by the
+        // router before the handler is invoked; handlers receive the verified
+        // user_id directly and must NOT repeat the auth call.
+
+        // ── Messaging ────────────────────────────────────────────────────────
         .post_hard(
             "/api/messages/send",
             |req, state, user_id, _claims| async move {
@@ -585,7 +593,16 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
                 }
             },
         )
-        // Chats / groups
+        // POST /api/typing — fire-and-forget typing indicator over SSE
+        .post_hard(
+            "/api/typing",
+            |req, state, user_id, _claims| async move {
+                messaging::handle_typing(req, state, user_id)
+                    .await
+                    .context("Typing indicator failed")
+            },
+        )
+        // ── Chats / groups ───────────────────────────────────────────────────
         .post_hard("/api/chats", |req, state, user_id, _claims| async move {
             messaging::handle_create_chat(req, state, user_id)
                 .await
@@ -640,7 +657,7 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
                 }
             },
         )
-        // Profile
+        // ── Profile ──────────────────────────────────────────────────────────
         .post_hard(
             "/api/profile/update",
             |req, state, user_id, _claims| async move {
@@ -654,7 +671,7 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
                 .await
                 .context("Profile update failed")
         })
-        // Settings
+        // ── Settings ─────────────────────────────────────────────────────────
         .post_hard(
             "/api/settings/password",
             |req, state, user_id, _claims| async move {
@@ -671,7 +688,7 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
                     .context("Logout-all failed")
             },
         )
-        // Logout: uses hard auth so we have the verified session_id to revoke.
+        // Logout: hard auth so we have the verified session_id to revoke.
         .post_hard("/api/logout", |req, state, user_id, claims| async move {
             profile::handle_logout(req, state, user_id, claims)
                 .await
@@ -686,7 +703,6 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
 // operations that are safe with JWT-only auth.  The is_admin flag is also
 // checked inside `require_admin` after Hard auth succeeds.
 // ---------------------------------------------------------------------------
-
 pub fn build_admin_api_routes(router: Router) -> Router {
     router
         // Stats — hard auth + admin flag check inside handler.
@@ -910,12 +926,13 @@ mod tests {
 
     #[tokio::test]
     async fn router_delete_hard_adds_hard_route() {
-        let r = Router::new().delete_hard("/api/test", |_req, _state, _uid, _claims| async move {
-            Ok(Response::builder()
-                .status(StatusCode::OK)
-                .body(http_body_util::Full::new(Bytes::from("ok")).boxed())
-                .unwrap())
-        });
+        let r =
+            Router::new().delete_hard("/api/test", |_req, _state, _uid, _claims| async move {
+                Ok(Response::builder()
+                    .status(StatusCode::OK)
+                    .body(http_body_util::Full::new(Bytes::from("ok")).boxed())
+                    .unwrap())
+            });
         assert_eq!(r.routes.len(), 1);
         assert!(matches!(r.routes[0].kind, RouteKind::Hard(_)));
     }

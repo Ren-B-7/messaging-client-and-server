@@ -1,6 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use tokio_rusqlite::{Connection, Result, params, rusqlite};
+use tokio_rusqlite::{Connection, OptionalExtension, Result, params, rusqlite};
 
 use shared::types::message::*;
 
@@ -62,6 +62,41 @@ pub async fn get_chat_messages(
             .collect::<std::result::Result<Vec<Message>, rusqlite::Error>>()?;
 
         Ok(messages)
+    })
+    .await
+}
+
+/// Fetch a single message by its primary key.
+///
+/// Used by `handle_mark_read` to obtain `chat_id` and `sender_id` before
+/// updating the row, so the SSE read-receipt broadcast carries the correct
+/// context without an extra round-trip.
+pub async fn get_message_by_id(conn: &Connection, message_id: i64) -> Result<Option<Message>> {
+    conn.call(move |conn: &mut rusqlite::Connection| {
+        let mut stmt = conn.prepare(
+            "SELECT id, sender_id, chat_id, content, sent_at, delivered_at, read_at,
+                    is_encrypted, message_type
+             FROM   messages
+             WHERE  id = ?1",
+        )?;
+
+        let msg = stmt
+            .query_row(params![message_id], |row| {
+                Ok(Message {
+                    id:           row.get(0)?,
+                    sender_id:    row.get(1)?,
+                    chat_id:      row.get(2)?,
+                    content:      row.get(3)?,
+                    sent_at:      row.get(4)?,
+                    delivered_at: row.get(5)?,
+                    read_at:      row.get(6)?,
+                    is_encrypted: row.get::<_, i64>(7)? != 0,
+                    message_type: row.get(8)?,
+                })
+            })
+            .optional()?;
+
+        Ok(msg)
     })
     .await
 }
@@ -154,8 +189,7 @@ pub async fn delete_message(conn: &Connection, message_id: i64, user_id: i64) ->
 
 /// Get all chats a user is in, ordered by the most recent message.
 ///
-/// Returns `(chat_id, last_message_time)` pairs.  Replaces the old
-/// `get_recent_conversations` which relied on the removed `recipient_id` logic.
+/// Returns `(chat_id, last_message_time)` pairs.
 pub async fn get_recent_chats(
     conn: &Connection,
     user_id: i64,

@@ -4,8 +4,8 @@ pub mod messages;
 // Chat management (create, list)
 pub use messages::{handle_create_chat, handle_get_chats};
 
-// Message operations (send, receive, mark read)
-pub use messages::{handle_get_messages, handle_mark_read, handle_send_message};
+// Message operations (send, receive, mark read, typing indicator)
+pub use messages::{handle_get_messages, handle_mark_read, handle_send_message, handle_typing};
 
 // Group management
 pub use groups::{

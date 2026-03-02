@@ -174,14 +174,19 @@ pub fn build_user_router_with_config(
         // ── Real-time SSE stream ────────────────────────────────────────────
         //
         // Auth is handled inside handle_sse_subscribe (Bearer header or
-        // instance_id / auth_token cookie). Chat context is passed via query
-        // params: ?other_user_id=<id>  or  ?group_id=<id>  or  ?chat_id=<id>
+        // auth_id cookie). Chat context is passed via query params:
+        //   ?chat_id=<id>
+        //
+        // The get_light wrapper provides an initial JWT gate — the SSE handler
+        // then decodes the same JWT a second time to extract the session_id
+        // UUID, which is validated against the DB sessions table.
         //
         // On connect the handler:
-        //   1. Validates the session token
-        //   2. Loads and replays chat history as history_message events
-        //   3. Parks on the broadcast channel for live message_sent events
-        .get_light("/api/stream", |req, state, claims| async move {
+        //   1. Decodes the JWT → extracts session_id
+        //   2. Validates session_id against the DB
+        //   3. Loads and replays chat history as history_message events
+        //   4. Parks on the broadcast channel for live SSE events
+        .get_light("/api/stream", |req, state, _claims| async move {
             sse::handle_sse_subscribe(req, state)
                 .await
                 .map_err(|e| anyhow::anyhow!("SSE subscription failed: {:?}", e))
