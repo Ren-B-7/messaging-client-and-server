@@ -1,9 +1,6 @@
-pub mod presence;
 pub mod profile;
 
 // Re-export main handlers
-#[allow(unused_imports)]
-pub use presence::{handle_heartbeat, handle_set_offline};
 #[allow(unused_imports)]
 pub use profile::{
     handle_change_password, handle_get_profile, handle_logout, handle_logout_all,

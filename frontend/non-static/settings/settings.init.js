@@ -8,10 +8,6 @@
  *   → settings.preferences.js → settings.init.js
  */
 
-function sendHeartbeat() {
-  fetch("/api/presence", { method: "POST" }).catch(() => {});
-}
-
 document.addEventListener("DOMContentLoaded", () => {
   // ── Theme ──────────────────────────────────────────────────────────────────
   themeManager.init(["base", "chat", "settings"]);
@@ -46,20 +42,4 @@ document.addEventListener("DOMContentLoaded", () => {
 
   SettingsPreferences.load();
   SettingsPreferences.setup();
-
-  sendHeartbeat();
-  var _presenceTimer = setInterval(sendHeartbeat, 60_000);
-
-  window.addEventListener("beforeunload", () => {
-    navigator.sendBeacon("/api/presence/offline");
-  });
-
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden) {
-      clearInterval(_presenceTimer);
-    } else {
-      sendHeartbeat();
-      _presenceTimer = setInterval(sendHeartbeat, 60_000);
-    }
-  });
 });

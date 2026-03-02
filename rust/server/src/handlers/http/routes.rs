@@ -10,10 +10,7 @@ use tracing::{info, warn};
 
 use crate::AppState;
 use crate::handlers::http::utils::headers::{decode_jwt_claims, validate_jwt_secure};
-use crate::handlers::http::{
-    admin, messaging, profile,
-    utils::{self, *},
-};
+use crate::handlers::http::{admin, messaging, profile, utils::*};
 
 use shared::types::cache::*;
 use shared::types::jwt::JwtClaims;
@@ -598,19 +595,6 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
                 .await
                 .context("Typing indicator failed")
         })
-        .post_hard("/api/presence", |req, state, user_id, _claims| async move {
-            profile::handle_heartbeat(req, state, user_id)
-                .await
-                .context("Presence heartbeat failed")
-        })
-        .post_hard(
-            "/api/presence/offline",
-            |req, state, user_id, _claims| async move {
-                profile::handle_set_offline(req, state, user_id)
-                    .await
-                    .context("Presence offline failed")
-            },
-        )
         // ── Chats / groups ───────────────────────────────────────────────────
         .post_hard("/api/chats", |req, state, user_id, _claims| async move {
             messaging::handle_create_chat(req, state, user_id)

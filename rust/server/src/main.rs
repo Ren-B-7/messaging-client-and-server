@@ -150,7 +150,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let cleanup_state = state.clone();
     let sse_manager_clone = state.clone().sse_manager;
     let metrics_clone = state.clone().metrics;
-    let presence_db = state.clone().db;
 
     // Rate limiter cleanup
     tokio::spawn(async move {
@@ -162,7 +161,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     });
 
-    // Metric snapshot + sse cleanup + stale presence cleanup
+    // Metric snapshot + sse cleanup
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(30));
         loop {
@@ -170,10 +169,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             // SSE State cleanup before snapshots
             sse_manager_clone.cleanup().await;
             info!("SSE manager cleanup completed");
-
-            if let Err(e) = database::presence::cleanup_stale_presence(&presence_db).await {
-                warn!("[presence] stale sweep error: {}", e);
-            }
 
             let snapshot = metrics_clone.snapshot().await;
             info!("{}", snapshot.format());

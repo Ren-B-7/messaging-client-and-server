@@ -8,7 +8,7 @@ use std::convert::Infallible;
 use tracing::{error, info, warn};
 
 use crate::AppState;
-use crate::database::{login as db_login, presence};
+use crate::database::login as db_login;
 use crate::handlers::http::utils::{
     create_persistent_cookie, create_session_cookie, deliver_redirect_with_cookie,
     deliver_serialized_json, encode_jwt, get_client_ip, get_user_agent, is_https,
@@ -65,8 +65,6 @@ pub async fn handle_login(
                 "User logged in successfully: {} (ID: {})",
                 username, user_id
             );
-
-            presence::touch_presence(&state.db, user_id).await?;
 
             let token_expiry_secs = state.config.read().await.auth.token_expiry_minutes * 60;
 

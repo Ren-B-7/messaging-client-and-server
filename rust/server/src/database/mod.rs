@@ -9,7 +9,6 @@ pub mod login;
 pub mod messages;
 #[allow(dead_code)]
 pub mod password;
-pub mod presence;
 #[allow(dead_code)]
 pub mod register;
 #[allow(dead_code)]
@@ -27,8 +26,6 @@ pub use login::*;
 pub use messages::*;
 #[allow(unused_imports)]
 pub use password::*;
-#[allow(unused_imports)]
-pub use presence::*;
 #[allow(unused_imports)]
 pub use register::*;
 #[allow(unused_imports)]

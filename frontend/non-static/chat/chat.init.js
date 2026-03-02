@@ -10,10 +10,6 @@
  *   → chat.conversations.js → chat.sse.js → chat.init.js
  */
 
-function sendHeartbeat() {
-  fetch("/api/presence", { method: "POST" }).catch(() => {});
-}
-
 document.addEventListener("DOMContentLoaded", async () => {
   // ── Theme ──────────────────────────────────────────────────────────────────
   themeManager.init(["base", "chat"]);
@@ -65,9 +61,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   // ── Fetch fresh data from API on every page load ───────────────────────────
   await ChatConversations.refresh();
 
-  sendHeartbeat();
-  var _presenceTimer = setInterval(sendHeartbeat, 60_000);
-
   // ── Restore previously open conversation (if any) ─────────────────────────
   if (ChatState.currentConversation) {
     ChatConversations.open(
@@ -82,18 +75,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     ChatSSE.disconnect();
 
     // Clear per-session data that is always re-fetched from the server on reload.
-    navigator.sendBeacon("/api/presence/offline");
     Utils.removeStorage("messages");
     Utils.removeStorage("conversations");
     Utils.removeStorage("groups");
-  });
-
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden) {
-      clearInterval(_presenceTimer);
-    } else {
-      sendHeartbeat();
-      _presenceTimer = setInterval(sendHeartbeat, 60_000);
-    }
   });
 });

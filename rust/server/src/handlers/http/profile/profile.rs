@@ -29,7 +29,7 @@ use shared::types::settings::*;
 use shared::types::update::*;
 
 use crate::AppState;
-use crate::database::{login, password, presence, register, utils};
+use crate::database::{login, password, register, utils};
 use crate::handlers::http::utils::{
     create_session_cookie, deliver_error_json, deliver_serialized_json,
     deliver_serialized_json_with_cookie, is_https,
@@ -275,7 +275,6 @@ pub async fn handle_logout(
 
     let secure_cookie = is_https(&req);
 
-    presence::set_offline(&state.db, user_id).await?;
     match login::delete_session_by_id(&state.db, claims.session_id).await {
         Ok(_) => info!("Session deleted on logout"),
         Err(e) => error!("Failed to delete session: {}", e),
