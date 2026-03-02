@@ -7,10 +7,11 @@
  * Load order (all deferred):
  *   theme.manager.js → platform.config.js → utils.js
  *   → chat.state.js → chat.ui.js → chat.messages.js
- *   → chat.conversations.js → chat.init.js
+ *   → chat.conversations.js → chat.sse.js → chat.init.js
  */
 
 document.addEventListener('DOMContentLoaded', async () => {
+
   // ── Theme ──────────────────────────────────────────────────────────────────
   themeManager.init(['base', 'chat']);
 
@@ -19,30 +20,28 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // ── Fetch current user from server ─────────────────────────────────────────
-  // localStorage may be empty (e.g. after a hard refresh or on a new device),
-  // so always resolve identity from the API using the session cookie.
+  // Always resolve identity from the API — localStorage may be stale or empty.
   try {
     const res = await fetch('/api/profile');
     if (res.ok) {
-      const data = await res.json();
+      const data    = await res.json();
       const profile = data.data ?? data;
       ChatState.currentUser = {
-        id:       Number(profile.user_id),   // API returns user_id not id
+        id:      Number(profile.user_id),
         username: profile.username ?? '',
-        email:    profile.email ?? '',
+        email:    profile.email    ?? '',
         isAdmin:  profile.is_admin ?? false,
       };
-      // Persist so other pages can read it without another API call.
       Utils.setStorage('user', ChatState.currentUser);
       console.info('[init] Current user:', ChatState.currentUser);
     } else {
-      console.warn('[init] Could not fetch profile, sent messages may render incorrectly');
+      console.warn('[init] Could not fetch profile — sent messages may render incorrectly');
     }
   } catch (e) {
     console.error('[init] Profile fetch failed:', e);
   }
 
-  // ── Update avatar initials now that we have a username ─────────────────────
+  // ── Update avatar initials ─────────────────────────────────────────────────
   const initialsEl = document.getElementById('userInitials');
   if (initialsEl && ChatState.currentUser) {
     initialsEl.textContent = Utils.getInitials(ChatState.currentUser.username);
@@ -69,9 +68,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     );
   }
 
-  // ── Clear transient data when the user leaves ──────────────────────────────
+  // ── Tear down SSE and clear transient data when the user leaves ─────────────
   window.addEventListener('beforeunload', () => {
-    // Clear transient chat data — always re-fetched from the server on next load.
+    // Cleanly close the SSE stream so the server reclaims the channel promptly.
+    ChatSSE.disconnect();
+
+    // Clear per-session data that is always re-fetched from the server on reload.
     // Keep 'user' so other pages can read identity without an extra API call.
     Utils.removeStorage('messages');
     Utils.removeStorage('conversations');

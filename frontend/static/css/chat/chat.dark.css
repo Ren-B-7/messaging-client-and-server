@@ -25,3 +25,18 @@
 
 /* All other styles inherit from chat.light.css */
 /* Only color variables are overridden in dark theme */
+
+/* ── SSE dark-mode colour overrides ── */
+
+:root[data-theme="dark"] .typing-indicator {
+  background: #1c2127;
+  color: #768390;
+}
+
+:root[data-theme="dark"] .message-read-tick {
+  color: #58a6ff; /* lighter blue readable on dark */
+}
+
+:root[data-theme="dark"] .message-read-tick--sent {
+  color: #6e7681;
+}

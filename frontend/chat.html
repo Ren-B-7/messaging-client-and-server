@@ -156,14 +156,15 @@
     </style>
 
     <!-- Preloads -->
-    <link rel="preload" href="static/js/utils/theme.manager.js"    as="script" />
-    <link rel="preload" href="static/js/config/platform.config.js" as="script" />
-    <link rel="preload" href="static/js/utils/utils.js"            as="script" />
-    <link rel="preload" href="non-static/chat/chat.state.js"        as="script" />
-    <link rel="preload" href="non-static/chat/chat.ui.js"           as="script" />
-    <link rel="preload" href="non-static/chat/chat.messages.js"     as="script" />
-    <link rel="preload" href="non-static/chat/chat.conversations.js" as="script" />
-    <link rel="preload" href="non-static/chat/chat.init.js"         as="script" />
+    <link rel="preload" href="static/js/utils/theme.manager.js"       as="script" />
+    <link rel="preload" href="static/js/config/platform.config.js"    as="script" />
+    <link rel="preload" href="static/js/utils/utils.js"               as="script" />
+    <link rel="preload" href="non-static/chat/chat.state.js"           as="script" />
+    <link rel="preload" href="non-static/chat/chat.ui.js"              as="script" />
+    <link rel="preload" href="non-static/chat/chat.messages.js"        as="script" />
+    <link rel="preload" href="non-static/chat/chat.conversations.js"   as="script" />
+    <link rel="preload" href="non-static/chat/chat.sse.js"             as="script" />
+    <link rel="preload" href="non-static/chat/chat.init.js"            as="script" />
 
     <!-- Scripts (deferred — execute after HTML is parsed, in order) -->
     <script defer src="static/js/utils/theme.manager.js"></script>
@@ -173,6 +174,7 @@
     <script defer src="non-static/chat/chat.ui.js"></script>
     <script defer src="non-static/chat/chat.messages.js"></script>
     <script defer src="non-static/chat/chat.conversations.js"></script>
+    <script defer src="non-static/chat/chat.sse.js"></script>
     <script defer src="non-static/chat/chat.init.js"></script>
   </head>
   <body>
@@ -248,14 +250,17 @@
 
         <!-- Shown when a conversation is active -->
         <div id="activeChatView" class="active-chat-view" style="display: none;">
+
           <div class="chat-header">
             <div class="chat-info">
               <div class="avatar" id="chatAvatar">U</div>
               <div class="chat-details">
-                <div class="chat-name"   id="chatName">User</div>
+                <div class="chat-name" id="chatName">User</div>
                 <div class="chat-status">
                   <span class="status-dot" id="statusDot"></span>
                   <span id="statusText">Offline</span>
+                  <!-- SSE connection indicator: green=live, amber=reconnecting, red=disconnected -->
+                  <span id="sseStatusDot" data-status="disconnected" title="Connecting…"></span>
                 </div>
               </div>
             </div>
@@ -278,30 +283,40 @@
             </div>
           </div>
 
-          <div class="messages-container" id="messagesContainer"></div>
+          <!-- Isolated scrollable message viewport -->
+          <div class="chat-body">
+            <!-- Messages list — scrolls independently -->
+            <div class="messages-container" id="messagesContainer"></div>
+          </div>
 
-          <div class="message-input-area">
-            <div class="input-tools">
-              <button class="input-tool-btn" id="attachFileBtn" title="Attach file">
-                <img src="static/icons/icons/paperclip.svg" alt="Attach file" width="20" height="20" />
-              </button>
-            </div>
-            <div class="message-input-wrapper">
-              <textarea
-                class="message-input"
-                id="messageInput"
-                placeholder="Type a message..."
-                rows="1"
-              ></textarea>
-              <button class="send-btn" id="sendBtn" disabled>
-                <img src="static/icons/icons/send.svg" alt="Send" width="20" height="20" />
-              </button>
+          <!-- Pinned bottom bar: typing indicator + input (never scrolls away) -->
+          <div class="chat-bottom-bar">
+            <!-- Typing indicator is injected here by ChatUI.showTyping() -->
+            <!-- id="messageInputArea" lets ChatUI insert the typing banner just above -->
+            <div class="message-input-area" id="messageInputArea">
+              <div class="input-tools">
+                <button class="input-tool-btn" id="attachFileBtn" title="Attach file">
+                  <img src="static/icons/icons/paperclip.svg" alt="Attach file" width="20" height="20" />
+                </button>
+              </div>
+              <div class="message-input-wrapper">
+                <textarea
+                  class="message-input"
+                  id="messageInput"
+                  placeholder="Type a message…"
+                  rows="1"
+                ></textarea>
+                <button class="send-btn" id="sendBtn" disabled>
+                  <img src="static/icons/icons/send.svg" alt="Send" width="20" height="20" />
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+
+        </div><!-- /activeChatView -->
 
       </main>
-    </div>
+    </div><!-- /chat-container -->
 
     <!-- ── Modal: New Direct Message ── -->
     <div class="conv-modal-backdrop" id="new-dm-modal">
@@ -366,9 +381,6 @@
         </div>
       </div>
     </div>
-
-  </body>
-</html>
 
     <!-- ── Modal: Add Group Member ── -->
     <div class="conv-modal-backdrop" id="add-member-modal">

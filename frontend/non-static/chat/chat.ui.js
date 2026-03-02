@@ -1,7 +1,7 @@
 /**
  * Chat — UI & Header
  * Manages the empty-state / active-chat view toggle, chat header rendering,
- * and the action button handlers (voice call, video call, add member).
+ * action button handlers, the Add Member flow, and the typing indicator.
  *
  * Depends on: Utils, ChatState, ChatConversations
  */
@@ -28,32 +28,26 @@ const ChatUI = {
 
   /**
    * Populate the chat header with the active conversation's details.
-   * Also shows or hides the Add Member button depending on whether this is
-   * a group conversation.
-   *
    * @param {object}         conversation
    * @param {'dm'|'groups'}  type
    */
   updateHeader(conversation, type = 'dm') {
-    const nameEl     = document.getElementById('chatName');
-    const avatarEl   = document.getElementById('chatAvatar');
-    const dotEl      = document.getElementById('statusDot');
-    const textEl     = document.getElementById('statusText');
+    const nameEl       = document.getElementById('chatName');
+    const avatarEl     = document.getElementById('chatAvatar');
+    const dotEl        = document.getElementById('statusDot');
+    const textEl       = document.getElementById('statusText');
     const addMemberBtn = document.getElementById('addMemberBtn');
 
     if (nameEl)   nameEl.textContent   = Utils.escapeHtml(conversation.name);
     if (avatarEl) avatarEl.textContent = Utils.getInitials(conversation.name);
 
     if (type === 'groups') {
-      // Groups: show member count, no online dot; reveal Add Member button.
       if (dotEl)  dotEl.className    = 'status-dot';
       if (textEl) textEl.textContent = conversation.memberCount
         ? `${conversation.memberCount} members`
         : 'Group';
-
       if (addMemberBtn) addMemberBtn.style.display = '';
     } else {
-      // DM: show real online status; hide Add Member button.
       if (addMemberBtn) addMemberBtn.style.display = 'none';
 
       if (conversation.isOnline) {
@@ -64,6 +58,66 @@ const ChatUI = {
         if (textEl) textEl.textContent = 'Offline';
       }
     }
+  },
+
+  // ── Typing indicator ─────────────────────────────────────────────────────
+
+  // Map of userId → display name (we only have the ID from SSE, so we show
+  // a generic label unless the name resolves from state).
+  _typingUsers: new Set(),
+
+  /**
+   * Show "Someone is typing…" below the message list.
+   * Multiple concurrent typers are collapsed into a single banner.
+   * @param {number} userId
+   */
+  showTyping(userId) {
+    this._typingUsers.add(userId);
+    this._renderTyping();
+  },
+
+  /**
+   * Remove a user from the typing set and update the banner.
+   * @param {number} userId
+   */
+  hideTyping(userId) {
+    this._typingUsers.delete(userId);
+    this._renderTyping();
+  },
+
+  _renderTyping() {
+    let banner = document.getElementById('typingIndicator');
+
+    if (this._typingUsers.size === 0) {
+      if (banner) banner.remove();
+      return;
+    }
+
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id        = 'typingIndicator';
+      banner.className = 'typing-indicator';
+
+      // Insert at the top of .chat-bottom-bar, above the input area
+      const bottomBar = document.querySelector('.chat-bottom-bar');
+      const inputArea = document.getElementById('messageInputArea');
+      if (bottomBar && inputArea) {
+        bottomBar.insertBefore(banner, inputArea);
+      } else if (inputArea) {
+        inputArea.parentNode.insertBefore(banner, inputArea);
+      } else {
+        document.getElementById('messagesContainer')?.appendChild(banner);
+      }
+    }
+
+    const count = this._typingUsers.size;
+    banner.innerHTML = `
+      <span class="typing-dots">
+        <span></span><span></span><span></span>
+      </span>
+      <span class="typing-text">
+        ${count === 1 ? 'Someone is typing' : `${count} people are typing`}&hellip;
+      </span>`;
   },
 
   // ── Action buttons ───────────────────────────────────────────────────────
@@ -81,19 +135,14 @@ const ChatUI = {
       alert('File attachments — Coming soon!');
     });
 
-    // Add Member button — opens the add-member modal for the current group.
     document.getElementById('addMemberBtn')?.addEventListener('click', () => {
       const conv = ChatState.currentConversation;
       if (!conv) return;
-
-      // Populate the group name in the modal body.
       const nameEl = document.getElementById('addMemberGroupName');
       if (nameEl) nameEl.textContent = conv.name;
-
       this._openAddMemberModal();
     });
 
-    // Modal wiring.
     document.getElementById('addMemberSubmitBtn')?.addEventListener('click', () => {
       this._submitAddMember();
     });
@@ -102,17 +151,14 @@ const ChatUI = {
       if (e.key === 'Enter') this._submitAddMember();
     });
 
-    // Close button (data-close-conv-modal="add-member-modal").
     document.querySelectorAll('[data-close-conv-modal="add-member-modal"]').forEach(btn => {
       btn.addEventListener('click', () => this._closeAddMemberModal());
     });
 
-    // Click backdrop to close.
     document.getElementById('add-member-modal')?.addEventListener('click', e => {
       if (e.target === e.currentTarget) this._closeAddMemberModal();
     });
 
-    // Escape key closes it too.
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape') this._closeAddMemberModal();
     });
@@ -124,7 +170,6 @@ const ChatUI = {
     const modal = document.getElementById('add-member-modal');
     if (!modal) return;
     modal.classList.add('open');
-
     const input = document.getElementById('addMemberInput');
     const err   = document.getElementById('addMemberError');
     if (input) { input.value = ''; input.focus(); }
@@ -135,7 +180,7 @@ const ChatUI = {
     document.getElementById('add-member-modal')?.classList.remove('open');
   },
 
-  _submitAddMember() {
+  async _submitAddMember() {
     const input   = document.getElementById('addMemberInput');
     const errorEl = document.getElementById('addMemberError');
     const name    = input?.value.trim();
@@ -145,24 +190,46 @@ const ChatUI = {
       if (errorEl) errorEl.textContent = 'Please enter a name or username.';
       return;
     }
-
     if (!conv) {
       if (errorEl) errorEl.textContent = 'No active group selected.';
       return;
     }
 
-    // Update the in-memory group member count and persist.
-    const group = ChatState.groups.find(g => g.id === conv.id);
-    if (group) {
-      group.memberCount = (group.memberCount ?? 1) + 1;
-      ChatState.currentConversation = group;
-      ChatState.save();
-      // Refresh the header to reflect the new member count.
-      this.updateHeader(group, 'groups');
-      // Re-render the sidebar so any preview data is current.
-      ChatConversations.render();
-    }
+    try {
+      // Look up user_id by username first
+      const lookupRes = await fetch(`/api/chats`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ username: name }),
+      });
 
-    this._closeAddMemberModal();
+      // Then add to the group by user_id
+      const userData  = await lookupRes.json();
+      const targetId  = userData?.data?.chat_id ?? null;
+
+      const addRes = await fetch(`/api/groups/${encodeURIComponent(conv.id)}/members`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ username: name }),
+      });
+
+      if (!addRes.ok) {
+        const errData = await addRes.json();
+        throw new Error(errData.message || 'Failed to add member');
+      }
+
+      const group = ChatState.groups.find(g => g.id === conv.id);
+      if (group) {
+        group.memberCount = (group.memberCount ?? 1) + 1;
+        ChatState.currentConversation = group;
+        ChatState.save();
+        this.updateHeader(group, 'groups');
+        ChatConversations.render();
+      }
+
+      this._closeAddMemberModal();
+    } catch (err) {
+      if (errorEl) errorEl.textContent = err.message || 'Failed to add member.';
+    }
   },
 };

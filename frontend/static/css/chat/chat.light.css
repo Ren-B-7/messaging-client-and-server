@@ -244,6 +244,7 @@
   flex-direction: column;
   background: var(--bg-primary);
   overflow: hidden;
+  min-height: 0;
 }
 
 .chat-header {
@@ -307,12 +308,17 @@
 
 /* ===== MESSAGES ===== */
 .messages-container {
-  flex: 1;
+  /* Fill the entire .chat-body and scroll independently */
+  position: absolute;
+  inset: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: var(--space-6);
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+  /* Ensure new messages scroll into view at the bottom */
+  scroll-behavior: smooth;
 }
 
 .message {
@@ -359,7 +365,7 @@
   gap: var(--space-3);
   padding: var(--space-4) var(--space-6);
   background: var(--bg-primary);
-  border-top: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 .input-tools {
@@ -492,10 +498,28 @@
 }
 
 /* ── Active chat view ── */
-/* Flex properties live in CSS so JS toggles (display:none/flex) don't clobber them. */
 .active-chat-view {
+  display: flex;
   flex: 1;
   flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;   /* clip — children manage their own scrolling */
+}
+
+/* ── Scrollable message viewport ── */
+.chat-body {
+  flex: 1;
+  min-height: 0;      /* critical: allows the body to shrink below content height */
+  overflow: hidden;
+  position: relative;
+}
+
+/* ── Pinned bottom bar: typing indicator + input ── */
+.chat-bottom-bar {
+  flex-shrink: 0;     /* never compress — always fully visible */
+  background: var(--bg-primary);
+  z-index: 10;        /* always on top of the message scroll area */
 }
 
 /* ── Message send error banner ── */
@@ -509,4 +533,88 @@
   padding: var(--space-2) var(--space-4);
   margin: var(--space-2) 0;
   animation: fadeIn var(--duration-base) ease-out;
+}
+
+/* =============================================================================
+   SSE — Typing indicator, read-receipt ticks, connection status dot
+   ============================================================================= */
+
+/* ── Message meta row (time + tick) ── */
+.message-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1, 0.25rem);
+  margin-top: 2px;
+}
+
+.message.sent .message-meta     { justify-content: flex-end; }
+.message.received .message-meta { justify-content: flex-start; }
+
+/* ── Read-receipt ticks ── */
+.message-read-tick {
+  font-size: 0.7rem;
+  line-height: 1;
+  color: var(--accent, #3b82f6);   /* double tick = read (blue) */
+  transition: color 0.25s;
+}
+
+.message-read-tick--sent {
+  color: var(--fg-tertiary, #9ca3af); /* single tick = sent but unread (grey) */
+}
+
+/* ── Typing indicator ── */
+.typing-indicator {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
+  padding: var(--space-2, 0.5rem) var(--space-6, 1.5rem);
+  color: var(--fg-tertiary, #9ca3af);
+  font-size: var(--text-sm, 0.875rem);
+  min-height: 2rem;
+  background: var(--bg-primary);
+}
+
+.typing-dots {
+  display: inline-flex;
+  gap: 3px;
+  align-items: flex-end;
+}
+
+.typing-dots span {
+  display: block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.5;
+  animation: typingBounce 1.2s ease-in-out infinite;
+}
+
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes typingBounce {
+  0%, 60%, 100% { transform: translateY(0);    opacity: 0.4; }
+  30%            { transform: translateY(-4px); opacity: 1;   }
+}
+
+/* ── SSE connection status dot ── */
+#sseStatusDot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background-color 0.3s;
+  cursor: default;
+}
+
+#sseStatusDot[data-status="connected"]    { background: #22c55e; }
+#sseStatusDot[data-status="reconnecting"] { background: #f59e0b; animation: ssePulse 1s ease-in-out infinite; }
+#sseStatusDot[data-status="disconnected"],
+#sseStatusDot[data-status="failed"]       { background: #ef4444; }
+
+@keyframes ssePulse {
+  0%, 100% { opacity: 1;   }
+  50%       { opacity: 0.3; }
 }

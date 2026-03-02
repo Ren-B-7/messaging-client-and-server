@@ -1,7 +1,10 @@
 /**
  * Chat — Messages
- * Renders the message list, handles sending, and simulates incoming replies.
- * Depends on: Utils, ChatState
+ * Renders the message list, handles sending, and integrates with ChatSSE
+ * for real-time delivery.  HTTP polling is no longer used — all live updates
+ * arrive through the SSE stream managed by chat.sse.js.
+ *
+ * Depends on: Utils, ChatState, ChatSSE
  */
 
 const ChatMessages = {
@@ -17,12 +20,15 @@ const ChatMessages = {
   _fromApi(msg) {
     const myId = this._currentUserId();
     return {
-      id:        msg.id,
-      text:      msg.content,
-      content:   msg.content,
-      timestamp: msg.sent_at * 1000,          // seconds → ms
-      isSent:    myId !== null && msg.sender_id === myId,
-      sender_id: msg.sender_id,
+      id:           msg.id,
+      text:         msg.content,
+      content:      msg.content,
+      timestamp:    msg.sent_at * 1000,   // seconds → ms
+      isSent:       myId !== null && msg.sender_id === myId,
+      sender_id:    msg.sender_id,
+      delivered_at: msg.delivered_at,
+      read_at:      msg.read_at,
+      message_type: msg.message_type,
     };
   },
 
@@ -36,7 +42,7 @@ const ChatMessages = {
     const container = document.getElementById('messagesContainer');
     if (!container) return;
 
-    if (!messages.length) {
+    if (!messages || !messages.length) {
       container.innerHTML = `
         <div class="text-center" style="padding: var(--space-8); color: var(--fg-tertiary);">
           <p>No messages yet</p>
@@ -52,20 +58,82 @@ const ChatMessages = {
   },
 
   /** @returns {string} HTML for a single message bubble. */
-  _renderItem({ id, text, content, timestamp, isSent, sender_id }) {
+  _renderItem({ id, text, content, timestamp, isSent, sender_id, read_at }) {
     const messageText = text || content || '';
-    const time = typeof timestamp === 'number' ? new Date(timestamp) : new Date();
+    const time        = typeof timestamp === 'number' ? new Date(timestamp) : new Date();
+    const myId        = this._currentUserId();
+    const sentByMe    = isSent || (myId !== null && sender_id === myId);
 
-    // isSent drives the visual side (right = sent, left = received).
-    // Fall back to checking sender_id if isSent was not pre-computed.
-    const myId = this._currentUserId();
-    const sentByMe = isSent || (myId !== null && sender_id === myId);
+    const readTick = sentByMe && read_at
+      ? `<span class="message-read-tick" title="Read">✓✓</span>`
+      : sentByMe
+        ? `<span class="message-read-tick message-read-tick--sent" title="Sent">✓</span>`
+        : '';
 
     return `
-      <div class="message ${sentByMe ? 'sent' : 'received'}">
+      <div class="message ${sentByMe ? 'sent' : 'received'}" data-msg-id="${id ?? ''}">
         <div class="message-bubble">${Utils.escapeHtml(messageText)}</div>
-        <div class="message-time">${Utils.formatTime(time)}</div>
+        <div class="message-meta">
+          <span class="message-time">${Utils.formatTime(time)}</span>
+          ${readTick}
+        </div>
       </div>`;
+  },
+
+  /**
+   * Update read-receipt ticks on an already-rendered message without a
+   * full re-render.  Called by ChatSSE when a message_read event arrives.
+   *
+   * @param {string} chatId
+   * @param {number} messageId
+   * @param {number} readerId  — unused visually but available for future use
+   */
+  renderReadReceipts(chatId, messageId, readerId) {
+    // Update the in-memory message
+    const msgs = ChatState.getMessages(chatId);
+    const msg  = msgs.find(m => m.id === messageId);
+    if (msg && !msg.read_at) {
+      msg.read_at = Math.floor(Date.now() / 1000);
+    }
+
+    // Patch the DOM node if it exists (avoid full re-render for one tick change)
+    const el = document.querySelector(`[data-msg-id="${messageId}"]`);
+    if (!el) return;
+
+    const tick = el.querySelector('.message-read-tick');
+    if (tick) {
+      tick.textContent = '✓✓';
+      tick.title       = 'Read';
+      tick.classList.remove('message-read-tick--sent');
+    }
+  },
+
+  /**
+   * Append a single new message bubble without touching existing DOM.
+   * Called by ChatSSE for live incoming messages — avoids a full re-render.
+   * @param {object} msg  — same shape as objects stored in ChatState.messages
+   */
+  renderOne(msg) {
+    const container = document.getElementById('messagesContainer');
+    if (!container) return;
+
+    // If the empty-state placeholder is showing, clear it first
+    const placeholder = container.querySelector('.text-center');
+    if (placeholder) container.innerHTML = '';
+
+    const html = this._renderItem(msg);
+    const el   = document.createElement('div');
+    el.innerHTML = html.trim();
+    const node = el.firstElementChild;
+    if (node) {
+      container.appendChild(node);
+      // Only auto-scroll if the user is already near the bottom (within 120px)
+      const threshold = 120;
+      const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
+      if (nearBottom) {
+        container.scrollTop = container.scrollHeight;
+      }
+    }
   },
 
   /** Show a temporary inline error banner inside the message area. */
@@ -79,14 +147,14 @@ const ChatMessages = {
     container.appendChild(banner);
     container.scrollTop = container.scrollHeight;
 
-    setTimeout(() => banner.remove(), 4000);
+    setTimeout(() => banner.remove(), 4_000);
   },
 
   // ── Sending ──────────────────────────────────────────────────────────────
 
   async send() {
-    const input = document.getElementById('messageInput');
-    const text  = input?.value.trim();
+    const input   = document.getElementById('messageInput');
+    const text    = input?.value.trim();
 
     if (!text) return;
 
@@ -104,11 +172,18 @@ const ChatMessages = {
     const sendBtn = document.getElementById('sendBtn');
     if (sendBtn) sendBtn.disabled = true;
 
+    // Clear input immediately for snappy UX
+    input.value        = '';
+    input.style.height = 'auto';
+
+    // Stop any pending typing indicator
+    ChatSSE.sendTyping(false);
+
     try {
       const response = await fetch('/api/messages/send', {
-        method: 'POST',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body:    JSON.stringify({
           chat_id:      parseInt(chatId),
           content:      text,
           message_type: 'text',
@@ -123,16 +198,22 @@ const ChatMessages = {
       const result      = await response.json();
       const messageData = result.data || result;
 
-      // Optimistic local update — we know this one is ours.
+      // Optimistic local update with the server-assigned ID
       const message = {
         id:        messageData.message_id || Utils.generateId(),
         text,
+        content:   text,
         timestamp: (messageData.sent_at || Math.floor(Date.now() / 1000)) * 1000,
         isSent:    true,
         sender_id: this._currentUserId(),
       };
 
-      ChatState.addMessage(chatId, message);
+      // Add only if SSE hasn't already delivered it (race condition guard)
+      const existing = ChatState.getMessages(chatId);
+      if (!existing.some(m => m.id === message.id)) {
+        ChatState.addMessage(chatId, message);
+        this.renderOne(message);   // append the bubble without wiping the DOM
+      }
 
       const conv = ChatState.findConversation(chatId) ?? ChatState.findGroup(chatId);
       if (conv) {
@@ -144,42 +225,20 @@ const ChatMessages = {
         console.warn('[messages] Could not persist to localStorage:', e);
       }
 
-      this.render(ChatState.getMessages(chatId));
-      ChatConversations.render();
-
-      input.value        = '';
-      input.style.height = 'auto';
+      ChatConversations.render();  // sidebar preview update only
 
       console.info('[messages] Sent:', messageData.message_id);
 
-      // Re-sync from server shortly after so other clients' messages appear.
-      setTimeout(() => this._refreshMessages(chatId), 500);
-
     } catch (err) {
+      // Put the text back so the user doesn't lose it
+      if (input) input.value = text;
       console.error('[messages] Send failed:', err);
       this._showSendError(err.message || 'Failed to send message. Please try again.');
       this.render(ChatState.getMessages(chatId));
     } finally {
-      if (sendBtn) sendBtn.disabled = text.trim() === '';
-    }
-  },
-
-  /** Pull the latest messages from the server and update local state. */
-  async _refreshMessages(chatId) {
-    try {
-      const response = await fetch(`/api/messages?chat_id=${chatId}&limit=50`);
-      if (!response.ok) return;
-
-      const data     = await response.json();
-      const messages = data.data?.messages ?? data.messages ?? [];
-
-      ChatState.messages[chatId] = messages.map(m => this._fromApi(m));
-
-      try { ChatState.save(); } catch (_) {}
-      this.render(ChatState.getMessages(chatId));
-
-    } catch (err) {
-      console.warn('[messages] Refresh failed:', err);
+      if (sendBtn) {
+        sendBtn.disabled = (input?.value.trim() ?? '') === '';
+      }
     }
   },
 
@@ -190,12 +249,22 @@ const ChatMessages = {
     const sendBtn = document.getElementById('sendBtn');
     if (!input || !sendBtn) return;
 
+    // Auto-resize textarea
     input.addEventListener('input', () => {
       input.style.height = 'auto';
       input.style.height = Math.min(input.scrollHeight, 120) + 'px';
-      sendBtn.disabled   = input.value.trim() === '';
+
+      const hasText = input.value.trim().length > 0;
+      sendBtn.disabled = !hasText;
+
+      // Typing signal driven purely by whether the box has text.
+      // No timers, no key tracking — if box has text we're typing, if empty we're not.
+      if (ChatState.currentConversation) {
+        ChatSSE.sendTyping(hasText);
+      }
     });
 
+    // Send on Enter (Shift+Enter inserts newline)
     input.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
@@ -206,26 +275,21 @@ const ChatMessages = {
     sendBtn.addEventListener('click', () => ChatMessages.send());
   },
 
-  /** Load messages for a chat from the backend. */
+  /**
+   * Load messages for a chat from the backend over HTTP (one-shot, pre-SSE).
+   * Once the SSE stream connects it replays history automatically, so this
+   * is a fallback shown while the SSE handshake is in progress.
+   *
+   * @param {string|number} chatId
+   */
   async loadMessages(chatId) {
-    try {
-      const response = await fetch(`/api/messages?chat_id=${chatId}&limit=50`);
-
-      if (!response.ok) {
-        console.warn('[messages] Load failed:', response.status);
-        return;
-      }
-
-      const data     = await response.json();
-      const messages = data.data?.messages ?? data.messages ?? [];
-
-      ChatState.messages[String(chatId)] = messages.map(m => this._fromApi(m));
-
-      try { ChatState.save(); } catch (_) {}
-      this.render(ChatState.getMessages(String(chatId)));
-
-    } catch (err) {
-      console.error('[messages] Error loading messages:', err);
+    // Immediately show whatever we have cached while waiting for SSE history
+    const cached = ChatState.getMessages(String(chatId));
+    if (cached.length) {
+      this.render(cached);
     }
+
+    // Connect (or switch) the SSE stream — it will replay history
+    ChatSSE.connect(chatId);
   },
 };
