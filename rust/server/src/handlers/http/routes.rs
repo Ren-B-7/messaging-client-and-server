@@ -10,7 +10,10 @@ use tracing::{info, warn};
 
 use crate::AppState;
 use crate::handlers::http::utils::headers::{decode_jwt_claims, validate_jwt_secure};
-use crate::handlers::http::{admin, messaging, profile, utils::*};
+use crate::handlers::http::{
+    admin, messaging, profile,
+    utils::{self, *},
+};
 
 use shared::types::cache::*;
 use shared::types::jwt::JwtClaims;
@@ -534,34 +537,30 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
                 .context("Group get failed")
         })
         // GET /api/groups/:id/members — list members of a group
-        .get_light(
-            "/api/groups/:id/members",
-            |req, state, claims| async move {
-                let group_id = req
-                    .uri()
-                    .path()
-                    .split('/')
-                    .nth(3)
-                    .and_then(|s| s.parse::<i64>().ok());
-                match group_id {
-                    Some(id) => messaging::handle_get_members(req, state, claims, id)
-                        .await
-                        .context("Get members failed"),
-                    None => json_response::deliver_error_json(
-                        "BAD_REQUEST",
-                        "Invalid group id",
-                        StatusCode::BAD_REQUEST,
-                    )
-                    .context("Bad request"),
-                }
-            },
-        )
+        .get_light("/api/groups/:id/members", |req, state, claims| async move {
+            let group_id = req
+                .uri()
+                .path()
+                .split('/')
+                .nth(3)
+                .and_then(|s| s.parse::<i64>().ok());
+            match group_id {
+                Some(id) => messaging::handle_get_members(req, state, claims, id)
+                    .await
+                    .context("Get members failed"),
+                None => json_response::deliver_error_json(
+                    "BAD_REQUEST",
+                    "Invalid group id",
+                    StatusCode::BAD_REQUEST,
+                )
+                .context("Bad request"),
+            }
+        })
         // ── Hard auth: JWT + DB session lookup + IP binding ───────────────────
         //
         // Every route that mutates state lives here.  Auth is performed by the
         // router before the handler is invoked; handlers receive the verified
         // user_id directly and must NOT repeat the auth call.
-
         // ── Messaging ────────────────────────────────────────────────────────
         .post_hard(
             "/api/messages/send",
@@ -594,12 +593,22 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
             },
         )
         // POST /api/typing — fire-and-forget typing indicator over SSE
+        .post_hard("/api/typing", |req, state, user_id, _claims| async move {
+            messaging::handle_typing(req, state, user_id)
+                .await
+                .context("Typing indicator failed")
+        })
+        .post_hard("/api/presence", |req, state, user_id, _claims| async move {
+            profile::handle_heartbeat(req, state, user_id)
+                .await
+                .context("Presence heartbeat failed")
+        })
         .post_hard(
-            "/api/typing",
+            "/api/presence/offline",
             |req, state, user_id, _claims| async move {
-                messaging::handle_typing(req, state, user_id)
+                profile::handle_set_offline(req, state, user_id)
                     .await
-                    .context("Typing indicator failed")
+                    .context("Presence offline failed")
             },
         )
         // ── Chats / groups ───────────────────────────────────────────────────
@@ -926,13 +935,12 @@ mod tests {
 
     #[tokio::test]
     async fn router_delete_hard_adds_hard_route() {
-        let r =
-            Router::new().delete_hard("/api/test", |_req, _state, _uid, _claims| async move {
-                Ok(Response::builder()
-                    .status(StatusCode::OK)
-                    .body(http_body_util::Full::new(Bytes::from("ok")).boxed())
-                    .unwrap())
-            });
+        let r = Router::new().delete_hard("/api/test", |_req, _state, _uid, _claims| async move {
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .body(http_body_util::Full::new(Bytes::from("ok")).boxed())
+                .unwrap())
+        });
         assert_eq!(r.routes.len(), 1);
         assert!(matches!(r.routes[0].kind, RouteKind::Hard(_)));
     }

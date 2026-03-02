@@ -8,7 +8,7 @@ use std::convert::Infallible;
 use tracing::{error, info, warn};
 
 use crate::AppState;
-use crate::database::login as db_login;
+use crate::database::{login as db_login, presence};
 use crate::handlers::http::utils::{
     create_persistent_cookie, create_session_cookie, deliver_redirect_with_cookie,
     deliver_serialized_json, encode_jwt, get_client_ip, get_user_agent, is_https,
@@ -61,7 +61,12 @@ pub async fn handle_login(
 
     match attempt_login(&login_data, &state, ip_address, user_agent).await {
         Ok((user_id, username, jwt)) => {
-            info!("User logged in successfully: {} (ID: {})", username, user_id);
+            info!(
+                "User logged in successfully: {} (ID: {})",
+                username, user_id
+            );
+
+            presence::touch_presence(&state.db, user_id).await?;
 
             let token_expiry_secs = state.config.read().await.auth.token_expiry_minutes * 60;
 
@@ -74,7 +79,10 @@ pub async fn handle_login(
                     .context("Failed to create session instance cookie")?
             };
 
-            Ok(deliver_redirect_with_cookie("/chat", Some(instance_cookie))?)
+            Ok(deliver_redirect_with_cookie(
+                "/chat",
+                Some(instance_cookie),
+            )?)
         }
         Err(e) => {
             warn!("Login failed: {:?}", e.to_code());
@@ -185,11 +193,12 @@ async fn attempt_login(
     }
 
     let password_valid =
-        crate::database::utils::verify_password(&user_auth.password_hash, &data.password)
-            .map_err(|e| {
+        crate::database::utils::verify_password(&user_auth.password_hash, &data.password).map_err(
+            |e| {
                 error!("Password verification error: {}", e);
                 LoginError::InternalError
-            })?;
+            },
+        )?;
 
     if !password_valid {
         warn!("Invalid password for user: {}", data.username);

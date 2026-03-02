@@ -29,6 +29,7 @@ use shared::types::settings::*;
 use shared::types::update::*;
 
 use crate::AppState;
+use crate::database::{login, password, presence, register, utils};
 use crate::handlers::http::utils::{
     create_session_cookie, deliver_error_json, deliver_serialized_json,
     deliver_serialized_json_with_cookie, is_https,
@@ -50,9 +51,9 @@ pub async fn handle_get_profile(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing get profile for user {}", claims.user_id);
 
-    use crate::database::register as db_register;
+    use crate::database::register;
 
-    let user = match db_register::get_user_by_id(&state.db, claims.user_id).await {
+    let user = match register::get_user_by_id(&state.db, claims.user_id).await {
         Ok(Some(u)) => u,
         Ok(None) => {
             return deliver_error_json("NOT_FOUND", "User not found", StatusCode::NOT_FOUND);
@@ -148,14 +149,12 @@ async fn update_user_profile(
     data: &UpdateProfileData,
     state: &AppState,
 ) -> std::result::Result<(), ProfileError> {
-    use crate::database::register as db_register;
-
     if let Some(ref new_username) = data.username {
-        if !crate::database::utils::is_valid_username(new_username) {
+        if !utils::is_valid_username(new_username) {
             return Err(ProfileError::InvalidUsername);
         }
 
-        let exists = db_register::username_exists(&state.db, new_username.clone())
+        let exists = register::username_exists(&state.db, new_username.clone())
             .await
             .map_err(|e| {
                 error!("Database error checking username: {}", e);
@@ -163,7 +162,7 @@ async fn update_user_profile(
             })?;
 
         if exists {
-            let current_user = db_register::get_user_by_id(&state.db, user_id)
+            let current_user = register::get_user_by_id(&state.db, user_id)
                 .await
                 .map_err(|_| ProfileError::DatabaseError)?
                 .ok_or(ProfileError::UserNotFound)?;
@@ -172,7 +171,7 @@ async fn update_user_profile(
                 return Err(ProfileError::UsernameTaken);
             }
         } else {
-            db_register::update_username(&state.db, user_id, new_username.clone())
+            register::update_username(&state.db, user_id, new_username.clone())
                 .await
                 .map_err(|e| {
                     error!("Database error updating username: {}", e);
@@ -182,11 +181,11 @@ async fn update_user_profile(
     }
 
     if let Some(ref new_email) = data.email {
-        if !crate::database::utils::is_valid_email(new_email) {
+        if !utils::is_valid_email(new_email) {
             return Err(ProfileError::InvalidEmail);
         }
 
-        let exists = db_register::email_exists(&state.db, new_email.clone())
+        let exists = register::email_exists(&state.db, new_email.clone())
             .await
             .map_err(|e| {
                 error!("Database error checking email: {}", e);
@@ -269,16 +268,16 @@ pub async fn handle_change_password(
 pub async fn handle_logout(
     req: Request<hyper::body::Incoming>,
     state: AppState,
-    _user_id: i64,
+    user_id: i64,
     claims: JwtClaims,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing logout for session {}", claims.session_id);
 
     let secure_cookie = is_https(&req);
 
-    use crate::database::login as db_login;
-    match db_login::delete_session_by_id(&state.db, claims.session_id).await {
-        Ok(_)  => info!("Session deleted on logout"),
+    presence::set_offline(&state.db, user_id).await?;
+    match login::delete_session_by_id(&state.db, claims.session_id).await {
+        Ok(_) => info!("Session deleted on logout"),
         Err(e) => error!("Failed to delete session: {}", e),
     }
 
@@ -305,9 +304,7 @@ pub async fn handle_logout_all(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing logout-all for user {}", user_id);
 
-    use crate::database::login as db_login;
-
-    match db_login::delete_all_user_sessions(&state.db, user_id).await {
+    match login::delete_all_user_sessions(&state.db, user_id).await {
         Ok(_) => {
             info!("All sessions deleted for user {}", user_id);
             deliver_serialized_json(
@@ -362,16 +359,14 @@ async fn parse_password_form(
     })
 }
 
-fn validate_password_change(
-    data: &ChangePasswordData,
-) -> std::result::Result<(), SettingsError> {
+fn validate_password_change(data: &ChangePasswordData) -> std::result::Result<(), SettingsError> {
     if data.new_password != data.confirm_password {
         return Err(SettingsError::PasswordMismatch);
     }
     if data.current_password == data.new_password {
         return Err(SettingsError::SamePassword);
     }
-    if !crate::database::utils::is_strong_password(&data.new_password) {
+    if !utils::is_strong_password(&data.new_password) {
         return Err(SettingsError::PasswordTooWeak);
     }
     Ok(())
@@ -382,9 +377,7 @@ async fn change_user_password(
     data: &ChangePasswordData,
     state: &AppState,
 ) -> std::result::Result<(), SettingsError> {
-    use crate::database::password as db_password;
-
-    let current_hash = db_password::get_password_hash(&state.db, user_id)
+    let current_hash = password::get_password_hash(&state.db, user_id)
         .await
         .map_err(|e| {
             error!("Database error getting password hash: {}", e);
@@ -393,23 +386,22 @@ async fn change_user_password(
         .ok_or(SettingsError::DatabaseError)?;
 
     let current_valid =
-        crate::database::utils::verify_password(&current_hash, &data.current_password)
-            .map_err(|e| {
-                error!("Password verification error: {}", e);
-                SettingsError::InternalError
-            })?;
+        utils::verify_password(&current_hash, &data.current_password).map_err(|e| {
+            error!("Password verification error: {}", e);
+            SettingsError::InternalError
+        })?;
 
     if !current_valid {
         warn!("Invalid current password for user {}", user_id);
         return Err(SettingsError::InvalidCurrentPassword);
     }
 
-    let new_hash = crate::database::utils::hash_password(&data.new_password).map_err(|e| {
+    let new_hash = utils::hash_password(&data.new_password).map_err(|e| {
         error!("Failed to hash new password: {}", e);
         SettingsError::InternalError
     })?;
 
-    db_password::change_password(&state.db, user_id, new_hash)
+    password::change_password(&state.db, user_id, new_hash)
         .await
         .map_err(|e| {
             error!("Database error updating password: {}", e);

@@ -10,39 +10,44 @@
  *   → chat.conversations.js → chat.sse.js → chat.init.js
  */
 
-document.addEventListener('DOMContentLoaded', async () => {
+function sendHeartbeat() {
+  fetch("/api/presence", { method: "POST" }).catch(() => {});
+}
 
+document.addEventListener("DOMContentLoaded", async () => {
   // ── Theme ──────────────────────────────────────────────────────────────────
-  themeManager.init(['base', 'chat']);
+  themeManager.init(["base", "chat"]);
 
-  document.getElementById('themeToggle')?.addEventListener('click', () => {
+  document.getElementById("themeToggle")?.addEventListener("click", () => {
     themeManager.toggle();
   });
 
   // ── Fetch current user from server ─────────────────────────────────────────
   // Always resolve identity from the API — localStorage may be stale or empty.
   try {
-    const res = await fetch('/api/profile');
+    const res = await fetch("/api/profile");
     if (res.ok) {
-      const data    = await res.json();
+      const data = await res.json();
       const profile = data.data ?? data;
       ChatState.currentUser = {
-        id:      Number(profile.user_id),
-        username: profile.username ?? '',
-        email:    profile.email    ?? '',
-        isAdmin:  profile.is_admin ?? false,
+        id: Number(profile.user_id),
+        username: profile.username ?? "",
+        email: profile.email ?? "",
+        isAdmin: profile.is_admin ?? false,
       };
-      Utils.setStorage('user', ChatState.currentUser);
-      console.info('[init] Current user:', ChatState.currentUser);
+      Utils.setStorage("user", ChatState.currentUser);
+      console.info("[init] Current user:", ChatState.currentUser);
     } else {
-      console.warn('[init] Could not fetch profile — sent messages may render incorrectly');
+      console.warn(
+        "[init] Could not fetch profile — sent messages may render incorrectly",
+      );
     }
   } catch (e) {
-    console.error('[init] Profile fetch failed:', e);
+    console.error("[init] Profile fetch failed:", e);
   }
 
   // ── Update avatar initials ─────────────────────────────────────────────────
-  const initialsEl = document.getElementById('userInitials');
+  const initialsEl = document.getElementById("userInitials");
   if (initialsEl && ChatState.currentUser) {
     initialsEl.textContent = Utils.getInitials(ChatState.currentUser.username);
   }
@@ -60,6 +65,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // ── Fetch fresh data from API on every page load ───────────────────────────
   await ChatConversations.refresh();
 
+  sendHeartbeat();
+  var _presenceTimer = setInterval(sendHeartbeat, 60_000);
+
   // ── Restore previously open conversation (if any) ─────────────────────────
   if (ChatState.currentConversation) {
     ChatConversations.open(
@@ -69,14 +77,23 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // ── Tear down SSE and clear transient data when the user leaves ─────────────
-  window.addEventListener('beforeunload', () => {
+  window.addEventListener("beforeunload", () => {
     // Cleanly close the SSE stream so the server reclaims the channel promptly.
     ChatSSE.disconnect();
 
     // Clear per-session data that is always re-fetched from the server on reload.
-    // Keep 'user' so other pages can read identity without an extra API call.
-    Utils.removeStorage('messages');
-    Utils.removeStorage('conversations');
-    Utils.removeStorage('groups');
+    navigator.sendBeacon("/api/presence/offline");
+    Utils.removeStorage("messages");
+    Utils.removeStorage("conversations");
+    Utils.removeStorage("groups");
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      clearInterval(_presenceTimer);
+    } else {
+      sendHeartbeat();
+      _presenceTimer = setInterval(sendHeartbeat, 60_000);
+    }
   });
 });

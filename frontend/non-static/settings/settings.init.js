@@ -8,26 +8,31 @@
  *   → settings.preferences.js → settings.init.js
  */
 
-document.addEventListener('DOMContentLoaded', () => {
-  // ── Theme ──────────────────────────────────────────────────────────────────
-  themeManager.init(['base', 'chat', 'settings']);
+function sendHeartbeat() {
+  fetch("/api/presence", { method: "POST" }).catch(() => {});
+}
 
-  document.getElementById('themeToggle')?.addEventListener('click', () => {
+document.addEventListener("DOMContentLoaded", () => {
+  // ── Theme ──────────────────────────────────────────────────────────────────
+  themeManager.init(["base", "chat", "settings"]);
+
+  document.getElementById("themeToggle")?.addEventListener("click", () => {
     themeManager.toggle();
   });
 
   // ── User data ──────────────────────────────────────────────────────────────
   // Read from storage — never rely on a bare `user` global.
-  const user = Utils.getStorage('user') || {};
+  const user = Utils.getStorage("user") || {};
 
   // ── Navbar avatar ──────────────────────────────────────────────────────────
-  const initialsEl = document.getElementById('userInitials');
-  if (initialsEl) initialsEl.textContent = Utils.getInitials(user.name || user.email || '?');
+  const initialsEl = document.getElementById("userInitials");
+  if (initialsEl)
+    initialsEl.textContent = Utils.getInitials(user.name || user.email || "?");
 
   // ── Platform info (Help tab) ───────────────────────────────────────────────
-  const platformEl = document.getElementById('platformInfo');
+  const platformEl = document.getElementById("platformInfo");
   if (platformEl && window.PlatformConfig) {
-    platformEl.textContent = window.PlatformConfig.platform || 'Web';
+    platformEl.textContent = window.PlatformConfig.platform || "Web";
   }
 
   // ── Boot sub-modules ───────────────────────────────────────────────────────
@@ -41,4 +46,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
   SettingsPreferences.load();
   SettingsPreferences.setup();
+
+  sendHeartbeat();
+  var _presenceTimer = setInterval(sendHeartbeat, 60_000);
+
+  window.addEventListener("beforeunload", () => {
+    navigator.sendBeacon("/api/presence/offline");
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      clearInterval(_presenceTimer);
+    } else {
+      sendHeartbeat();
+      _presenceTimer = setInterval(sendHeartbeat, 60_000);
+    }
+  });
 });

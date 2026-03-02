@@ -3,7 +3,7 @@ use tracing::{info, warn};
 
 /// Current schema version.  Bump this whenever the schema changes and add a
 /// corresponding migration arm in `run_migrations`.
-const SCHEMA_VERSION: u32 = 4;
+const SCHEMA_VERSION: u32 = 5;
 
 /// Initialize the database schema and run any pending migrations.
 pub async fn create_tables(conn: &Connection) -> Result<()> {
@@ -117,6 +117,20 @@ async fn create_schema(conn: &Connection) -> Result<()> {
             [],
         )?;
 
+        // Presence table — one row per user, upserted on every heartbeat.
+        // is_online is also set to 0 on explicit logout / tab-close beacon.
+        // last_seen is always updated so timed-out rows can be swept by a
+        // background task without a full table scan on every read query.
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS user_presence (
+                user_id   INTEGER PRIMARY KEY,
+                last_seen INTEGER NOT NULL,
+                is_online INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )",
+            [],
+        )?;
+
         // --- Indexes --------------------------------------------------------
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_users_username      ON users(username)",
@@ -156,6 +170,10 @@ async fn create_schema(conn: &Connection) -> Result<()> {
         )?;
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_groups_chat_type    ON groups(chat_type)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_presence_last_seen  ON user_presence(last_seen)",
             [],
         )?;
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
@@ -409,8 +427,37 @@ async fn run_migrations(conn: &Connection) -> Result<()> {
         info!("Schema version set to 4.");
     }
 
+    // ── v4 → v5: add user_presence table ─────────────────────────────────
+    if current_version < 5 {
+        conn.call(|conn| {
+            conn.execute_batch(
+                "
+                BEGIN;
+
+                CREATE TABLE IF NOT EXISTS user_presence (
+                    user_id   INTEGER PRIMARY KEY,
+                    last_seen INTEGER NOT NULL,
+                    is_online INTEGER NOT NULL DEFAULT 0,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_presence_last_seen
+                    ON user_presence(last_seen);
+
+                PRAGMA user_version = 5;
+
+                COMMIT;
+                ",
+            )?;
+            Ok::<_, rusqlite::Error>(())
+        })
+        .await?;
+
+        info!("Schema version set to 5 (user_presence table added).");
+    }
+
     // Add future migration arms here:
-    // if current_version < 5 { ... }
+    // if current_version < 6 { ... }
 
     Ok(())
 }

@@ -124,6 +124,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let jwt_secret = app_config.auth.resolved_jwt_secret().unwrap();
 
     let live_config = LiveConfig::new(app_config);
+
     let state = AppState::new(live_config, db, jwt_secret);
 
     // Read the ports once at startup — these are fixed for the lifetime of the
@@ -147,8 +148,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let admin_state = state.clone();
 
     let cleanup_state = state.clone();
-    let sse_state = state.clone();
-    let metrics_state = state.clone();
+    let sse_manager_clone = state.clone().sse_manager;
+    let metrics_clone = state.clone().metrics;
+    let presence_db = state.clone().db;
 
     // Rate limiter cleanup
     tokio::spawn(async move {
@@ -160,22 +162,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     });
 
-    // SSE cleanup
+    // Metric snapshot + sse cleanup + stale presence cleanup
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(30));
         loop {
             interval.tick().await;
-            sse_state.sse_manager.cleanup().await;
-            debug!("SSE manager cleanup completed");
-        }
-    });
+            // SSE State cleanup before snapshots
+            sse_manager_clone.cleanup().await;
+            info!("SSE manager cleanup completed");
 
-    // Metric snapshot
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(30));
-        loop {
-            interval.tick().await;
-            let snapshot = metrics_state.metrics.snapshot().await;
+            if let Err(e) = database::presence::cleanup_stale_presence(&presence_db).await {
+                warn!("[presence] stale sweep error: {}", e);
+            }
+
+            let snapshot = metrics_clone.snapshot().await;
             info!("{}", snapshot.format());
         }
     });

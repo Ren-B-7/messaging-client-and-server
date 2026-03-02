@@ -315,9 +315,8 @@
   overflow-x: hidden;
   padding: var(--space-6);
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse;   /* newest message at top, older ones below */
   gap: var(--space-4);
-  /* Ensure new messages scroll into view at the bottom */
   scroll-behavior: smooth;
 }
 

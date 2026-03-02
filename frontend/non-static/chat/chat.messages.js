@@ -53,8 +53,12 @@ const ChatMessages = {
       return;
     }
 
-    container.innerHTML = messages.map(msg => this._renderItem(msg)).join('');
-    container.scrollTop = container.scrollHeight;
+    // column-reverse renders the last DOM child at the top visually,
+    // so we reverse the array so the newest message ends up at the top.
+    const reversed = [...messages].reverse();
+    container.innerHTML = reversed.map(msg => this._renderItem(msg)).join('');
+    // column-reverse means scrollTop=0 is the newest (top) — reset to top on load
+    container.scrollTop = 0;
   },
 
   /** @returns {string} HTML for a single message bubble. */
@@ -126,12 +130,11 @@ const ChatMessages = {
     el.innerHTML = html.trim();
     const node = el.firstElementChild;
     if (node) {
-      container.appendChild(node);
-      // Only auto-scroll if the user is already near the bottom (within 120px)
-      const threshold = 120;
-      const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
-      if (nearBottom) {
-        container.scrollTop = container.scrollHeight;
+      // column-reverse: prepending puts the new message at the visual top
+      container.prepend(node);
+      // Auto-scroll to top (newest) only if the user is already there (within 120px)
+      if (container.scrollTop < 120) {
+        container.scrollTop = 0;
       }
     }
   },
