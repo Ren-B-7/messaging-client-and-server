@@ -14,7 +14,7 @@ use tracing::{error, info};
 
 use crate::AppState;
 use crate::handlers::http::auth::handle_admin_login;
-use crate::handlers::http::routes::{Router, build_api_router_with_config};
+use crate::handlers::http::routes::{Router, build_admin_api_routes, build_api_router_with_config};
 use crate::handlers::http::{admin::*, utils::*};
 
 /// Admin service implementation
@@ -121,7 +121,9 @@ pub fn build_admin_router_with_config(
         .map(|d| -> &'static str { Box::leak(d.into_boxed_str()) })
         .unwrap_or("");
 
-    let mut router = build_api_router_with_config(web_dir_static, icons_dir_static);
+    // Start with shared API routes, then layer on admin-specific routes.
+    let base = build_api_router_with_config(web_dir_static, icons_dir_static);
+    let mut router = build_admin_api_routes(base);
 
     router = router
         .get("/", move |_req, _state| async move {
@@ -153,85 +155,11 @@ pub fn build_admin_router_with_config(
             deliver_html_page(path).context("failed to deliver admin dashboard page")
         })
         // ── Stats ───────────────────────────────────────────────────────────
-        .get_light("/admin/stats", |req, state, claims| async move {
-            if !claims.is_admin {
-                return deliver_error_json("FORBIDDEN", "Insufficient privileges", StatusCode::FORBIDDEN);
-            }
-            handle_server_config(req, state, 0).await
-        })
-        .get_light("/admin/api/stats", |req, state, claims| async move {
-            if !claims.is_admin {
-                return deliver_error_json("FORBIDDEN", "Insufficient privileges", StatusCode::FORBIDDEN);
-            }
-            handle_server_config(req, state, 0).await
-        })
-        // ── User list ────────────────────────────────────────────────────────
-        .get_light("/admin/users", |req, state, claims| async move {
-            if !claims.is_admin {
-                return deliver_error_json("FORBIDDEN", "Insufficient privileges", StatusCode::FORBIDDEN);
-            }
-            handle_get_users(req, state, 0).await
-        })
-        .get_light("/admin/api/users", |req, state, claims| async move {
-            if !claims.is_admin {
-                return deliver_error_json("FORBIDDEN", "Insufficient privileges", StatusCode::FORBIDDEN);
-            }
-            handle_get_users(req, state, 0).await
-        })
-        // ── Ban / unban ──────────────────────────────────────────────────────
-        .post_hard("/admin/ban", |req, state, user_id, claims| async move {
-            if !claims.is_admin {
-                return deliver_error_json("FORBIDDEN", "Insufficient privileges", StatusCode::FORBIDDEN);
-            }
-            handle_ban_user(req, state, user_id).await
-        })
-        .post_hard("/admin/api/users/ban", |req, state, user_id, claims| async move {
-            if !claims.is_admin {
-                return deliver_error_json("FORBIDDEN", "Insufficient privileges", StatusCode::FORBIDDEN);
-            }
-            handle_ban_user(req, state, user_id).await
-        })
-        .post_hard("/admin/unban", |req, state, user_id, claims| async move {
-            if !claims.is_admin {
-                return deliver_error_json("FORBIDDEN", "Insufficient privileges", StatusCode::FORBIDDEN);
-            }
-            handle_unban_user(req, state, user_id).await
-        })
-        .post_hard("/admin/api/users/unban", |req, state, user_id, claims| async move {
-            if !claims.is_admin {
-                return deliver_error_json("FORBIDDEN", "Insufficient privileges", StatusCode::FORBIDDEN);
-            }
-            handle_unban_user(req, state, user_id).await
-        })
-        // ── Delete user ──────────────────────────────────────────────────────
-        .delete_hard("/admin/users/:id", |req, state, user_id, claims| async move {
-            if !claims.is_admin {
-                return deliver_error_json("FORBIDDEN", "Insufficient privileges", StatusCode::FORBIDDEN);
-            }
-            handle_delete_user(req, state, user_id).await
-        })
-        .delete_hard("/admin/api/users/:id", |req, state, user_id, claims| async move {
-            if !claims.is_admin {
-                return deliver_error_json("FORBIDDEN", "Insufficient privileges", StatusCode::FORBIDDEN);
-            }
-            handle_delete_user(req, state, user_id).await
-        })
-        // ── Promote / demote ─────────────────────────────────────────────────
-        .post_hard("/admin/api/users/promote", |req, state, user_id, claims| async move {
-            if !claims.is_admin {
-                return deliver_error_json("FORBIDDEN", "Insufficient privileges", StatusCode::FORBIDDEN);
-            }
-            handle_promote_user(req, state, user_id)
-                .await
-                .context("Promote failed")
-        })
-        .post_hard("/admin/api/users/demote", |req, state, user_id, claims| async move {
-            if !claims.is_admin {
-                return deliver_error_json("FORBIDDEN", "Insufficient privileges", StatusCode::FORBIDDEN);
-            }
-            handle_demote_user(req, state, user_id)
-                .await
-                .context("Demote failed")
+        .get("/admin/health", |_req, _state| async move {
+            deliver_serialized_json(
+                &serde_json::json!({"status":"success","service":"admin","health":"ok"}),
+                StatusCode::OK,
+            )
         })
         .post("/admin/api/login", |req, state| async move {
             handle_admin_login(req, state)
@@ -247,13 +175,6 @@ pub fn build_admin_router_with_config(
             handle_admin_login(req, state)
                 .await
                 .context("Login attempt failed")
-        })
-        // ── Health check ─────────────────────────────────────────────────────
-        .get("/admin/health", |_req, _state| async move {
-            deliver_serialized_json(
-                &serde_json::json!({"status":"success","service":"admin","health":"ok"}),
-                StatusCode::OK,
-            )
         });
 
     router

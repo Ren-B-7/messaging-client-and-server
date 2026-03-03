@@ -164,63 +164,6 @@ impl Metrics {
             latency_p99: latencies.percentile(99.0),
         }
     }
-
-    /// Get metrics in Prometheus format
-    pub async fn prometheus(&self) -> String {
-        let snap = self.snapshot().await;
-
-        format!(
-            "# HELP http_requests_total Total HTTP requests\n\
-             # TYPE http_requests_total counter\n\
-             http_requests_total {}\n\
-             \n\
-             # HELP http_active_connections Currently active connections\n\
-             # TYPE http_active_connections gauge\n\
-             http_active_connections {}\n\
-             \n\
-             # HELP http_errors_total Total HTTP errors\n\
-             # TYPE http_errors_total counter\n\
-             http_errors_total {}\n\
-             \n\
-             # HELP http_bytes_sent_total Total bytes sent\n\
-             # TYPE http_bytes_sent_total counter\n\
-             http_bytes_sent_total {}\n\
-             \n\
-             # HELP http_bytes_received_total Total bytes received\n\
-             # TYPE http_bytes_received_total counter\n\
-             http_bytes_received_total {}\n\
-             \n\
-             # HELP http_rate_limited_total Total rate limited requests\n\
-             # TYPE http_rate_limited_total counter\n\
-             http_rate_limited_total {}\n\
-             \n\
-             # HELP http_ip_blocked_total Total IP blocked requests\n\
-             # TYPE http_ip_blocked_total counter\n\
-             http_ip_blocked_total {}\n\
-             \n\
-             # HELP http_request_duration_seconds Request duration\n\
-             # TYPE http_request_duration_seconds summary\n\
-             http_request_duration_seconds{{quantile=\"0.5\"}} {}\n\
-             http_request_duration_seconds{{quantile=\"0.95\"}} {}\n\
-             http_request_duration_seconds{{quantile=\"0.99\"}} {}\n\
-             http_request_duration_seconds_sum {}\n\
-             http_request_duration_seconds_count {}\n",
-            snap.total_requests,
-            snap.active_connections,
-            snap.error_count,
-            snap.bytes_sent,
-            snap.bytes_received,
-            snap.rate_limited,
-            snap.ip_blocked,
-            snap.latency_p50.map(|d| d.as_secs_f64()).unwrap_or(0.0),
-            snap.latency_p95.map(|d| d.as_secs_f64()).unwrap_or(0.0),
-            snap.latency_p99.map(|d| d.as_secs_f64()).unwrap_or(0.0),
-            snap.latency_avg
-                .map(|d| d.as_secs_f64() * snap.total_requests as f64)
-                .unwrap_or(0.0),
-            snap.total_requests,
-        )
-    }
 }
 
 impl Default for Metrics {

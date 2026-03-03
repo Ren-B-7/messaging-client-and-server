@@ -1,7 +1,7 @@
 #[allow(dead_code)]
 pub mod ban;
 pub mod create;
-#[allow(dead_call)]
+#[allow(dead_code)]
 pub mod groups;
 #[allow(dead_code)]
 pub mod login;

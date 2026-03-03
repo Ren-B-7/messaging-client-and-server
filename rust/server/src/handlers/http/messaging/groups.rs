@@ -137,6 +137,7 @@ pub async fn handle_get_members(
     chat_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     use crate::database::groups as db_groups;
+    use crate::database::register as db_register;
 
     info!("Fetching members for group {}", chat_id);
 
@@ -144,18 +145,24 @@ pub async fn handle_get_members(
         .await
         .context("Failed to fetch group members")?;
 
-    let members_json: Vec<serde_json::Value> = members
-        .into_iter()
-        .map(|m| {
-            serde_json::json!({
-                "user_id":   m.user_id,
-                "username":  m.username,
-                "chat_id":  m.chat_id,
-                "role":      m.role,
-                "joined_at": m.joined_at,
-            })
-        })
-        .collect();
+    // Resolve usernames for each member
+    let mut members_json: Vec<serde_json::Value> = Vec::with_capacity(members.len());
+    for m in members {
+        let username = db_register::get_user_by_id(&state.db, m.user_id)
+            .await
+            .ok()
+            .flatten()
+            .map(|u| u.username)
+            .unwrap_or_else(|| format!("user_{}", m.user_id));
+
+        members_json.push(serde_json::json!({
+            "user_id":   m.user_id,
+            "username":  username,
+            "chat_id":   m.chat_id,
+            "role":      m.role,
+            "joined_at": m.joined_at,
+        }));
+    }
 
     deliver_success_json(
         Some(serde_json::json!({
@@ -307,7 +314,7 @@ pub async fn handle_rename_group(
         );
     }
 
-    db_groups::rename_group(&state.db, chat_id, &new_name)
+    db_groups::update_group_name(&state.db, chat_id, new_name.clone())
         .await
         .context("Failed to rename group")?;
 
