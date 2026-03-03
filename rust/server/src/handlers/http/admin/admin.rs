@@ -12,7 +12,9 @@ use tracing::{info, warn};
 use crate::AppState;
 use crate::database::ban as db_ban;
 use crate::database::register as db_register;
-use crate::handlers::http::utils::{deliver_serialized_json, deliver_success_json};
+use crate::handlers::http::utils::{
+    deliver_error_json, deliver_serialized_json, deliver_success_json,
+};
 use shared::types::server_stats::{DatabaseInfo, ServerStats};
 
 // ── Handlers ──────────────────────────────────────────────────────────────
@@ -375,6 +377,23 @@ pub async fn handle_server_config(
     };
 
     deliver_serialized_json(&stats, StatusCode::OK)
+}
+
+async fn metrics_json(
+    _req: Request<IncomingBody>,
+    state: AppState,
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    let snapshot = state.metrics.snapshot().await;
+
+    let out = match serde_json::to_string(&snapshot) {
+        Ok(j) => deliver_serialized_json(&j, StatusCode::OK),
+        Err(_) => deliver_error_json(
+            "Failed",
+            "Failed to serialize snapshot",
+            StatusCode::EXPECTATION_FAILED,
+        ),
+    };
+    return out;
 }
 
 #[cfg(test)]

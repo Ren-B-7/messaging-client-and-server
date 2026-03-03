@@ -1,6 +1,8 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
+
+use serde::Serialize;
 use tokio::sync::RwLock;
 
 /// Simple metrics tracking for HTTP server
@@ -227,7 +229,7 @@ impl Default for Metrics {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct MetricsSnapshot {
     pub total_requests: u64,
     pub active_connections: usize,
