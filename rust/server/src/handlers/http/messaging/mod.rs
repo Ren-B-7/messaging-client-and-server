@@ -9,6 +9,6 @@ pub use messages::{handle_get_messages, handle_mark_read, handle_send_message, h
 
 // Group management
 pub use groups::{
-    handle_add_member, handle_create_group, handle_get_groups, handle_get_members,
-    handle_remove_member,
+    handle_add_member, handle_create_group, handle_delete_group, handle_get_groups,
+    handle_get_members, handle_remove_member, handle_rename_group, handle_search_users,
 };

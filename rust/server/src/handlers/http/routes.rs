@@ -650,6 +650,52 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
                 }
             },
         )
+        // PATCH /api/groups/:id — rename a group
+        .patch_hard("/api/groups/:id", |req, state, user_id, _claims| async move {
+            let group_id = req
+                .uri()
+                .path()
+                .split('/')
+                .nth(3)
+                .and_then(|s| s.parse::<i64>().ok());
+            match group_id {
+                Some(id) => messaging::handle_rename_group(req, state, user_id, id)
+                    .await
+                    .context("Rename group failed"),
+                None => json_response::deliver_error_json(
+                    "BAD_REQUEST",
+                    "Invalid group id",
+                    StatusCode::BAD_REQUEST,
+                )
+                .context("Bad request"),
+            }
+        })
+        // DELETE /api/groups/:id — delete a group
+        .delete_hard("/api/groups/:id", |req, state, user_id, _claims| async move {
+            let group_id = req
+                .uri()
+                .path()
+                .split('/')
+                .nth(3)
+                .and_then(|s| s.parse::<i64>().ok());
+            match group_id {
+                Some(id) => messaging::handle_delete_group(req, state, user_id, id)
+                    .await
+                    .context("Delete group failed"),
+                None => json_response::deliver_error_json(
+                    "BAD_REQUEST",
+                    "Invalid group id",
+                    StatusCode::BAD_REQUEST,
+                )
+                .context("Bad request"),
+            }
+        })
+        // GET /api/users/search?q= — search users by username
+        .get_light("/api/users/search", |req, state, claims| async move {
+            messaging::handle_search_users(req, state, claims)
+                .await
+                .context("User search failed")
+        })
         // ── Profile ──────────────────────────────────────────────────────────
         .post_hard(
             "/api/profile/update",

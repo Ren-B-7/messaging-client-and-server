@@ -40,3 +40,14 @@
 :root[data-theme="dark"] .message-read-tick--sent {
   color: #6e7681;
 }
+
+/* ── Group settings dark overrides ── */
+
+:root[data-theme="dark"] .group-members-list {
+  border-color: var(--border);
+}
+
+:root[data-theme="dark"] .group-search-results {
+  background: #1c2127;
+  border-color: var(--border);
+}
