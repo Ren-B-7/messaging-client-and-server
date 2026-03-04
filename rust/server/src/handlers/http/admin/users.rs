@@ -9,8 +9,7 @@ use hyper::{Request, Response, StatusCode};
 use tracing::info;
 
 use crate::AppState;
-use crate::database::ban as db_ban;
-use crate::database::register as db_register;
+use crate::database::{ban as db_ban, register as db_register, utils::get_timestamp};
 use crate::handlers::http::utils::{deliver_serialized_json, deliver_success_json};
 
 /// GET /admin/api/users — list all users.
@@ -68,7 +67,7 @@ pub async fn handle_get_sessions(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Serving session list");
 
-    let now = crate::database::utils::now_unix();
+    let now = get_timestamp();
 
     let sessions = state
         .db
@@ -85,7 +84,7 @@ pub async fn handle_get_sessions(
             let rows = stmt
                 .query_map([now], |row| {
                     Ok(serde_json::json!({
-                        "id":         row.get::<_, String>(0)?,
+                        "id":         row.get::<_, i64>(0)?,
                         "user_id":    row.get::<_, i64>(1)?,
                         "username":   row.get::<_, String>(2)?,
                         "ip_address": row.get::<_, Option<String>>(3)?,

@@ -32,13 +32,6 @@ const AdminState = {
   },
 
   // ── Users ─────────────────────────────────────────────────────────────────
-
-  setUserBanned(id, banned) {
-    const u = this.users.find((u) => u.id === id);
-    if (u) u.banned = banned;
-  },
-
-  removeUser(id) {
-    this.users = this.users.filter((u) => u.id !== id);
-  },
+  // User list is always re-fetched from the API after mutations.
+  // No local state is maintained for individual user fields.
 };

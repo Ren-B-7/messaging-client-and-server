@@ -86,8 +86,7 @@ const AdminActions = {
           `Banned user <strong>#${userId}</strong>${reason ? ` — ${reason}` : ""}`,
         );
         this.closeModal("ban-modal");
-        AdminState.setUserBanned(Number(userId), true);
-        AdminUsers.filter();
+        AdminUsers.reload();
       } else {
         AdminUI.toast(res.message || "Ban failed", "error");
         AdminUI.logAction(
@@ -128,8 +127,7 @@ const AdminActions = {
           `Unbanned user <strong>#${userId}</strong>`,
         );
         this.closeModal("unban-modal");
-        AdminState.setUserBanned(Number(userId), false);
-        AdminUsers.filter();
+        AdminUsers.reload();
       } else {
         AdminUI.toast(res.message || "Unban failed", "error");
         AdminUI.logAction(
@@ -167,8 +165,7 @@ const AdminActions = {
         AdminUI.toast(`User #${userId} has been deleted`, "success");
         AdminUI.logAction("error", `Deleted user <strong>#${userId}</strong>`);
         this.closeModal("delete-modal");
-        AdminState.removeUser(Number(userId));
-        AdminUsers.filter();
+        AdminUsers.reload();
       } else {
         AdminUI.toast(res.message || "Delete failed", "error");
         AdminUI.logAction(

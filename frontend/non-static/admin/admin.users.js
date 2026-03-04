@@ -52,7 +52,7 @@ const AdminUsers = {
   },
 
   reload() {
-    this.load(true);
+    this.loadUsers(true);
   },
 
   renderTable(users) {
@@ -290,22 +290,28 @@ const AdminUsers = {
     if (!tbody) return;
 
     if (!sessions.length) {
-      tbody.innerHTML = `<tr><td colspan="5">${AdminUI.emptyHtml("🔑", "No active sessions.")}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="5">${AdminUI.emptyHtml("🔑", "No sessions.")}</td></tr>`;
       return;
     }
 
+    const nowSecs = Date.now() / 1000;
+
     tbody.innerHTML = sessions
       .map((s) => {
+        const expired = s.expires_at <= nowSecs;
         const created = new Date(s.created_at * 1000).toLocaleString();
         const expires = new Date(s.expires_at * 1000).toLocaleString();
+        const expiresCell = expired
+          ? `<span class="session-expired">${expires} <span class="badge badge-red">Expired</span></span>`
+          : expires;
         return `
-      <tr>
+      <tr class="${expired ? "is-expired" : ""}">
         <td><span class="user-name">${Utils.escapeHtml(s.username)}</span>
             <div class="user-id">#${s.user_id}</div></td>
-        <td><code>${Utils.escapeHtml(s.id.slice(0, 8))}…</code></td>
+        <td><code>${Utils.escapeHtml(String(s.id).slice(0, 8))}…</code></td>
         <td>${Utils.escapeHtml(s.ip_address || "—")}</td>
         <td>${created}</td>
-        <td>${expires}</td>
+        <td>${expiresCell}</td>
       </tr>`;
       })
       .join("");

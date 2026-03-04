@@ -91,6 +91,9 @@ window.addEventListener("DOMContentLoaded", () => {
     .getElementById("reload-users-btn-tab")
     ?.addEventListener("click", () => AdminUsers.reload());
   document
+    .getElementById("reload-sessions-btn")
+    ?.addEventListener("click", () => AdminUsers.loadSessions());
+  document
     .getElementById("reload-stats-btn")
     ?.addEventListener("click", () => AdminUsers.loadStats());
   document
