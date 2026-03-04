@@ -340,11 +340,8 @@ mod message_tests {
     fn all_message_error_codes_are_unique() {
         let codes = [
             MessageError::Unauthorized.to_code(),
-            MessageError::MissingRecipient.to_code(),
-            MessageError::InvalidRecipient.to_code(),
             MessageError::MessageTooLong.to_code(),
             MessageError::EmptyMessage.to_code(),
-            MessageError::MissingField("x".into()).to_code(),
             MessageError::DatabaseError.to_code(),
             MessageError::InternalError.to_code(),
         ];
@@ -399,10 +396,9 @@ mod message_tests {
 
     #[test]
     fn send_message_data_deserializes_group_id() {
-        let json = r#"{"group_id": 7, "content": "hello"}"#;
+        let json = r#"{"chat_id": 7, "content": "hello"}"#;
         let d: SendMessageData = serde_json::from_str(json).unwrap();
-        assert_eq!(d.group_id, Some(7));
-        assert!(d.recipient_id.is_none());
+        assert_eq!(d.chat_id, 7);
     }
 }
 

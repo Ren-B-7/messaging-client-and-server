@@ -14,7 +14,6 @@
 // Auth is performed by the router before any handler is called.
 // No handler touches decode_jwt_claims or validate_jwt_secure internally.
 
-use std::collections::HashMap;
 use std::convert::Infallible;
 
 use anyhow::{Context, Result};
@@ -91,7 +90,7 @@ pub async fn handle_update_profile(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing update profile for user {}", user_id);
 
-    let update_data = match parse_update_form(req).await {
+    let update_data = match parse_update_body(req).await {
         Ok(data) => data,
         Err(err) => {
             warn!("Profile update parsing failed: {:?}", err.to_code());
@@ -116,7 +115,22 @@ pub async fn handle_update_profile(
     }
 }
 
-async fn parse_update_form(
+async fn parse_body(
+    req: Request<hyper::body::Incoming>,
+) -> std::result::Result<ProfileData, ProfileError> {
+    let body = req
+        .collect()
+        .await
+        .map_err(|_| ProfileError::InternalError)?
+        .to_bytes();
+
+    serde_json::from_slice::<ProfileData>(&body).map_err(|e| {
+        error!("Failed to parse admin login JSON: {}", e);
+        ProfileError::InternalError
+    })
+}
+
+async fn parse_update_body(
     req: Request<hyper::body::Incoming>,
 ) -> std::result::Result<UpdateProfileData, ProfileError> {
     let body = req
@@ -125,23 +139,11 @@ async fn parse_update_form(
         .map_err(|_| ProfileError::InternalError)?
         .to_bytes();
 
-    let params = form_urlencoded::parse(body.as_ref())
-        .into_owned()
-        .collect::<HashMap<String, String>>();
-
-    let username = params
-        .get("username")
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-
-    let email = params
-        .get("email")
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-
-    Ok(UpdateProfileData { username, email })
+    serde_json::from_slice::<UpdateProfileData>(&body).map_err(|e| {
+        error!("Failed to parse admin login JSON: {}", e);
+        ProfileError::InternalError
+    })
 }
-
 async fn update_user_profile(
     user_id: i64,
     data: &UpdateProfileData,
@@ -328,29 +330,9 @@ async fn parse_password_form(
         .map_err(|_| SettingsError::InternalError)?
         .to_bytes();
 
-    let params = form_urlencoded::parse(body.as_ref())
-        .into_owned()
-        .collect::<HashMap<String, String>>();
-
-    let current_password = params
-        .get("current_password")
-        .ok_or(SettingsError::MissingField("current_password".to_string()))?
-        .to_string();
-
-    let new_password = params
-        .get("new_password")
-        .ok_or(SettingsError::MissingField("new_password".to_string()))?
-        .to_string();
-
-    let confirm_password = params
-        .get("confirm_password")
-        .ok_or(SettingsError::MissingField("confirm_password".to_string()))?
-        .to_string();
-
-    Ok(ChangePasswordData {
-        current_password,
-        new_password,
-        confirm_password,
+    serde_json::from_slice::<ChangePasswordData>(&body).map_err(|e| {
+        error!("Failed to parse change password JSON: {}", e);
+        SettingsError::InternalError
     })
 }
 
@@ -404,6 +386,59 @@ async fn change_user_password(
         })?;
 
     Ok(())
+}
+
+// ===========================================================================
+// delete
+// ===========================================================================
+
+/// DELETE /api/user — permanently delete the authenticated user's own account.
+///
+/// Hard-auth: `user_id` and `claims` are pre-verified by the router (JWT + DB + IP).
+/// Sequence:
+///   1. Revoke every session for this user so no token can be reused.
+///   2. Delete the user row (cascades to any FK-constrained child rows).
+///   3. Clear the auth cookie so the browser drops the session immediately.
+pub async fn handle_delete_profile(
+    req: Request<hyper::body::Incoming>,
+    state: AppState,
+    user_id: i64,
+    _claims: JwtClaims,
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    info!("Processing account deletion for user {}", user_id);
+
+    let secure_cookie = is_https(&req);
+
+    // Revoke all sessions first so any in-flight requests are dead.
+    match login::delete_all_user_sessions(&state.db, user_id).await {
+        Ok(_) => info!("All sessions revoked for deleted user {}", user_id),
+        Err(e) => error!("Failed to revoke sessions for user {}: {}", user_id, e),
+    }
+
+    // Delete the user row.
+    state
+        .db
+        .call(move |conn| {
+            conn.execute("DELETE FROM users WHERE id = ?1", [user_id])?;
+            Ok::<_, rusqlite::Error>(())
+        })
+        .await
+        .context("Failed to delete user account")?;
+
+    info!("Account deleted for user {}", user_id);
+
+    let clear_cookie = create_session_cookie("auth_id", "", secure_cookie)
+        .context("Failed to create clear-cookie header")?;
+
+    let response_body = SettingsResponse::Success {
+        message: "Account deleted successfully".to_string(),
+    };
+
+    Ok(deliver_serialized_json_with_cookie(
+        &response_body,
+        StatusCode::OK,
+        clear_cookie,
+    )?)
 }
 
 // ===========================================================================

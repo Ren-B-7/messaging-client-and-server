@@ -1,69 +1,183 @@
 /**
  * Settings — Account Actions
- * Populates the account email field and handles the change-password
- * and delete-account flows.
+ * Handles the change-password and delete-account flows via JSON API.
+ * Expects the following input IDs in the HTML:
+ *   Change password: #currentPassword, #newPassword, #confirmPassword
+ *                    #changePasswordBtn, #password-feedback
+ *   Delete account:  #deleteEmailConfirm, #deleteAccountBtn, #delete-feedback
  * Depends on: Utils
  */
 
 const SettingsAccount = {
   /**
-   * Populate the account email input.
+   * Populate the account email field.
    * @param {object} user
    */
   load(user) {
-    const emailInput = document.getElementById('accountEmail');
-    if (emailInput) emailInput.value = user.email || '';
+    const emailInput = document.getElementById("accountEmail");
+    if (emailInput) emailInput.value = user.email || "";
   },
 
   /** Attach click handlers for change-password and delete-account buttons. */
   setup() {
-    document.getElementById('changePasswordBtn')?.addEventListener('click', () => {
-      this._changePassword();
-    });
+    document
+      .getElementById("changePasswordBtn")
+      ?.addEventListener("click", () => {
+        this._changePassword();
+      });
 
-    document.getElementById('deleteAccountBtn')?.addEventListener('click', () => {
-      this._deleteAccount();
-    });
+    document
+      .getElementById("deleteAccountBtn")
+      ?.addEventListener("click", () => {
+        this._deleteAccount();
+      });
   },
 
-  _changePassword() {
-    const current  = prompt('Enter current password:');
-    if (!current) return;
+  // ── Private ───────────────────────────────────────────────────────────────
 
-    const next = prompt('Enter new password:');
-    if (!next) return;
+  async _changePassword() {
+    const current = document.getElementById("currentPassword")?.value.trim();
+    const next = document.getElementById("newPassword")?.value.trim();
+    const confirm = document.getElementById("confirmPassword")?.value.trim();
 
+    if (!current || !next || !confirm) {
+      this._feedback("password", "All password fields are required.", "error");
+      return;
+    }
     if (next.length < 8) {
-      alert('Password must be at least 8 characters long');
+      this._feedback(
+        "password",
+        "New password must be at least 8 characters.",
+        "error",
+      );
       return;
     }
-
-    const confirm = prompt('Confirm new password:');
     if (next !== confirm) {
-      alert('Passwords do not match');
+      this._feedback("password", "Passwords do not match.", "error");
       return;
     }
 
-    // TODO: replace with a real API call.
-    alert('Password changed successfully!');
+    const btn = document.getElementById("changePasswordBtn");
+    this._setLoading(btn, true);
+
+    try {
+      const res = await this._post("/api/settings/password", {
+        current_password: current,
+        new_password: next,
+        confirm_password: confirm,
+      });
+
+      if (res.status === "success") {
+        this._feedback("password", "Password updated successfully.", "success");
+        ["currentPassword", "newPassword", "confirmPassword"].forEach((id) => {
+          const el = document.getElementById(id);
+          if (el) el.value = "";
+        });
+      } else {
+        this._feedback(
+          "password",
+          res.message || "Failed to update password.",
+          "error",
+        );
+      }
+    } catch (e) {
+      this._feedback(
+        "password",
+        "Request failed — check your connection.",
+        "error",
+      );
+      console.error("[settings] changePassword:", e);
+    }
+
+    this._setLoading(btn, false);
   },
 
-  _deleteAccount() {
-    const confirmed = confirm(
-      'Are you sure you want to delete your account? This action cannot be undone.'
-    );
-    if (!confirmed) return;
+  async _deleteAccount() {
+    const emailConfirm = document
+      .getElementById("deleteEmailConfirm")
+      ?.value.trim();
+    const user = Utils.getStorage("user") || {};
 
-    const user         = Utils.getStorage('user');
-    const emailConfirm = prompt('Please type your email address to confirm:');
-
-    if (emailConfirm !== user?.email) {
-      alert('Email address does not match');
+    if (!emailConfirm) {
+      this._feedback(
+        "delete",
+        "Please enter your email address to confirm.",
+        "error",
+      );
+      return;
+    }
+    if (emailConfirm !== user.email) {
+      this._feedback("delete", "Email address does not match.", "error");
       return;
     }
 
-    localStorage.clear();
-    alert('Your account has been deleted.');
-    window.location.href = '/';
+    const btn = document.getElementById("deleteAccountBtn");
+    this._setLoading(btn, true);
+
+    try {
+      const res = await this._delete("/api/profile/delete");
+
+      if (res.status === "success") {
+        localStorage.clear();
+        window.location.href = "/";
+      } else {
+        this._feedback(
+          "delete",
+          res.message || "Failed to delete account.",
+          "error",
+        );
+        this._setLoading(btn, false);
+      }
+    } catch (e) {
+      this._feedback(
+        "delete",
+        "Request failed — check your connection.",
+        "error",
+      );
+      console.error("[settings] deleteAccount:", e);
+      this._setLoading(btn, false);
+    }
+  },
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  _feedback(section, message, type) {
+    const el = document.getElementById(`${section}-feedback`);
+    if (!el) return;
+    el.textContent = message;
+    el.className = `form-feedback ${type}`;
+    el.style.display = "block";
+    if (type === "success")
+      setTimeout(() => {
+        el.style.display = "none";
+      }, 4000);
+  },
+
+  _setLoading(btn, loading) {
+    if (!btn) return;
+    btn.disabled = loading;
+    if (loading) {
+      btn._html = btn.innerHTML;
+      btn.innerHTML = "Working…";
+    } else if (btn._html) {
+      btn.innerHTML = btn._html;
+      delete btn._html;
+    }
+  },
+
+  async _post(url, body) {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  },
+
+  async _delete(url) {
+    const res = await fetch(url, { method: "DELETE" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
   },
 };

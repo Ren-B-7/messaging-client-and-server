@@ -748,6 +748,14 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
                 .await
                 .context("Logout failed")
         })
+        .delete_hard(
+            "/api/settings/delete",
+            |req, state, user_id, claims| async move {
+                profile::handle_delete_profile(req, state, user_id, claims)
+                    .await
+                    .context("Password change failed")
+            },
+        )
 }
 
 // ---------------------------------------------------------------------------
