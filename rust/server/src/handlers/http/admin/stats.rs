@@ -12,16 +12,16 @@ use crate::AppState;
 use crate::handlers::http::utils::{deliver_serialized_json, deliver_success_json};
 use shared::types::server_stats::{DatabaseInfo, ServerStats};
 
-/// Serve server and auth configuration stats
+/// GET /admin/api/stats — serve live server and database statistics.
+///
+/// Hard-auth + is_admin guard applied by the router before this is called.
 pub async fn handle_server_config(
     _req: Request<IncomingBody>,
     state: AppState,
+    _admin_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Serving admin stats");
 
-    // Gather live DB counts.
-    // The Ok::<_, rusqlite::Error> turbofish satisfies the E: Send + 'static
-    // bound that tokio_rusqlite::Connection::call requires on its closure.
     let db_info = state
         .db
         .call(|conn| {
@@ -59,7 +59,7 @@ pub async fn handle_server_config(
         .await
         .context("Failed to query database stats")?;
 
-    // Read config — guard is dropped before the response is built
+    // Guard is dropped before the response is built.
     let stats = {
         let cfg = state.config.read().await;
         ServerStats::build(&cfg, db_info, 0)

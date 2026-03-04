@@ -4,13 +4,13 @@ use std::pin::Pin;
 
 use anyhow::{Context, Result};
 use bytes::Bytes;
-use http_body_util::combinators::BoxBody;
+use http_body_util::{BodyExt, combinators::BoxBody};
 use hyper::{Method, Request, Response, StatusCode};
 use tracing::{info, warn};
 
 use crate::AppState;
 use crate::handlers::http::utils::headers::{decode_jwt_claims, validate_jwt_secure};
-use crate::handlers::http::{admin, messaging, profile, utils::*};
+use crate::handlers::http::{messaging, profile, utils::*};
 
 use shared::types::cache::*;
 use shared::types::jwt::JwtClaims;
@@ -544,13 +544,13 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
         })
         // GET /api/groups/:id/members — list members of a group
         .get_light("/api/groups/:id/members", |req, state, claims| async move {
-            let group_id = req
+            let chat_id = req
                 .uri()
                 .path()
                 .split('/')
                 .nth(3)
                 .and_then(|s| s.parse::<i64>().ok());
-            match group_id {
+            match chat_id {
                 Some(id) => messaging::handle_get_members(req, state, claims, id)
                     .await
                     .context("Get members failed"),
@@ -618,13 +618,13 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
         .post_hard(
             "/api/groups/:id/members",
             |req, state, user_id, _claims| async move {
-                let group_id = req
+                let chat_id = req
                     .uri()
                     .path()
                     .split('/')
                     .nth(3)
                     .and_then(|s| s.parse::<i64>().ok());
-                match group_id {
+                match chat_id {
                     Some(id) => messaging::handle_add_member(req, state, user_id, id)
                         .await
                         .context("Add member failed"),
@@ -640,13 +640,13 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
         .delete_hard(
             "/api/groups/:id/members",
             |req, state, user_id, _claims| async move {
-                let group_id = req
+                let chat_id = req
                     .uri()
                     .path()
                     .split('/')
                     .nth(3)
                     .and_then(|s| s.parse::<i64>().ok());
-                match group_id {
+                match chat_id {
                     Some(id) => messaging::handle_remove_member(req, state, user_id, id)
                         .await
                         .context("Remove member failed"),
@@ -663,13 +663,13 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
         .patch_hard(
             "/api/groups/:id",
             |req, state, user_id, _claims| async move {
-                let group_id = req
+                let chat_id = req
                     .uri()
                     .path()
                     .split('/')
                     .nth(3)
                     .and_then(|s| s.parse::<i64>().ok());
-                match group_id {
+                match chat_id {
                     Some(id) => messaging::handle_rename_group(req, state, user_id, id)
                         .await
                         .context("Rename group failed"),
@@ -686,13 +686,13 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
         .delete_hard(
             "/api/groups/:id",
             |req, state, user_id, _claims| async move {
-                let group_id = req
+                let chat_id = req
                     .uri()
                     .path()
                     .split('/')
                     .nth(3)
                     .and_then(|s| s.parse::<i64>().ok());
-                match group_id {
+                match chat_id {
                     Some(id) => messaging::handle_delete_group(req, state, user_id, id)
                         .await
                         .context("Delete group failed"),
@@ -736,8 +736,8 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
         )
         .post_hard(
             "/api/settings/logout-all",
-            |req, state, user_id, _claims| async move {
-                profile::handle_logout_all(req, state, user_id)
+            |req, state, user_id, claims| async move {
+                profile::handle_logout_all(req, state, user_id, claims)
                     .await
                     .context("Logout-all failed")
             },
@@ -748,196 +748,6 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
                 .await
                 .context("Logout failed")
         })
-}
-
-// ---------------------------------------------------------------------------
-// Admin-specific routes
-//
-// `build_admin_api_routes` is an **append-only** function: it receives an
-// already-constructed `Router` (typically the result of
-// `build_api_router_with_config`) and chains the admin-only endpoints onto
-// it.  It must never be called on the user service router.
-//
-// Every admin route is Hard-auth-gated, and the handler additionally checks
-// `claims.is_admin` before dispatching — two independent privilege checks.
-// ---------------------------------------------------------------------------
-pub fn build_admin_api_routes(router: Router) -> Router {
-    router
-        // Stats — hard auth + admin flag check inside handler.
-        .get_hard("/admin/stats", |req, state, user_id, claims| async move {
-            if (!claims.is_admin) || (claims.user_id != user_id) {
-                return deliver_error_json(
-                    "FORBIDDEN",
-                    "Insufficient privileges",
-                    StatusCode::FORBIDDEN,
-                );
-            }
-            admin::handle_server_config(req, state).await
-        })
-        .get_hard(
-            "/admin/api/stats",
-            |req, state, user_id, claims| async move {
-                if (!claims.is_admin) || (claims.user_id != user_id) {
-                    return deliver_error_json(
-                        "FORBIDDEN",
-                        "Insufficient privileges",
-                        StatusCode::FORBIDDEN,
-                    );
-                }
-                admin::handle_server_config(req, state).await
-            },
-        )
-        // ── Metrics ─────────────────────────────────────────────────────────
-        .get_hard("/admin/metrics", |req, state, user_id, claims| async move {
-            if (!claims.is_admin) || (claims.user_id != user_id) {
-                return deliver_error_json(
-                    "FORBIDDEN",
-                    "Insufficient privileges",
-                    StatusCode::FORBIDDEN,
-                );
-            }
-            admin::handle_metrics(req, state, user_id).await
-        })
-        .get_hard(
-            "/admin/api/metrics",
-            |req, state, user_id, claims| async move {
-                if (!claims.is_admin) || (claims.user_id != user_id) {
-                    return deliver_error_json(
-                        "FORBIDDEN",
-                        "Insufficient privileges",
-                        StatusCode::FORBIDDEN,
-                    );
-                }
-                admin::handle_metrics(req, state, user_id).await
-            },
-        )
-        // ── User list ────────────────────────────────────────────────────────
-        .get_light("/admin/users", |req, state, claims| async move {
-            if !claims.is_admin {
-                return deliver_error_json(
-                    "FORBIDDEN",
-                    "Insufficient privileges",
-                    StatusCode::FORBIDDEN,
-                );
-            }
-            admin::handle_get_users(req, state, 0).await
-        })
-        .get_light("/admin/api/users", |req, state, claims| async move {
-            if !claims.is_admin {
-                return deliver_error_json(
-                    "FORBIDDEN",
-                    "Insufficient privileges",
-                    StatusCode::FORBIDDEN,
-                );
-            }
-            admin::handle_get_users(req, state, 0).await
-        })
-        // ── Ban / unban ──────────────────────────────────────────────────────
-        .post_hard("/admin/ban", |req, state, user_id, claims| async move {
-            if !claims.is_admin {
-                return deliver_error_json(
-                    "FORBIDDEN",
-                    "Insufficient privileges",
-                    StatusCode::FORBIDDEN,
-                );
-            }
-            admin::handle_ban_user(req, state, user_id).await
-        })
-        .post_hard(
-            "/admin/api/users/ban",
-            |req, state, user_id, claims| async move {
-                if !claims.is_admin {
-                    return deliver_error_json(
-                        "FORBIDDEN",
-                        "Insufficient privileges",
-                        StatusCode::FORBIDDEN,
-                    );
-                }
-                admin::handle_ban_user(req, state, user_id).await
-            },
-        )
-        .post_hard("/admin/unban", |req, state, user_id, claims| async move {
-            if !claims.is_admin {
-                return deliver_error_json(
-                    "FORBIDDEN",
-                    "Insufficient privileges",
-                    StatusCode::FORBIDDEN,
-                );
-            }
-            admin::handle_unban_user(req, state, user_id).await
-        })
-        .post_hard(
-            "/admin/api/users/unban",
-            |req, state, user_id, claims| async move {
-                if !claims.is_admin {
-                    return deliver_error_json(
-                        "FORBIDDEN",
-                        "Insufficient privileges",
-                        StatusCode::FORBIDDEN,
-                    );
-                }
-                admin::handle_unban_user(req, state, user_id).await
-            },
-        )
-        // ── Delete user ──────────────────────────────────────────────────────
-        .delete_hard(
-            "/admin/users/:id",
-            |req, state, user_id, claims| async move {
-                if !claims.is_admin {
-                    return deliver_error_json(
-                        "FORBIDDEN",
-                        "Insufficient privileges",
-                        StatusCode::FORBIDDEN,
-                    );
-                }
-                admin::handle_delete_user(req, state, user_id).await
-            },
-        )
-        .delete_hard(
-            "/admin/api/users/:id",
-            |req, state, user_id, claims| async move {
-                if !claims.is_admin {
-                    return deliver_error_json(
-                        "FORBIDDEN",
-                        "Insufficient privileges",
-                        StatusCode::FORBIDDEN,
-                    );
-                }
-                admin::handle_delete_user(req, state, user_id).await
-            },
-        )
-        // ── Promote / demote ─────────────────────────────────────────────────
-        .post_hard(
-            "/admin/api/users/promote",
-            |req, state, user_id, claims| async move {
-                if !claims.is_admin {
-                    return deliver_error_json(
-                        "FORBIDDEN",
-                        "Insufficient privileges",
-                        StatusCode::FORBIDDEN,
-                    );
-                }
-                admin::handle_promote_user(req, state, user_id)
-                    .await
-                    .context("Promote failed")
-            },
-        )
-        .post_hard(
-            "/admin/api/users/demote",
-            |req, state, user_id, claims| async move {
-                if !claims.is_admin {
-                    return deliver_error_json(
-                        "FORBIDDEN",
-                        "Insufficient privileges",
-                        StatusCode::FORBIDDEN,
-                    );
-                }
-                admin::handle_demote_user(req, state, user_id)
-                    .await
-                    .context("Demote failed")
-            },
-        )
-    // ── Health check ─────────────────────────────────────────────────────
 }
 
 // ---------------------------------------------------------------------------

@@ -269,9 +269,9 @@ mod tests {
     }
 
     #[test]
-    fn test_chat_context_group_by_group_id() {
+    fn test_chat_context_group_by_chat_id() {
         let mut p = std::collections::HashMap::new();
-        p.insert("group_id".to_string(), "7".to_string());
+        p.insert("chat_id".to_string(), "7".to_string());
         let ctx = ChatContext::from_params(&p).unwrap();
         assert!(matches!(ctx, ChatContext::Chat { chat_id: 7 }));
     }

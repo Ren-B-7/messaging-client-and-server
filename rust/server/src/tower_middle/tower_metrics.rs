@@ -22,65 +22,17 @@ impl MetricsLayer {
 }
 
 impl<S> Layer<S> for MetricsLayer {
-    type Service = MetricsService<S>;
+    type Service = DetailedMetricsService<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        MetricsService {
+        DetailedMetricsService {
             inner,
             metrics: self.metrics.clone(),
         }
     }
 }
 
-/// The actual service that performs metrics tracking
-#[derive(Clone)]
-pub struct MetricsService<S> {
-    inner: S,
-    metrics: Metrics,
-}
-
-impl<S, ReqBody, ResBody> Service<Request<ReqBody>> for MetricsService<S>
-where
-    S: Service<Request<ReqBody>, Response = Response<ResBody>> + Clone + Send + 'static,
-    S::Future: Send + 'static,
-    ReqBody: Send + 'static,
-    ResBody: Send + 'static,
-{
-    type Response = S::Response;
-    type Error = S::Error;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx)
-    }
-
-    fn call(&mut self, req: Request<ReqBody>) -> Self::Future {
-        let metrics = self.metrics.clone();
-        let mut inner = self.inner.clone();
-
-        // Record request start
-        metrics.request_start();
-        let start = Instant::now();
-
-        Box::pin(async move {
-            // Call inner service
-            let result = inner.call(req).await;
-
-            // Record request end
-            let duration = start.elapsed();
-            metrics.request_end(duration);
-
-            // Record errors if needed
-            if result.is_err() {
-                metrics.record_error();
-            }
-
-            result
-        })
-    }
-}
-
-/// Alternative: Metrics layer that also tracks response status codes
+/// Metrics layer that also tracks response status codes
 #[derive(Clone)]
 pub struct DetailedMetricsService<S> {
     inner: S,

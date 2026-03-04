@@ -6,72 +6,22 @@ use bytes::Bytes;
 use http_body_util::{BodyExt, combinators::BoxBody};
 use hyper::body::Incoming as IncomingBody;
 use hyper::{Request, Response, StatusCode};
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::AppState;
-use crate::handlers::http::utils::{
-    deliver_serialized_json, deliver_success_json, validate_jwt_secure,
-};
+use crate::database::ban as db_ban;
+use crate::database::register as db_register;
+use crate::handlers::http::utils::{deliver_serialized_json, deliver_success_json};
 
-/// Validate an admin session using JWT + secure DB path.
+/// GET /admin/api/users — list all users.
 ///
-/// Two-step check:
-///   1. `validate_jwt_secure` — verify JWT signature, look up session_id in DB,
-///      compare request IP against the stored IP.
-///   2. Inspect `claims.is_admin` — embedded at login time so this requires
-///      no additional DB query on GET routes, but note that privilege changes
-///      (promote/demote) only take effect after the user logs in again.
-///
-/// Returns the admin's `user_id` on success, `Err(())` on any failure.
-pub async fn require_admin(
-    req: &Request<IncomingBody>,
-    state: &AppState,
-) -> std::result::Result<i64, ()> {
-    use crate::handlers::http::utils::decode_jwt_claims;
-
-    // Full secure-path validation first (IP check, DB session lookup).
-    let (user_id, _) = validate_jwt_secure(req, state)
-        .await
-        .map_err(|_| ())?;
-
-    // Then confirm the admin flag from the JWT claims.
-    // We re-decode here (cheap — no DB) to read is_admin without adding an
-    // extra function parameter.
-    let claims = decode_jwt_claims(req, &state.jwt_secret).map_err(|_| ())?;
-
-    if !claims.is_admin {
-        warn!(
-            "Non-admin user {} attempted an admin operation",
-            user_id
-        );
-        return Err(());
-    }
-
-    Ok(user_id)
-}
-
-// ---------------------------------------------------------------------------
-// Handlers
-// ---------------------------------------------------------------------------
-
-/// GET /admin/api/users
+/// Hard-auth + is_admin guard applied by the router before this is called.
 pub async fn handle_get_users(
-    req: Request<IncomingBody>,
+    _req: Request<IncomingBody>,
     state: AppState,
+    _admin_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Serving user list");
-
-    if require_admin(&req, &state).await.is_err() {
-        warn!("Unauthorised get users attempt");
-        return deliver_serialized_json(
-            &serde_json::json!({
-                "status":  "error",
-                "code":    "UNAUTHORIZED",
-                "message": "Admin authentication required"
-            }),
-            StatusCode::UNAUTHORIZED,
-        );
-    }
 
     let users = state
         .db
@@ -108,33 +58,15 @@ pub async fn handle_get_users(
     )
 }
 
-// ---------------------------------------------------------------------------
-// Ban / Unban
-// ---------------------------------------------------------------------------
-
-/// POST /admin/api/users/ban
+/// POST /admin/api/users/ban — ban a user.
+///
+/// Hard-auth + is_admin guard applied by the router.
 pub async fn handle_ban_user(
     req: Request<IncomingBody>,
     state: AppState,
+    admin_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    use crate::database::ban as db_ban;
-
-    info!("Processing ban user request");
-
-    let admin_id = match require_admin(&req, &state).await {
-        Ok(id) => id,
-        Err(_) => {
-            warn!("Unauthorised ban attempt");
-            return deliver_serialized_json(
-                &serde_json::json!({
-                    "status":  "error",
-                    "code":    "UNAUTHORIZED",
-                    "message": "Admin authentication required"
-                }),
-                StatusCode::UNAUTHORIZED,
-            );
-        }
-    };
+    info!("Admin {} processing ban request", admin_id);
 
     let params = parse_body(req).await?;
 
@@ -148,42 +80,35 @@ pub async fn handle_ban_user(
         .cloned()
         .unwrap_or_else(|| "No reason provided".to_string());
 
-    info!("Admin {} banning user {} — reason: {}", admin_id, user_id, reason);
+    info!(
+        "Admin {} banning user {} — reason: {}",
+        admin_id, user_id, reason
+    );
 
     db_ban::ban_user(&state.db, user_id, admin_id, Some(reason.clone()))
         .await
         .context("Failed to ban user in database")?;
 
     deliver_success_json(
-        Some(serde_json::json!({ "user_id": user_id, "banned": true, "reason": reason })),
+        Some(serde_json::json!({
+            "user_id": user_id,
+            "banned":  true,
+            "reason":  reason,
+        })),
         Some(&format!("User {} has been banned", user_id)),
         StatusCode::OK,
     )
 }
 
-/// POST /admin/api/users/unban
+/// POST /admin/api/users/unban — unban a user.
+///
+/// Hard-auth + is_admin guard applied by the router.
 pub async fn handle_unban_user(
     req: Request<IncomingBody>,
     state: AppState,
+    admin_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    use crate::database::ban as db_ban;
-
-    info!("Processing unban user request");
-
-    let admin_id = match require_admin(&req, &state).await {
-        Ok(id) => id,
-        Err(_) => {
-            warn!("Unauthorised unban attempt");
-            return deliver_serialized_json(
-                &serde_json::json!({
-                    "status":  "error",
-                    "code":    "UNAUTHORIZED",
-                    "message": "Admin authentication required"
-                }),
-                StatusCode::UNAUTHORIZED,
-            );
-        }
-    };
+    info!("Admin {} processing unban request", admin_id);
 
     let params = parse_body(req).await?;
 
@@ -205,30 +130,14 @@ pub async fn handle_unban_user(
     )
 }
 
-// ---------------------------------------------------------------------------
-// Delete user
-// ---------------------------------------------------------------------------
-
-/// DELETE /admin/api/users/:id
+/// DELETE /admin/api/users/:id — permanently delete a user.
+///
+/// Hard-auth + is_admin guard applied by the router.
 pub async fn handle_delete_user(
     req: Request<IncomingBody>,
     state: AppState,
+    admin_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    let admin_id = match require_admin(&req, &state).await {
-        Ok(id) => id,
-        Err(_) => {
-            warn!("Unauthorised delete attempt");
-            return deliver_serialized_json(
-                &serde_json::json!({
-                    "status":  "error",
-                    "code":    "UNAUTHORIZED",
-                    "message": "Admin authentication required"
-                }),
-                StatusCode::UNAUTHORIZED,
-            );
-        }
-    };
-
     let path = req.uri().path().to_string();
 
     let user_id: i64 = path
@@ -244,7 +153,7 @@ pub async fn handle_delete_user(
             &serde_json::json!({
                 "status":  "error",
                 "code":    "INVALID_TARGET",
-                "message": "You cannot delete your own account"
+                "message": "You cannot delete your own account",
             }),
             StatusCode::BAD_REQUEST,
         );
@@ -268,26 +177,14 @@ pub async fn handle_delete_user(
     )
 }
 
-/// POST /admin/api/users/promote
+/// POST /admin/api/users/promote — grant admin privileges to a user.
+///
+/// Hard-auth + is_admin guard applied by the router.
 pub async fn handle_promote_user(
     req: Request<IncomingBody>,
     state: AppState,
+    admin_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    let admin_id = match require_admin(&req, &state).await {
-        Ok(id) => id,
-        Err(_) => {
-            warn!("Unauthorised promote attempt");
-            return deliver_serialized_json(
-                &serde_json::json!({
-                    "status":  "error",
-                    "code":    "UNAUTHORIZED",
-                    "message": "Admin authentication required"
-                }),
-                StatusCode::UNAUTHORIZED,
-            );
-        }
-    };
-
     let params = parse_body(req).await?;
 
     let user_id: i64 = params
@@ -300,13 +197,11 @@ pub async fn handle_promote_user(
             &serde_json::json!({
                 "status":  "error",
                 "code":    "INVALID_TARGET",
-                "message": "You are already an admin"
+                "message": "You are already an admin",
             }),
             StatusCode::BAD_REQUEST,
         );
     }
-
-    use crate::database::register as db_register;
 
     let user = db_register::get_user_by_id(&state.db, user_id)
         .await
@@ -317,35 +212,29 @@ pub async fn handle_promote_user(
         .await
         .map_err(|e| anyhow::anyhow!("DB error promoting user: {}", e))?;
 
-    info!("Admin {} promoted user {} ({})", admin_id, user.username, user_id);
+    info!(
+        "Admin {} promoted user {} ({})",
+        admin_id, user.username, user_id
+    );
 
     deliver_success_json(
-        Some(serde_json::json!({ "user_id": user_id, "username": user.username })),
+        Some(serde_json::json!({
+            "user_id":  user_id,
+            "username": user.username,
+        })),
         Some(&format!("{} is now an admin", user.username)),
         StatusCode::OK,
     )
 }
 
-/// POST /admin/api/users/demote
+/// POST /admin/api/users/demote — revoke admin privileges from a user.
+///
+/// Hard-auth + is_admin guard applied by the router.
 pub async fn handle_demote_user(
     req: Request<IncomingBody>,
     state: AppState,
+    admin_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    let admin_id = match require_admin(&req, &state).await {
-        Ok(id) => id,
-        Err(_) => {
-            warn!("Unauthorised demote attempt");
-            return deliver_serialized_json(
-                &serde_json::json!({
-                    "status":  "error",
-                    "code":    "UNAUTHORIZED",
-                    "message": "Admin authentication required"
-                }),
-                StatusCode::UNAUTHORIZED,
-            );
-        }
-    };
-
     let params = parse_body(req).await?;
 
     let user_id: i64 = params
@@ -358,13 +247,11 @@ pub async fn handle_demote_user(
             &serde_json::json!({
                 "status":  "error",
                 "code":    "INVALID_TARGET",
-                "message": "You cannot demote yourself"
+                "message": "You cannot demote yourself",
             }),
             StatusCode::BAD_REQUEST,
         );
     }
-
-    use crate::database::register as db_register;
 
     let user = db_register::get_user_by_id(&state.db, user_id)
         .await
@@ -375,10 +262,16 @@ pub async fn handle_demote_user(
         .await
         .map_err(|e| anyhow::anyhow!("DB error demoting user: {}", e))?;
 
-    info!("Admin {} demoted user {} ({})", admin_id, user.username, user_id);
+    info!(
+        "Admin {} demoted user {} ({})",
+        admin_id, user.username, user_id
+    );
 
     deliver_success_json(
-        Some(serde_json::json!({ "user_id": user_id, "username": user.username })),
+        Some(serde_json::json!({
+            "user_id":  user_id,
+            "username": user.username,
+        })),
         Some(&format!("{} is no longer an admin", user.username)),
         StatusCode::OK,
     )
@@ -425,12 +318,11 @@ async fn parse_body(req: Request<IncomingBody>) -> Result<HashMap<String, String
 }
 
 // ---------------------------------------------------------------------------
-// Tests  (unchanged from original)
+// Tests
 // ---------------------------------------------------------------------------
+
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn form_body_user_id_parsing() {
         let params: std::collections::HashMap<String, String> =
@@ -438,7 +330,10 @@ mod tests {
                 .into_owned()
                 .collect();
         let user_id: Option<i64> = params.get("user_id").and_then(|id| id.parse().ok());
-        let reason = params.get("reason").cloned().unwrap_or_else(|| "No reason".to_string());
+        let reason = params
+            .get("reason")
+            .cloned()
+            .unwrap_or_else(|| "No reason".to_string());
         assert_eq!(user_id, Some(123));
         assert_eq!(reason, "Spamming");
     }

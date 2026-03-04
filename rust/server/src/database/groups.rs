@@ -42,7 +42,7 @@ pub async fn create_group(conn: &Connection, new_group: NewGroup) -> Result<i64>
         .unwrap()
         .as_secs() as i64;
 
-    let group_id = conn
+    let chat_id = conn
         .call(move |conn: &mut rusqlite::Connection| {
             conn.execute(
                 "INSERT INTO groups (name, created_by, created_at, description, chat_type)
@@ -60,9 +60,9 @@ pub async fn create_group(conn: &Connection, new_group: NewGroup) -> Result<i64>
         .await?;
 
     // Creator is always an admin regardless of chat type.
-    add_group_member(conn, group_id, new_group.created_by, "admin".to_string()).await?;
+    add_group_member(conn, chat_id, new_group.created_by, "admin".to_string()).await?;
 
-    Ok(group_id)
+    Ok(chat_id)
 }
 
 /// Add a member to a group/chat.
@@ -188,8 +188,8 @@ pub async fn get_group(conn: &Connection, chat_id: i64) -> Result<Option<Group>>
 /// Check if a user is a member of a group/chat.
 pub async fn is_group_member(conn: &Connection, chat_id: i64, user_id: i64) -> Result<bool> {
     conn.call(move |conn: &mut rusqlite::Connection| {
-        let mut stmt = conn
-            .prepare("SELECT COUNT(*) FROM group_members WHERE chat_id = ?1 AND user_id = ?2")?;
+        let mut stmt =
+            conn.prepare("SELECT COUNT(*) FROM group_members WHERE chat_id = ?1 AND user_id = ?2")?;
         let count: i64 = stmt.query_row(params![chat_id, user_id], |row| row.get(0))?;
         Ok(count > 0)
     })

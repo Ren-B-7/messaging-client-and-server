@@ -8,7 +8,9 @@ use std::convert::Infallible;
 use tracing::{error, info, warn};
 
 use crate::AppState;
+use crate::database::login as db_login;
 use crate::database::register as db_register;
+use crate::database::utils::{calculate_expiry, generate_uuid_token, hash_password};
 use crate::handlers::http::utils::{
     create_session_cookie, deliver_redirect_with_cookie, deliver_serialized_json, encode_jwt,
     get_client_ip, get_user_agent, is_https,
@@ -63,14 +65,9 @@ pub async fn handle_register(
         .unwrap_or(false);
 
     // Create the session row and mint a JWT.
-    let session_id = crate::database::utils::generate_uuid_token();
-    let session_created = create_session_for_new_user(
-        user_id,
-        &session_id,
-        &state,
-        ip_address,
-    )
-    .await;
+    let session_id = generate_uuid_token();
+    let session_created =
+        create_session_for_new_user(user_id, &session_id, &state, ip_address).await;
 
     if let Err(e) = session_created {
         error!(
@@ -115,7 +112,10 @@ pub async fn handle_register(
     let instance_cookie = create_session_cookie("auth_id", &jwt, secure_cookie)
         .context("Failed to create session cookie")?;
 
-    Ok(deliver_redirect_with_cookie("/chat", Some(instance_cookie))?)
+    Ok(deliver_redirect_with_cookie(
+        "/chat",
+        Some(instance_cookie),
+    )?)
 }
 
 // ---------------------------------------------------------------------------
@@ -249,9 +249,7 @@ pub(crate) fn validate_password(password: &str) -> std::result::Result<(), Regis
     if password.len() < 8 || password.len() > 128 {
         return Err(RegisterError::WeakPassword);
     }
-    if !password.chars().any(|c| c.is_alphabetic())
-        || !password.chars().any(|c| c.is_numeric())
-    {
+    if !password.chars().any(|c| c.is_alphabetic()) || !password.chars().any(|c| c.is_numeric()) {
         return Err(RegisterError::WeakPassword);
     }
     Ok(())
@@ -303,11 +301,10 @@ async fn create_user(
     data: &RegisterData,
     state: &AppState,
 ) -> std::result::Result<i64, RegisterError> {
-    let password_hash =
-        crate::database::utils::hash_password(&data.password).map_err(|e| {
-            error!("Password hashing failed: {}", e);
-            RegisterError::InternalError
-        })?;
+    let password_hash = hash_password(&data.password).map_err(|e| {
+        error!("Password hashing failed: {}", e);
+        RegisterError::InternalError
+    })?;
 
     db_register::register_user(
         &state.db,
@@ -332,10 +329,8 @@ async fn create_session_for_new_user(
     state: &AppState,
     ip_address: Option<String>,
 ) -> std::result::Result<(), RegisterError> {
-    use crate::database::login as db_login;
-
     let token_expiry_secs = state.config.read().await.auth.token_expiry_minutes * 60;
-    let expires_at = crate::database::utils::calculate_expiry(token_expiry_secs as i64);
+    let expires_at = calculate_expiry(token_expiry_secs as i64);
 
     db_login::create_session(
         &state.db,

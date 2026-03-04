@@ -7,7 +7,7 @@ use http_body_util::{BodyExt, combinators::BoxBody};
 use hyper::body::Incoming as IncomingBody;
 use hyper::{Request, Response, StatusCode};
 use tokio_rusqlite::rusqlite;
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::AppState;
 use crate::database::ban as db_ban;
@@ -385,15 +385,14 @@ async fn metrics_json(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     let snapshot = state.metrics.snapshot().await;
 
-    let out = match serde_json::to_string(&snapshot) {
+    match serde_json::to_string(&snapshot) {
         Ok(j) => deliver_serialized_json(&j, StatusCode::OK),
         Err(_) => deliver_error_json(
             "Failed",
             "Failed to serialize snapshot",
             StatusCode::EXPECTATION_FAILED,
         ),
-    };
-    return out;
+    }
 }
 
 #[cfg(test)]

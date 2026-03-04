@@ -9,7 +9,9 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::handlers::http::utils::{deliver_error_json, deliver_serialized_json, deliver_success_json};
+use crate::handlers::http::utils::{
+    deliver_error_json, deliver_serialized_json, deliver_success_json,
+};
 use shared::types::jwt::JwtClaims;
 use shared::types::message::*;
 use shared::types::sse::SseEvent;
@@ -363,7 +365,11 @@ pub async fn handle_typing(
             timestamp: crate::database::utils::get_timestamp(),
         };
 
-        if let Err(e) = state.sse_manager.broadcast_to_users(event, recipients).await {
+        if let Err(e) = state
+            .sse_manager
+            .broadcast_to_users(event, recipients)
+            .await
+        {
             warn!("Typing broadcast failed for chat {}: {:?}", chat_id, e);
         }
     }
@@ -425,7 +431,11 @@ async fn sse_broadcast_message_sent(
         timestamp: sent_at,
     };
 
-    if let Err(e) = state.sse_manager.broadcast_to_users(event, recipients).await {
+    if let Err(e) = state
+        .sse_manager
+        .broadcast_to_users(event, recipients)
+        .await
+    {
         error!(
             "SSE message_sent broadcast failed for chat {}: {:?}",
             chat_id, e
@@ -497,7 +507,11 @@ async fn sse_broadcast_message_read(
         timestamp: now,
     };
 
-    if let Err(e) = state.sse_manager.broadcast_to_users(event, recipients).await {
+    if let Err(e) = state
+        .sse_manager
+        .broadcast_to_users(event, recipients)
+        .await
+    {
         error!("SSE message_read broadcast failed: {:?}", e);
     } else {
         info!(
@@ -530,7 +544,11 @@ async fn sse_broadcast_chat_created(
 
     let recipients = vec![creator_id.to_string(), other_user_id.to_string()];
 
-    if let Err(e) = state.sse_manager.broadcast_to_users(event, recipients).await {
+    if let Err(e) = state
+        .sse_manager
+        .broadcast_to_users(event, recipients)
+        .await
+    {
         warn!("SSE chat_created broadcast failed: {:?}", e);
     }
 }
@@ -604,10 +622,11 @@ async fn persist_message(
         return Err(MessageError::NotMemberOfChat);
     }
 
-    let compressed = crate::database::utils::compress_data(data.content.as_bytes()).map_err(|e| {
-        error!("Failed to compress message: {}", e);
-        MessageError::InternalError
-    })?;
+    let compressed =
+        crate::database::utils::compress_data(data.content.as_bytes()).map_err(|e| {
+            error!("Failed to compress message: {}", e);
+            MessageError::InternalError
+        })?;
 
     let message_id = db_messages::send_message(
         &state.db,
@@ -638,10 +657,7 @@ fn parse_query_params(req: &Request<hyper::body::Incoming>) -> GetMessagesQuery 
             .collect();
 
     GetMessagesQuery {
-        chat_id: params
-            .get("chat_id")
-            .or_else(|| params.get("group_id"))
-            .and_then(|s| s.parse().ok()),
+        chat_id: params.get("chat_id").and_then(|s| s.parse().ok()),
         limit: params.get("limit").and_then(|s| s.parse().ok()),
         offset: params.get("offset").and_then(|s| s.parse().ok()),
     }

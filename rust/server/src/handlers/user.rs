@@ -16,7 +16,7 @@ use tracing::{error, info, warn};
 
 use crate::AppState;
 use crate::handlers::http::routes::{Router, build_api_router_with_config};
-use crate::handlers::http::{auth::*, utils::*};
+use crate::handlers::http::{auth, utils::*};
 use crate::handlers::sse;
 
 /// User service implementation
@@ -123,6 +123,12 @@ async fn user_conn(
         .context("User routing failed")
 }
 
+/// Build the user-facing router.
+///
+/// Starts from the shared API base (`build_api_router_with_config`) and layers
+/// on user-only pages, auth endpoints, and the SSE stream.  Admin paths are
+/// never registered here; `user_conn` additionally hard-blocks any `/admin`
+/// prefix as a defence-in-depth measure.
 pub fn build_user_router_with_config(
     web_dir_static: Option<String>,
     icons_dir_static: Option<String>,
@@ -162,14 +168,24 @@ pub fn build_user_router_with_config(
         })
         // ── Auth ────────────────────────────────────────────────────────────
         .post("/api/login", |req, state| async move {
-            handle_login(req, state)
+            auth::handle_login(req, state)
                 .await
                 .context("Login attempt failed")
         })
         .post("/login", |req, state| async move {
-            handle_login(req, state)
+            auth::handle_login(req, state)
                 .await
                 .context("Login attempt failed")
+        })
+        .post("/api/register", |req, state| async move {
+            auth::handle_register(req, state)
+                .await
+                .context("Register failed")
+        })
+        .post("/register", |req, state| async move {
+            auth::handle_register(req, state)
+                .await
+                .context("Register failed")
         })
         // ── Real-time SSE stream ────────────────────────────────────────────
         //
@@ -190,12 +206,6 @@ pub fn build_user_router_with_config(
             sse::handle_sse_subscribe(req, state)
                 .await
                 .map_err(|e| anyhow::anyhow!("SSE subscription failed: {:?}", e))
-        })
-        .post("/api/register", |req, state| async move {
-            handle_register(req, state).await.context("Register failed")
-        })
-        .post("/register", |req, state| async move {
-            handle_register(req, state).await.context("Register failed")
         });
 
     router

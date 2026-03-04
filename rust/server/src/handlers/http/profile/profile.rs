@@ -51,8 +51,6 @@ pub async fn handle_get_profile(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing get profile for user {}", claims.user_id);
 
-    use crate::database::register;
-
     let user = match register::get_user_by_id(&state.db, claims.user_id).await {
         Ok(Some(u)) => u,
         Ok(None) => {
@@ -268,7 +266,7 @@ pub async fn handle_change_password(
 pub async fn handle_logout(
     req: Request<hyper::body::Incoming>,
     state: AppState,
-    user_id: i64,
+    _user_id: i64,
     claims: JwtClaims,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing logout for session {}", claims.session_id);
@@ -286,6 +284,7 @@ pub async fn handle_logout(
     let response_body = SettingsResponse::Success {
         message: "Logged out successfully".to_string(),
     };
+
     Ok(deliver_serialized_json_with_cookie(
         &response_body,
         StatusCode::OK,
@@ -295,32 +294,29 @@ pub async fn handle_logout(
 
 /// POST /api/settings/logout-all — revoke every session for this user.
 ///
-/// Hard-auth: `user_id` is pre-verified by the router (JWT + DB + IP).
+/// Hard-auth: `user_id` and `claims` are pre-verified by the router.
 pub async fn handle_logout_all(
-    _req: Request<hyper::body::Incoming>,
+    req: Request<hyper::body::Incoming>,
     state: AppState,
     user_id: i64,
+    _claims: JwtClaims,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing logout-all for user {}", user_id);
-
+    let secure_cookie = is_https(&req);
     match login::delete_all_user_sessions(&state.db, user_id).await {
-        Ok(_) => {
-            info!("All sessions deleted for user {}", user_id);
-            deliver_serialized_json(
-                &SettingsResponse::Success {
-                    message: "Logged out from all devices".to_string(),
-                },
-                StatusCode::OK,
-            )
-        }
-        Err(e) => {
-            error!("Failed to delete sessions for user {}: {}", user_id, e);
-            deliver_serialized_json(
-                &SettingsError::DatabaseError.to_response(),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            )
-        }
+        Ok(_) => info!("All sessions deleted for user {}", user_id),
+        Err(e) => error!("Failed to delete sessions for user {}: {}", user_id, e),
     }
+    let clear_cookie = create_session_cookie("auth_id", "", secure_cookie)
+        .context("Failed to create clear-cookie header")?;
+    let response_body = SettingsResponse::Success {
+        message: "Logged out of all sessions successfully".to_string(),
+    };
+    Ok(deliver_serialized_json_with_cookie(
+        &response_body,
+        StatusCode::OK,
+        clear_cookie,
+    )?)
 }
 
 async fn parse_password_form(

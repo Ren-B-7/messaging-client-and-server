@@ -13,9 +13,8 @@ use tower::Service;
 use tracing::{error, info};
 
 use crate::AppState;
-use crate::handlers::http::auth::handle_admin_login;
-use crate::handlers::http::routes::{Router, build_admin_api_routes, build_api_router_with_config};
-use crate::handlers::http::{admin::*, utils::*};
+use crate::handlers::http::routes::{Router, build_api_router_with_config};
+use crate::handlers::http::{admin, auth::handle_admin_login, utils::*};
 
 /// Admin service implementation
 #[derive(Clone, Debug)]
@@ -66,16 +65,12 @@ impl Service<Request<IncomingBody>> for AdminService {
                         StatusCode::INTERNAL_SERVER_ERROR,
                     )
                     .unwrap_or_else(|delivery_err| {
-                        error!(
-                            "Failed to deliver error response: {:?}",
-                            delivery_err
-                        );
+                        error!("Failed to deliver error response: {:?}", delivery_err);
 
-                        let fallback_body =
-                            http_body_util::Full::new(Bytes::from(
-                                r#"{"status":"error","code":"INTERNAL_ERROR","message":"Internal Server Error"}"#,
-                            ))
-                            .boxed();
+                        let fallback_body = http_body_util::Full::new(Bytes::from(
+                            r#"{"status":"error","code":"INTERNAL_ERROR","message":"Internal Server Error"}"#,
+                        ))
+                        .boxed();
 
                         Response::builder()
                             .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -91,7 +86,7 @@ impl Service<Request<IncomingBody>> for AdminService {
     }
 }
 
-/// Main admin connection handler — mirrors user_conn structure exactly
+/// Main admin connection handler
 async fn admin_conn(
     req: Request<IncomingBody>,
     addr: SocketAddr,
@@ -111,6 +106,11 @@ async fn admin_conn(
         .context("Admin routing failed")
 }
 
+/// Build the admin-facing router.
+///
+/// Starts from the shared API base (`build_api_router_with_config`), layers on
+/// admin-only API endpoints (`build_admin_api_routes`), and finally registers
+/// the admin HTML pages and login routes.
 pub fn build_admin_router_with_config(
     web_dir_static: Option<String>,
     icons_dir_static: Option<String>,
@@ -121,11 +121,13 @@ pub fn build_admin_router_with_config(
         .map(|d| -> &'static str { Box::leak(d.into_boxed_str()) })
         .unwrap_or("");
 
-    // Start with shared API routes, then layer on admin-specific routes.
+    // Start with shared API routes, layer on admin-specific API routes, then
+    // add admin HTML pages and login endpoints.
     let base = build_api_router_with_config(web_dir_static, icons_dir_static);
     let mut router = build_admin_api_routes(base);
 
     router = router
+        // ── HTML pages ──────────────────────────────────────────────────────
         .get("/", move |_req, _state| async move {
             let path = format!("{}/index.html", web_dir);
             deliver_html_page(path).context("failed to deliver admin login page")
@@ -154,13 +156,14 @@ pub fn build_admin_router_with_config(
             let path = format!("{}/admin.html", web_dir);
             deliver_html_page(path).context("failed to deliver admin dashboard page")
         })
-        // ── Stats ───────────────────────────────────────────────────────────
+        // ── Health ──────────────────────────────────────────────────────────
         .get("/admin/health", |_req, _state| async move {
             deliver_serialized_json(
                 &serde_json::json!({"status":"success","service":"admin","health":"ok"}),
                 StatusCode::OK,
             )
         })
+        // ── Login ───────────────────────────────────────────────────────────
         .post("/admin/api/login", |req, state| async move {
             handle_admin_login(req, state)
                 .await
@@ -178,4 +181,193 @@ pub fn build_admin_router_with_config(
         });
 
     router
+}
+
+// ---------------------------------------------------------------------------
+// Admin-only API routes
+//
+// `build_admin_api_routes` is an **append-only** function: it receives an
+// already-constructed `Router` (typically the result of
+// `build_api_router_with_config`) and chains admin-only endpoints onto it.
+// It must never be called on the user service router.
+//
+// Every route is Hard-auth-gated at the router level, and the handler
+// additionally checks `claims.is_admin` — two independent privilege checks.
+// ---------------------------------------------------------------------------
+pub fn build_admin_api_routes(router: Router) -> Router {
+    router
+        // ── Stats ────────────────────────────────────────────────────────────
+        .get_hard("/admin/stats", |req, state, user_id, claims| async move {
+            if (!claims.is_admin) || (claims.user_id != user_id) {
+                return deliver_error_json(
+                    "FORBIDDEN",
+                    "Insufficient privileges",
+                    StatusCode::FORBIDDEN,
+                );
+            }
+            admin::handle_server_config(req, state, user_id).await
+        })
+        .get_hard(
+            "/admin/api/stats",
+            |req, state, user_id, claims| async move {
+                if (!claims.is_admin) || (claims.user_id != user_id) {
+                    return deliver_error_json(
+                        "FORBIDDEN",
+                        "Insufficient privileges",
+                        StatusCode::FORBIDDEN,
+                    );
+                }
+                admin::handle_server_config(req, state, user_id).await
+            },
+        )
+        // ── Metrics ──────────────────────────────────────────────────────────
+        .get_hard("/admin/metrics", |req, state, user_id, claims| async move {
+            if (!claims.is_admin) || (claims.user_id != user_id) {
+                return deliver_error_json(
+                    "FORBIDDEN",
+                    "Insufficient privileges",
+                    StatusCode::FORBIDDEN,
+                );
+            }
+            admin::handle_metrics(req, state, user_id).await
+        })
+        .get_hard(
+            "/admin/api/metrics",
+            |req, state, user_id, claims| async move {
+                if (!claims.is_admin) || (claims.user_id != user_id) {
+                    return deliver_error_json(
+                        "FORBIDDEN",
+                        "Insufficient privileges",
+                        StatusCode::FORBIDDEN,
+                    );
+                }
+                admin::handle_metrics(req, state, user_id).await
+            },
+        )
+        // ── User list ─────────────────────────────────────────────────────────
+        .get_light("/admin/users", |req, state, claims| async move {
+            if !claims.is_admin {
+                return deliver_error_json(
+                    "FORBIDDEN",
+                    "Insufficient privileges",
+                    StatusCode::FORBIDDEN,
+                );
+            }
+            admin::handle_get_users(req, state, 0).await
+        })
+        .get_light("/admin/api/users", |req, state, claims| async move {
+            if !claims.is_admin {
+                return deliver_error_json(
+                    "FORBIDDEN",
+                    "Insufficient privileges",
+                    StatusCode::FORBIDDEN,
+                );
+            }
+            admin::handle_get_users(req, state, 0).await
+        })
+        // ── Ban / unban ───────────────────────────────────────────────────────
+        .post_hard("/admin/ban", |req, state, user_id, claims| async move {
+            if !claims.is_admin {
+                return deliver_error_json(
+                    "FORBIDDEN",
+                    "Insufficient privileges",
+                    StatusCode::FORBIDDEN,
+                );
+            }
+            admin::handle_ban_user(req, state, user_id).await
+        })
+        .post_hard(
+            "/admin/api/users/ban",
+            |req, state, user_id, claims| async move {
+                if !claims.is_admin {
+                    return deliver_error_json(
+                        "FORBIDDEN",
+                        "Insufficient privileges",
+                        StatusCode::FORBIDDEN,
+                    );
+                }
+                admin::handle_ban_user(req, state, user_id).await
+            },
+        )
+        .post_hard("/admin/unban", |req, state, user_id, claims| async move {
+            if !claims.is_admin {
+                return deliver_error_json(
+                    "FORBIDDEN",
+                    "Insufficient privileges",
+                    StatusCode::FORBIDDEN,
+                );
+            }
+            admin::handle_unban_user(req, state, user_id).await
+        })
+        .post_hard(
+            "/admin/api/users/unban",
+            |req, state, user_id, claims| async move {
+                if !claims.is_admin {
+                    return deliver_error_json(
+                        "FORBIDDEN",
+                        "Insufficient privileges",
+                        StatusCode::FORBIDDEN,
+                    );
+                }
+                admin::handle_unban_user(req, state, user_id).await
+            },
+        )
+        // ── Delete user ───────────────────────────────────────────────────────
+        .delete_hard(
+            "/admin/users/:id",
+            |req, state, user_id, claims| async move {
+                if !claims.is_admin {
+                    return deliver_error_json(
+                        "FORBIDDEN",
+                        "Insufficient privileges",
+                        StatusCode::FORBIDDEN,
+                    );
+                }
+                admin::handle_delete_user(req, state, user_id).await
+            },
+        )
+        .delete_hard(
+            "/admin/api/users/:id",
+            |req, state, user_id, claims| async move {
+                if !claims.is_admin {
+                    return deliver_error_json(
+                        "FORBIDDEN",
+                        "Insufficient privileges",
+                        StatusCode::FORBIDDEN,
+                    );
+                }
+                admin::handle_delete_user(req, state, user_id).await
+            },
+        )
+        // ── Promote / demote ──────────────────────────────────────────────────
+        .post_hard(
+            "/admin/api/users/promote",
+            |req, state, user_id, claims| async move {
+                if !claims.is_admin {
+                    return deliver_error_json(
+                        "FORBIDDEN",
+                        "Insufficient privileges",
+                        StatusCode::FORBIDDEN,
+                    );
+                }
+                admin::handle_promote_user(req, state, user_id)
+                    .await
+                    .context("Promote failed")
+            },
+        )
+        .post_hard(
+            "/admin/api/users/demote",
+            |req, state, user_id, claims| async move {
+                if !claims.is_admin {
+                    return deliver_error_json(
+                        "FORBIDDEN",
+                        "Insufficient privileges",
+                        StatusCode::FORBIDDEN,
+                    );
+                }
+                admin::handle_demote_user(req, state, user_id)
+                    .await
+                    .context("Demote failed")
+            },
+        )
 }

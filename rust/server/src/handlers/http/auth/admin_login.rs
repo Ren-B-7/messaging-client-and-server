@@ -3,14 +3,13 @@ use bytes::Bytes;
 use http_body_util::BodyExt;
 use http_body_util::combinators::BoxBody;
 use hyper::{Request, Response, StatusCode};
-use std::collections::HashMap;
 use std::convert::Infallible;
 use tracing::{error, info, warn};
 
 use crate::AppState;
 use crate::handlers::http::utils::{
-    self, deliver_serialized_json, deliver_serialized_json_with_cookie, encode_jwt, get_client_ip,
-    get_user_agent, is_https,
+    create_persistent_cookie, create_session_cookie, deliver_redirect_with_cookie,
+    deliver_serialized_json, encode_jwt, get_client_ip, get_user_agent, is_https,
 };
 use shared::types::jwt::JwtClaims;
 use shared::types::login::*;
@@ -25,31 +24,13 @@ pub async fn handle_login(
     // Capture IP and UA before consuming the body.
     let ip_address = get_client_ip(&req);
     let user_agent = get_user_agent(&req).unwrap_or_default();
-
-    let content_type = req
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_string();
-
     let secure_cookie = is_https(&req);
 
-    let login_data = if content_type.contains("application/json") {
-        match parse_login_json(req).await {
-            Ok(data) => data,
-            Err(e) => {
-                warn!("Admin login JSON parsing failed: {:?}", e.to_code());
-                return deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST);
-            }
-        }
-    } else {
-        match parse_login_form(req).await {
-            Ok(data) => data,
-            Err(e) => {
-                warn!("Admin login form parsing failed: {:?}", e.to_code());
-                return deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST);
-            }
+    let login_data = match parse_login_json(req).await {
+        Ok(data) => data,
+        Err(e) => {
+            warn!("Admin login JSON parsing failed: {:?}", e.to_code());
+            return deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST);
         }
     };
 
@@ -71,25 +52,16 @@ pub async fn handle_login(
             // the admin SPA can send it as a Bearer header on subsequent requests.
             let instance_cookie = if login_data.remember_me {
                 let max_age = std::time::Duration::from_secs(token_expiry_secs);
-                utils::create_persistent_cookie("auth_id", &jwt, max_age, secure_cookie)
+                create_persistent_cookie("auth_id", &jwt, max_age, secure_cookie)
                     .context("Failed to create persistent instance cookie")?
             } else {
-                utils::create_session_cookie("auth_id", &jwt, secure_cookie)
+                create_session_cookie("auth_id", &jwt, secure_cookie)
                     .context("Failed to create session instance cookie")?
             };
 
-            let response_data = LoginResponse::Success {
-                user_id,
-                username,
-                token: jwt,
-                expires_in: token_expiry_secs,
-                message: "Admin login successful".to_string(),
-            };
-
-            Ok(deliver_serialized_json_with_cookie(
-                &response_data,
-                StatusCode::OK,
-                instance_cookie,
+            Ok(deliver_redirect_with_cookie(
+                "/admin",
+                Some(instance_cookie),
             )?)
         }
         Err(e) => {
@@ -115,44 +87,6 @@ async fn parse_login_json(
     serde_json::from_slice::<LoginData>(&body).map_err(|e| {
         error!("Failed to parse admin login JSON: {}", e);
         LoginError::InternalError
-    })
-}
-
-async fn parse_login_form(
-    req: Request<hyper::body::Incoming>,
-) -> std::result::Result<LoginData, LoginError> {
-    let body = req
-        .collect()
-        .await
-        .map_err(|_| LoginError::InternalError)?
-        .to_bytes();
-
-    let params = form_urlencoded::parse(body.as_ref())
-        .into_owned()
-        .collect::<HashMap<String, String>>();
-
-    let username = params
-        .get("username")
-        .or_else(|| params.get("email"))
-        .ok_or(LoginError::MissingField("username".to_string()))?
-        .trim()
-        .to_string();
-
-    let password = params
-        .get("password")
-        .ok_or(LoginError::MissingField("password".to_string()))?
-        .to_string();
-
-    let remember_me = params
-        .get("remember_me")
-        .or_else(|| params.get("remember"))
-        .map(|v| v == "on" || v == "true" || v == "1")
-        .unwrap_or(false);
-
-    Ok(LoginData {
-        username,
-        password,
-        remember_me,
     })
 }
 
