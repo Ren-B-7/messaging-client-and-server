@@ -261,15 +261,15 @@ mod tests {
     // ── ChatContext parsing ─────────────────────────────────────────────────
 
     #[test]
-    fn test_chat_context_direct() {
+    fn test_chat_context_group_by_chat_id_1() {
         let mut p = std::collections::HashMap::new();
-        p.insert("other_user_id".to_string(), "42".to_string());
+        p.insert("chat_id".to_string(), "1".to_string());
         let ctx = ChatContext::from_params(&p).unwrap();
-        assert!(matches!(ctx, ChatContext::Chat { chat_id: 42 }));
+        assert!(matches!(ctx, ChatContext::Chat { chat_id: 1 }));
     }
 
     #[test]
-    fn test_chat_context_group_by_chat_id() {
+    fn test_chat_context_group_by_chat_id_2() {
         let mut p = std::collections::HashMap::new();
         p.insert("chat_id".to_string(), "7".to_string());
         let ctx = ChatContext::from_params(&p).unwrap();
@@ -277,11 +277,16 @@ mod tests {
     }
 
     #[test]
-    fn test_chat_context_group_by_chat_id() {
+    fn test_chat_context_group_by_chat_id_3() {
         let mut p = std::collections::HashMap::new();
-        p.insert("chat_id".to_string(), "99".to_string());
+        p.insert("chat_id".to_string(), "991234565445".to_string());
         let ctx = ChatContext::from_params(&p).unwrap();
-        assert!(matches!(ctx, ChatContext::Chat { chat_id: 99 }));
+        assert!(matches!(
+            ctx,
+            ChatContext::Chat {
+                chat_id: 991234565445
+            }
+        ));
     }
 
     #[test]

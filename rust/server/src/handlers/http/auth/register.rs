@@ -3,7 +3,6 @@ use bytes::Bytes;
 use http_body_util::BodyExt;
 use http_body_util::combinators::BoxBody;
 use hyper::{Request, Response, StatusCode};
-use std::collections::HashMap;
 use std::convert::Infallible;
 use tracing::{error, info, warn};
 
@@ -20,14 +19,13 @@ use shared::types::jwt::JwtClaims;
 use shared::types::login::*;
 use shared::types::register::*;
 
-/// Main registration handler.
+/// POST /api/register
 pub async fn handle_register(
     req: Request<hyper::body::Incoming>,
     state: AppState,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing registration request");
 
-    // Extract IP and UA *before* consuming the body.
     let ip_address = get_client_ip(&req);
     let user_agent = get_user_agent(&req).unwrap_or_default();
     let secure_cookie = is_https(&req);
@@ -40,7 +38,6 @@ pub async fn handle_register(
         }
     };
 
-    // Create user in DB.
     let user_id = match create_user(&registration_data, &state).await {
         Ok(id) => id,
         Err(e) => {
@@ -64,16 +61,12 @@ pub async fn handle_register(
         .await
         .unwrap_or(false);
 
-    // Create the session row and mint a JWT.
     let session_id = generate_uuid_token();
     let session_created =
         create_session_for_new_user(user_id, &session_id, &state, ip_address).await;
 
     if let Err(e) = session_created {
-        error!(
-            "Failed to create session after registration: {}",
-            e.to_code()
-        );
+        error!("Failed to create session after registration: {}", e.to_code());
         return deliver_serialized_json(
             &RegisterError::DatabaseError.to_response(),
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -112,34 +105,27 @@ pub async fn handle_register(
     let instance_cookie = create_session_cookie("auth_id", &jwt, secure_cookie)
         .context("Failed to create session cookie")?;
 
-    Ok(deliver_redirect_with_cookie(
-        "/chat",
-        Some(instance_cookie),
-    )?)
+    Ok(deliver_redirect_with_cookie("/chat", Some(instance_cookie))?)
 }
 
 // ---------------------------------------------------------------------------
 // Parsing / validation
 // ---------------------------------------------------------------------------
 
-/// Parse and validate the registration body.
-/// Consumes `req` — IP/UA must be extracted before calling this.
 async fn parse_and_validate_registration(
     req: Request<hyper::body::Incoming>,
     state: &AppState,
 ) -> std::result::Result<RegisterData, RegisterError> {
-    let content_type = req
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_string();
+    let body = req
+        .collect()
+        .await
+        .map_err(|_| RegisterError::InternalError)?
+        .to_bytes();
 
-    let data = if content_type.contains("application/json") {
-        parse_registration_json(req).await?
-    } else {
-        parse_registration_form(req).await?
-    };
+    let data = serde_json::from_slice::<RegisterData>(&body).map_err(|e| {
+        error!("Failed to parse registration JSON: {}", e);
+        RegisterError::InternalError
+    })?;
 
     validate_registration(&data)?;
     check_username_available(&data.username, state).await?;
@@ -148,71 +134,6 @@ async fn parse_and_validate_registration(
     }
 
     Ok(data)
-}
-
-async fn parse_registration_json(
-    req: Request<hyper::body::Incoming>,
-) -> std::result::Result<RegisterData, RegisterError> {
-    let body = req
-        .collect()
-        .await
-        .map_err(|_| RegisterError::InternalError)?
-        .to_bytes();
-
-    serde_json::from_slice::<RegisterData>(&body).map_err(|e| {
-        error!("Failed to parse registration JSON: {}", e);
-        RegisterError::InternalError
-    })
-}
-
-async fn parse_registration_form(
-    req: Request<hyper::body::Incoming>,
-) -> std::result::Result<RegisterData, RegisterError> {
-    let body = req
-        .collect()
-        .await
-        .map_err(|_| RegisterError::InternalError)?
-        .to_bytes();
-
-    let params = form_urlencoded::parse(body.as_ref())
-        .into_owned()
-        .collect::<HashMap<String, String>>();
-
-    let username = params
-        .get("username")
-        .ok_or(RegisterError::MissingField("username".to_string()))?
-        .trim()
-        .to_string();
-
-    let password = params
-        .get("password")
-        .ok_or(RegisterError::MissingField("password".to_string()))?
-        .to_string();
-
-    let confirm_password = params
-        .get("confirm_password")
-        .or_else(|| params.get("password_confirm"))
-        .ok_or(RegisterError::MissingField("confirm_password".to_string()))?
-        .to_string();
-
-    let email = params
-        .get("email")
-        .filter(|e| !e.is_empty())
-        .map(|e| e.trim().to_string());
-
-    let full_name = params
-        .get("full_name")
-        .or_else(|| params.get("fullName"))
-        .filter(|n| !n.is_empty())
-        .map(|n| n.trim().to_string());
-
-    Ok(RegisterData {
-        username,
-        password,
-        confirm_password,
-        email,
-        full_name,
-    })
 }
 
 fn validate_registration(data: &RegisterData) -> std::result::Result<(), RegisterError> {
@@ -321,8 +242,6 @@ async fn create_user(
     })
 }
 
-/// Create a session row for a newly registered user.
-/// `session_id` is the UUID that will be embedded in the JWT.
 async fn create_session_for_new_user(
     user_id: i64,
     session_id: &str,
@@ -351,7 +270,7 @@ async fn create_session_for_new_user(
 }
 
 // ---------------------------------------------------------------------------
-// Tests  (unchanged from original)
+// Tests
 // ---------------------------------------------------------------------------
 #[cfg(test)]
 mod tests {

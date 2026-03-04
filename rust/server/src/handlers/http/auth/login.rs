@@ -16,22 +16,21 @@ use crate::handlers::http::utils::{
 use shared::types::jwt::JwtClaims;
 use shared::types::login::*;
 
-/// Main login handler.
+/// POST /api/login
 pub async fn handle_login(
     req: Request<hyper::body::Incoming>,
     state: AppState,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing login request");
 
-    // Extract IP and UA *before* consuming the body.
     let ip_address = get_client_ip(&req);
     let user_agent = get_user_agent(&req).unwrap_or_default();
     let secure_cookie = is_https(&req);
 
-    let login_data = match parse_login_json(req).await {
+    let login_data = match parse_body(req).await {
         Ok(data) => data,
         Err(e) => {
-            warn!("Login JSON parsing failed: {:?}", e.to_code());
+            warn!("Login parsing failed: {:?}", e.to_code());
             return deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST);
         }
     };
@@ -43,10 +42,7 @@ pub async fn handle_login(
 
     match attempt_login(&login_data, &state, ip_address, user_agent).await {
         Ok((user_id, username, jwt)) => {
-            info!(
-                "User logged in successfully: {} (ID: {})",
-                username, user_id
-            );
+            info!("User logged in successfully: {} (ID: {})", username, user_id);
 
             let token_expiry_secs = state.config.read().await.auth.token_expiry_minutes * 60;
 
@@ -59,10 +55,7 @@ pub async fn handle_login(
                     .context("Failed to create session instance cookie")?
             };
 
-            Ok(deliver_redirect_with_cookie(
-                "/chat",
-                Some(instance_cookie),
-            )?)
+            Ok(deliver_redirect_with_cookie("/chat", Some(instance_cookie))?)
         }
         Err(e) => {
             warn!("Login failed: {:?}", e.to_code());
@@ -72,10 +65,10 @@ pub async fn handle_login(
 }
 
 // ---------------------------------------------------------------------------
-// Parsing helpers
+// Parsing / validation
 // ---------------------------------------------------------------------------
 
-async fn parse_login_json(
+async fn parse_body(
     req: Request<hyper::body::Incoming>,
 ) -> std::result::Result<LoginData, LoginError> {
     let body = req
@@ -135,12 +128,11 @@ async fn attempt_login(
     }
 
     let password_valid =
-        crate::database::utils::verify_password(&user_auth.password_hash, &data.password).map_err(
-            |e| {
+        crate::database::utils::verify_password(&user_auth.password_hash, &data.password)
+            .map_err(|e| {
                 error!("Password verification error: {}", e);
                 LoginError::InternalError
-            },
-        )?;
+            })?;
 
     if !password_valid {
         warn!("Invalid password for user: {}", data.username);
@@ -163,7 +155,6 @@ async fn attempt_login(
         .await
         .unwrap_or(false);
 
-    // Generate a UUID that acts as the revocation handle inside the JWT.
     let session_id = crate::database::utils::generate_uuid_token();
     let token_expiry_secs = state.config.read().await.auth.token_expiry_minutes * 60;
     let expires_at = crate::database::utils::calculate_expiry(token_expiry_secs as i64);
@@ -188,7 +179,6 @@ async fn attempt_login(
         .map_err(|e| error!("Failed to update last login: {}", e))
         .ok();
 
-    // Build and sign the JWT.
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()

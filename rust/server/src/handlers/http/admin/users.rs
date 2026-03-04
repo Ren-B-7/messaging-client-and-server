@@ -58,6 +58,55 @@ pub async fn handle_get_users(
     )
 }
 
+/// GET /admin/api/sessions — list all users.
+///
+/// Hard-auth + is_admin guard applied by the router before this is called.
+pub async fn handle_get_sessions(
+    _req: Request<IncomingBody>,
+    state: AppState,
+    _admin_id: i64,
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    info!("Serving session list");
+
+    let now = crate::database::utils::now_unix();
+
+    let sessions = state
+        .db
+        .call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT s.id, s.user_id, u.username, s.ip_address,
+                        s.created_at, s.expires_at
+                 FROM   sessions s
+                 JOIN   users u ON u.id = s.user_id
+                 WHERE  s.expires_at > ?1
+                 ORDER  BY s.created_at DESC",
+            )?;
+
+            let rows = stmt
+                .query_map([now], |row| {
+                    Ok(serde_json::json!({
+                        "id":         row.get::<_, String>(0)?,
+                        "user_id":    row.get::<_, i64>(1)?,
+                        "username":   row.get::<_, String>(2)?,
+                        "ip_address": row.get::<_, Option<String>>(3)?,
+                        "created_at": row.get::<_, i64>(4)?,
+                        "expires_at": row.get::<_, i64>(5)?,
+                    }))
+                })?
+                .collect::<std::result::Result<Vec<_>, tokio_rusqlite::rusqlite::Error>>()?;
+
+            Ok::<_, tokio_rusqlite::rusqlite::Error>(rows)
+        })
+        .await
+        .context("Failed to query sessions")?;
+
+    deliver_success_json(
+        Some(serde_json::json!({ "sessions": sessions, "total": sessions.len() })),
+        None,
+        StatusCode::OK,
+    )
+}
+
 /// POST /admin/api/users/ban — ban a user.
 ///
 /// Hard-auth + is_admin guard applied by the router.

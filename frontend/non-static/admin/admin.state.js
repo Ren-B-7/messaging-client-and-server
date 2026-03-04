@@ -8,6 +8,9 @@ const AdminState = {
   /** All users returned from /admin/api/users */
   users: [],
 
+  /** All sessions returned from /admin/api/sessions */
+  sessions: [],
+
   /** Activity log entries (newest first), capped at 200 */
   log: [],
 
@@ -15,7 +18,7 @@ const AdminState = {
   stats: null,
 
   /** Currently active tab name */
-  activeTab: 'dashboard',
+  activeTab: "dashboard",
 
   // ── Log ──────────────────────────────────────────────────────────────────
 
@@ -31,11 +34,11 @@ const AdminState = {
   // ── Users ─────────────────────────────────────────────────────────────────
 
   setUserBanned(id, banned) {
-    const u = this.users.find(u => u.id === id);
+    const u = this.users.find((u) => u.id === id);
     if (u) u.banned = banned;
   },
 
   removeUser(id) {
-    this.users = this.users.filter(u => u.id !== id);
+    this.users = this.users.filter((u) => u.id !== id);
   },
 };

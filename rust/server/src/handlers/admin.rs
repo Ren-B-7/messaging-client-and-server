@@ -265,6 +265,27 @@ pub fn build_admin_api_routes(router: Router) -> Router {
             }
             admin::handle_get_users(req, state, 0).await
         })
+        // ── Session list ──────────────────────────────────────────────────────
+        .get_light("/admin/sessions", |req, state, claims| async move {
+            if !claims.is_admin {
+                return deliver_error_json(
+                    "FORBIDDEN",
+                    "Insufficient privileges",
+                    StatusCode::FORBIDDEN,
+                );
+            }
+            admin::handle_get_sessions(req, state, 0).await
+        })
+        .get_light("/admin/api/sessions", |req, state, claims| async move {
+            if !claims.is_admin {
+                return deliver_error_json(
+                    "FORBIDDEN",
+                    "Insufficient privileges",
+                    StatusCode::FORBIDDEN,
+                );
+            }
+            admin::handle_get_sessions(req, state, 0).await
+        })
         // ── Ban / unban ───────────────────────────────────────────────────────
         .post_hard("/admin/ban", |req, state, user_id, claims| async move {
             if !claims.is_admin {

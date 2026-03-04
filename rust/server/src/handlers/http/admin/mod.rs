@@ -3,10 +3,6 @@ pub mod users;
 
 pub use stats::{handle_metrics, handle_server_config};
 pub use users::{
-    handle_ban_user,
-    handle_delete_user,
-    handle_demote_user,
-    handle_get_users,
-    handle_promote_user,
-    handle_unban_user,
+    handle_ban_user, handle_delete_user, handle_demote_user, handle_get_sessions, handle_get_users,
+    handle_promote_user, handle_unban_user,
 };
