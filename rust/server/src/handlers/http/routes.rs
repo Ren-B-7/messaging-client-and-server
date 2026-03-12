@@ -3,8 +3,9 @@ use std::future::Future;
 use std::pin::Pin;
 
 use anyhow::{Context, Result};
+use base64::prelude::{BASE64_STANDARD, Engine as _};
 use bytes::Bytes;
-use http_body_util::combinators::BoxBody;
+use http_body_util::{BodyExt, combinators::BoxBody};
 use hyper::{Method, Request, Response, StatusCode};
 use tracing::{info, warn};
 
@@ -330,7 +331,8 @@ impl Router {
                     Ok(claims) => h(req, state, claims).await,
                     Err(reason) => {
                         warn!("Light-auth rejected {} {}: {}", method, path, reason);
-                        unauthorized()
+                        // Token is missing or cryptographically invalid — always 401.
+                        unauthorized(&req)
                     }
                 },
 
@@ -339,7 +341,14 @@ impl Router {
                     Ok((user_id, claims)) => h(req, state, user_id, claims).await,
                     Err(reason) => {
                         warn!("Hard-auth rejected {} {}: {}", method, path, reason);
-                        unauthorized()
+                        // Token decoded successfully but the session was revoked or the
+                        // request arrived from a different IP — the user is authenticated
+                        // but not permitted, so 403 is more accurate than 401.
+                        if reason.contains("Session") || reason.contains("IP") {
+                            forbidden(&req)
+                        } else {
+                            unauthorized(&req)
+                        }
                     }
                 },
             };
@@ -352,8 +361,7 @@ impl Router {
             }
         }
 
-        json_response::deliver_error_json("NOT_FOUND", "Endpoint not found", StatusCode::NOT_FOUND)
-            .context("Failed to deliver 404 response")
+        not_found(&req)
     }
 
     // ── Path matching ─────────────────────────────────────────────────────────
@@ -443,6 +451,37 @@ impl Router {
                 ))
             }
 
+            // ── Error page ────────────────────────────────────────────────────
+            //
+            // /error          — generic error page; payload arrives via ?e= or
+            //                   ?code=&title=&subtitle=&hint= query params that
+            //                   error.html reads entirely client-side.
+            //
+            // /error/:code    — convenience alias so server-side redirects can
+            //                   use a clean URL like /error/404 while still
+            //                   serving the same error.html shell. The JS in
+            //                   error.html parses the numeric segment itself.
+            "/error" => {
+                let file_path = format!("{}/error.html", web_dir);
+                Ok(Some(
+                    deliver_html_page(&file_path).context("Failed to deliver error page")?,
+                ))
+            }
+
+            path if {
+                let segs: Vec<&str> = path.splitn(4, '/').collect();
+                segs.len() == 3 && segs[1] == "error" && !segs[2].is_empty()
+            } =>
+            {
+                // e.g. /error/404, /error/403, /error/500
+                // Serve error.html regardless of the code segment — the page
+                // reads window.location.pathname to extract it client-side.
+                let file_path = format!("{}/error.html", web_dir);
+                Ok(Some(
+                    deliver_html_page(&file_path).context("Failed to deliver error page")?,
+                ))
+            }
+
             path if path.ends_with(".html") => {
                 let file_path = format!("{}{}", web_dir, path);
                 Ok(Some(
@@ -459,7 +498,96 @@ impl Router {
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn unauthorized() -> Result<Response<BoxBody<Bytes, Infallible>>> {
+/// Returns `true` when the request was made by a browser navigating directly
+/// (i.e. the `Accept` header prefers `text/html` over `application/json`).
+/// Programmatic `fetch()` / `XMLHttpRequest` callers send `application/json`
+/// or `*/*` without an explicit HTML preference, so they continue to receive
+/// JSON error bodies as before.
+fn prefers_html(req: &Request<hyper::body::Incoming>) -> bool {
+    req.headers()
+        .get(hyper::header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .map(|accept| {
+            // Walk the comma-separated media-range list and return true only
+            // when `text/html` appears before `application/json` (or when
+            // `application/json` is absent altogether).
+            let mut html_q = -1.0f32;
+            let mut json_q = -1.0f32;
+
+            for part in accept.split(',') {
+                let part = part.trim();
+                let (media, params) = match part.split_once(';') {
+                    Some((m, p)) => (m.trim(), p.trim()),
+                    None => (part, ""),
+                };
+                let q: f32 = if params.starts_with("q=") {
+                    params[2..].parse().unwrap_or(1.0)
+                } else {
+                    1.0
+                };
+                match media {
+                    "text/html" => html_q = html_q.max(q),
+                    "application/json" => json_q = json_q.max(q),
+                    _ => {}
+                }
+            }
+
+            // A browser that sends `text/html,application/xhtml+xml,...`
+            // will have html_q=1.0, json_q=-1.0 → redirect.
+            // A fetch() with `application/json` will have json_q=1.0,
+            // html_q=-1.0 → JSON body.
+            html_q > json_q
+        })
+        .unwrap_or(false)
+}
+
+/// Build a base64-encoded error payload URL for `/error`.
+///
+/// The payload matches the schema consumed by `error.html`:
+/// `{ code, title, subtitle, hint, primary: { label, href } }`
+fn error_redirect_url(
+    code: u16,
+    title: &str,
+    subtitle: &str,
+    hint: &str,
+    primary_label: &str,
+    primary_href: &str,
+) -> String {
+    // Hand-roll minimal JSON to avoid pulling in serde just for this path.
+    let json = format!(
+        r#"{{"code":{code},"title":"{title}","subtitle":"{subtitle}","hint":"{hint}","primary":{{"label":"{primary_label}","href":"{primary_href}"}}}}"#,
+        code = code,
+        title = title,
+        subtitle = subtitle,
+        hint = hint,
+        primary_label = primary_label,
+        primary_href = primary_href,
+    );
+    // base64 encode — use the standard alphabet without padding issues in URLs
+    let encoded = BASE64_STANDARD.encode(json.as_bytes());
+    format!("/error?e={}", encoded)
+}
+
+pub fn unauthorized(
+    req: &Request<hyper::body::Incoming>,
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    if prefers_html(req) {
+        let location = error_redirect_url(
+            401,
+            "Unauthorised",
+            "You need to sign in to access this page.",
+            "Please log in and try again.",
+            "Sign In",
+            "/login",
+        );
+        return Response::builder()
+            .status(StatusCode::FOUND)
+            .header(hyper::header::LOCATION, location)
+            .header(hyper::header::CACHE_CONTROL, "no-store")
+            .body(http_body_util::Empty::new().map_err(|e| match e {}).boxed())
+            .context("Failed to build 401 redirect response");
+    }
+
     json_response::deliver_error_json(
         "UNAUTHORIZED",
         "Authentication required",
@@ -468,13 +596,64 @@ fn unauthorized() -> Result<Response<BoxBody<Bytes, Infallible>>> {
     .context("Failed to deliver 401 response")
 }
 
-fn forbidden() -> Result<Response<BoxBody<Bytes, Infallible>>> {
+pub fn forbidden(
+    req: &Request<hyper::body::Incoming>,
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    if prefers_html(req) {
+        let location = error_redirect_url(
+            403,
+            "Forbidden",
+            "You don\\'t have permission to view this resource.",
+            "Contact an administrator if you believe this is a mistake.",
+            "Go Home",
+            "/",
+        );
+        return Response::builder()
+            .status(StatusCode::FOUND)
+            .header(hyper::header::LOCATION, location)
+            .header(hyper::header::CACHE_CONTROL, "no-store")
+            .body(http_body_util::Empty::new().map_err(|e| match e {}).boxed())
+            .context("Failed to build 403 redirect response");
+    }
+
     json_response::deliver_error_json(
         "FORBIDDEN",
         "Insufficient privileges",
         StatusCode::FORBIDDEN,
     )
     .context("Failed to deliver 403 response")
+}
+
+pub fn not_found(
+    req: &Request<hyper::body::Incoming>,
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    // Only redirect browsers navigating to page-like URLs.
+    // API endpoints (/api/*), source maps (*.map), and well-known paths
+    // always return JSON — never redirect, as those callers do not render HTML.
+    let path = req.uri().path();
+    let is_api = path.starts_with("/api/");
+    let is_source_map = path.ends_with(".map");
+    let is_well_known = path.starts_with("/.well-known/");
+
+    if !is_api && !is_source_map && !is_well_known && prefers_html(req) {
+        let location = error_redirect_url(
+            404,
+            "Page Not Found",
+            "The page you\'re looking for doesn\'t exist.",
+            "It may have been moved, renamed, or deleted.",
+            "Go Home",
+            "/",
+        );
+        return Response::builder()
+            .status(StatusCode::FOUND)
+            .header(hyper::header::LOCATION, location)
+            .header(hyper::header::CACHE_CONTROL, "no-store")
+            .body(http_body_util::Empty::new().map_err(|e| match e {}).boxed())
+            .context("Failed to build 404 redirect response");
+    }
+
+    json_response::deliver_error_json("NOT_FOUND", "Endpoint not found", StatusCode::NOT_FOUND)
+        .context("Failed to deliver 404 response")
 }
 
 // ---------------------------------------------------------------------------

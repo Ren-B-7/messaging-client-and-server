@@ -29,6 +29,8 @@ chacha20poly1305 = { version = "0.10", features = ["std"] }
 # Compression
 flate2 = "1.0"
 
+base64 = "0.22"
+
 # Tower
 tower = { version = "0.5.3", default-features = false, features = [
     "util",

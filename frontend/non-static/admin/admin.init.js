@@ -12,8 +12,10 @@ window.addEventListener("DOMContentLoaded", () => {
   // ── Theme ──────────────────────────────────────────────────────────────────
   themeManager.init(["base", "admin"]);
 
-  document.getElementById("theme-toggle")?.addEventListener("click", () => {
-    themeManager.toggle();
+  const adminThemeBtn = document.getElementById("theme-toggle");
+  themeManager.syncIcon(adminThemeBtn);
+  adminThemeBtn?.addEventListener("click", () => {
+    themeManager.toggle(); // syncIcon auto-updates via themechange event
   });
 
   // ── Clock ──────────────────────────────────────────────────────────────────

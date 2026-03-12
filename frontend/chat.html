@@ -14,12 +14,15 @@
     <link
       rel="stylesheet"
       href="static/css/base/base.light.css"
-      fetchpriority="high"
-    />
+      fetchpriority="high" data-theme-mod="base" data-theme-variant="light" />
     <link
       rel="stylesheet"
       href="static/css/chat/chat.light.css"
-      fetchpriority="high"
+      fetchpriority="high" data-theme-mod="chat" data-theme-variant="light" />
+    <link
+      rel="stylesheet"
+      href="static/css/error.interceptor.css"
+      fetchpriority="low"
     />
 
     <!-- Synchronous theme detection — runs before render to avoid flash -->
@@ -37,6 +40,8 @@
             l.rel = "stylesheet";
             l.href = "static/css/" + m + "/" + m + ".dark.css";
             l.fetchPriority = "high";
+            l.dataset.themeMod = m;
+            l.dataset.themeVariant = "dark";
             document.head.appendChild(l);
           });
         }
@@ -186,12 +191,18 @@
 
     <!-- Preloads -->
     <link rel="preload" href="static/js/utils/theme.manager.js" as="script" />
+    <link rel="preload" href="static/js/utils/error.interceptor.js" as="script" />
     <link
       rel="preload"
       href="static/js/config/platform.config.js"
       as="script"
     />
     <link rel="preload" href="static/js/utils/utils.js" as="script" />
+    <link
+      rel="preload"
+      href="static/js/utils/error.interceptor.js"
+      as="script"
+    />
     <link rel="preload" href="non-static/chat/chat.state.js" as="script" />
     <link rel="preload" href="non-static/chat/chat.ui.js" as="script" />
     <link rel="preload" href="non-static/chat/chat.messages.js" as="script" />
@@ -204,6 +215,7 @@
     <link rel="preload" href="non-static/chat/chat.init.js" as="script" />
 
     <!-- Scripts (deferred — execute after HTML is parsed, in order) -->
+    <script defer src="static/js/utils/error.interceptor.js"></script>
     <script defer src="static/js/utils/theme.manager.js"></script>
     <script defer src="static/js/config/platform.config.js"></script>
     <script defer src="static/js/utils/utils.js"></script>
@@ -333,9 +345,21 @@
                 title="Group settings"
                 style="display: none"
               >
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <circle cx="12" cy="12" r="3"/>
-                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                <svg
+                  viewBox="0 0 24 24"
+                  width="20"
+                  height="20"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <circle cx="12" cy="12" r="3" />
+                  <path
+                    d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+                  />
                 </svg>
               </button>
               <!-- Only visible for group conversations -->
@@ -569,25 +593,43 @@
       <div class="conv-modal conv-modal--wide">
         <div class="conv-modal-head">
           <span class="conv-modal-title">Group Settings</span>
-          <button class="conv-modal-close" data-close-conv-modal="group-settings-modal" aria-label="Close">×</button>
+          <button
+            class="conv-modal-close"
+            data-close-conv-modal="group-settings-modal"
+            aria-label="Close"
+          >
+            ×
+          </button>
         </div>
         <div class="conv-modal-body">
-
           <!-- Rename section -->
           <div class="group-settings-section">
             <h4 class="group-settings-label">Group Name</h4>
             <div class="group-settings-row">
-              <input type="text" class="form-input" id="groupRenameInput" placeholder="Enter new name" autocomplete="off" />
-              <button class="btn btn-primary btn-sm" id="groupRenameBtn">Rename</button>
+              <input
+                type="text"
+                class="form-input"
+                id="groupRenameInput"
+                placeholder="Enter new name"
+                autocomplete="off"
+              />
+              <button class="btn btn-primary btn-sm" id="groupRenameBtn">
+                Rename
+              </button>
             </div>
             <div class="conv-modal-error" id="groupRenameError"></div>
           </div>
 
           <!-- Members section -->
           <div class="group-settings-section">
-            <h4 class="group-settings-label">Members <span id="groupMemberCount" class="group-member-count"></span></h4>
+            <h4 class="group-settings-label">
+              Members
+              <span id="groupMemberCount" class="group-member-count"></span>
+            </h4>
             <div id="groupMembersList" class="group-members-list">
-              <p style="color:var(--fg-tertiary);font-size:var(--text-sm)">Loading…</p>
+              <p style="color: var(--fg-tertiary); font-size: var(--text-sm)">
+                Loading…
+              </p>
             </div>
           </div>
 
@@ -596,18 +638,36 @@
             <h4 class="group-settings-label">Add Member</h4>
             <div class="group-settings-row">
               <div class="group-search-wrapper">
-                <input type="text" class="form-input" id="groupAddMemberInput" placeholder="Search by username…" autocomplete="off" />
-                <div class="group-search-results" id="groupSearchResults" style="display:none"></div>
+                <input
+                  type="text"
+                  class="form-input"
+                  id="groupAddMemberInput"
+                  placeholder="Search by username…"
+                  autocomplete="off"
+                />
+                <div
+                  class="group-search-results"
+                  id="groupSearchResults"
+                  style="display: none"
+                ></div>
               </div>
-              <button class="btn btn-primary btn-sm" id="groupAddMemberBtn">Add</button>
+              <button class="btn btn-primary btn-sm" id="groupAddMemberBtn">
+                Add
+              </button>
             </div>
             <div class="conv-modal-error" id="groupAddMemberError"></div>
           </div>
-
         </div>
         <div class="conv-modal-footer conv-modal-footer--split">
-          <button class="btn btn-danger btn-sm" id="groupDeleteBtn">Delete Group</button>
-          <button class="btn btn-secondary btn-sm" data-close-conv-modal="group-settings-modal">Close</button>
+          <button class="btn btn-danger btn-sm" id="groupDeleteBtn">
+            Delete Group
+          </button>
+          <button
+            class="btn btn-secondary btn-sm"
+            data-close-conv-modal="group-settings-modal"
+          >
+            Close
+          </button>
         </div>
       </div>
     </div>
@@ -617,15 +677,31 @@
       <div class="conv-modal">
         <div class="conv-modal-head">
           <span class="conv-modal-title">Delete Group</span>
-          <button class="conv-modal-close" data-close-conv-modal="group-delete-confirm-modal" aria-label="Close">×</button>
+          <button
+            class="conv-modal-close"
+            data-close-conv-modal="group-delete-confirm-modal"
+            aria-label="Close"
+          >
+            ×
+          </button>
         </div>
         <div class="conv-modal-body">
-          <p>Are you sure you want to permanently delete <strong id="groupDeleteName"></strong>? This cannot be undone.</p>
+          <p>
+            Are you sure you want to permanently delete
+            <strong id="groupDeleteName"></strong>? This cannot be undone.
+          </p>
           <div class="conv-modal-error" id="groupDeleteError"></div>
         </div>
         <div class="conv-modal-footer">
-          <button class="btn btn-secondary btn-sm" data-close-conv-modal="group-delete-confirm-modal">Cancel</button>
-          <button class="btn btn-danger btn-sm" id="groupDeleteConfirmBtn">Delete</button>
+          <button
+            class="btn btn-secondary btn-sm"
+            data-close-conv-modal="group-delete-confirm-modal"
+          >
+            Cancel
+          </button>
+          <button class="btn btn-danger btn-sm" id="groupDeleteConfirmBtn">
+            Delete
+          </button>
         </div>
       </div>
     </div>

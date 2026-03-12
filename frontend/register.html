@@ -14,12 +14,15 @@
     <link
       rel="stylesheet"
       href="static/css/base/base.light.css"
-      fetchpriority="high"
-    />
+      fetchpriority="high" data-theme-mod="base" data-theme-variant="light" />
     <link
       rel="stylesheet"
       href="static/css/auth/auth.light.css"
-      fetchpriority="high"
+      fetchpriority="high" data-theme-mod="auth" data-theme-variant="light" />
+    <link
+      rel="stylesheet"
+      href="static/css/error.interceptor.css"
+      fetchpriority="low"
     />
 
     <!-- Synchronous theme detection — runs before render to avoid flash -->
@@ -37,6 +40,8 @@
             l.rel = "stylesheet";
             l.href = "static/css/" + m + "/" + m + ".dark.css";
             l.fetchPriority = "high";
+            l.dataset.themeMod = m;
+            l.dataset.themeVariant = "dark";
             document.head.appendChild(l);
           });
         }
@@ -58,6 +63,7 @@
 
     <!-- Preloads -->
     <link rel="preload" href="static/js/utils/theme.manager.js" as="script" />
+    <link rel="preload" href="static/js/utils/error.interceptor.js" as="script" />
     <link
       rel="preload"
       href="static/js/config/platform.config.js"
@@ -65,11 +71,17 @@
     />
     <link rel="preload" href="static/js/utils/utils.js" as="script" />
     <link rel="preload" href="static/js/auth/auth.password.js" as="script" />
+    <link
+      rel="preload"
+      href="static/js/utils/error.interceptor.js"
+      as="script"
+    />
     <link rel="preload" href="non-static/auth/auth.login.js" as="script" />
     <link rel="preload" href="non-static/auth/auth.register.js" as="script" />
     <link rel="preload" href="non-static/auth/auth.init.js" as="script" />
 
     <!-- Scripts (deferred — execute after HTML is parsed, in order) -->
+    <script defer src="static/js/utils/error.interceptor.js"></script>
     <script defer src="static/js/utils/theme.manager.js"></script>
     <script defer src="static/js/config/platform.config.js"></script>
     <script defer src="static/js/utils/utils.js"></script>

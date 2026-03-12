@@ -16,7 +16,9 @@ use tower::Service;
 use tracing::{error, info, warn};
 
 use crate::AppState;
-use crate::handlers::http::routes::{Router, build_api_router_with_config};
+use crate::handlers::http::routes::{
+    Router, build_api_router_with_config, forbidden, unauthorized,
+};
 use crate::handlers::http::{auth, utils::*};
 use crate::handlers::sse;
 
@@ -104,14 +106,12 @@ async fn user_conn(
             "Admin path access attempt from user service {}: {}",
             addr, path
         );
-        return deliver_error_json("FORBIDDEN", "Access Denied", StatusCode::FORBIDDEN)
-            .context("Failed to deliver FORBIDDEN error response");
+        return unauthorized(&req);
     }
 
     if blocked_paths.contains(&path) {
         warn!("Blocked path access attempt from {}: {}", addr, path);
-        return deliver_error_json("FORBIDDEN", "Access Denied", StatusCode::FORBIDDEN)
-            .context("Failed to deliver FORBIDDEN error response");
+        return forbidden(&req);
     }
 
     router

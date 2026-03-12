@@ -14,17 +14,19 @@
     <link
       rel="stylesheet"
       href="static/css/base/base.light.css"
-      fetchpriority="high"
-    />
+      fetchpriority="high" data-theme-mod="base" data-theme-variant="light" />
     <link
       rel="stylesheet"
       href="static/css/chat/chat.light.css"
-      fetchpriority="high"
-    />
+      fetchpriority="high" data-theme-mod="chat" data-theme-variant="light" />
     <link
       rel="stylesheet"
       href="static/css/settings/settings.light.css"
-      fetchpriority="high"
+      fetchpriority="high" data-theme-mod="settings" data-theme-variant="light" />
+    <link
+      rel="stylesheet"
+      href="static/css/error.interceptor.css"
+      fetchpriority="low"
     />
 
     <!-- Synchronous theme detection — runs before render to avoid flash -->
@@ -42,6 +44,8 @@
             l.rel = "stylesheet";
             l.href = "static/css/" + m + "/" + m + ".dark.css";
             l.fetchPriority = "high";
+            l.dataset.themeMod = m;
+            l.dataset.themeVariant = "dark";
             document.head.appendChild(l);
           });
         }
@@ -69,6 +73,11 @@
       as="script"
     />
     <link rel="preload" href="static/js/utils/utils.js" as="script" />
+    <link
+      rel="preload"
+      href="static/js/utils/error.interceptor.js"
+      as="script"
+    />
     <link
       rel="preload"
       href="non-static/settings/settings.nav.js"
@@ -280,7 +289,11 @@
                   Save Changes
                 </button>
               </div>
-              <span id="profile-feedback" class="form-feedback" style="display:none"></span>
+              <span
+                id="profile-feedback"
+                class="form-feedback"
+                style="display: none"
+              ></span>
             </form>
           </div>
         </div>
@@ -315,21 +328,44 @@
               <p>Change your account password</p>
             </div>
             <div class="form-group">
-              <label class="form-label" for="currentPassword">Current Password</label>
-              <input type="password" id="currentPassword" class="form-input" autocomplete="current-password" />
+              <label class="form-label" for="currentPassword"
+                >Current Password</label
+              >
+              <input
+                type="password"
+                id="currentPassword"
+                class="form-input"
+                autocomplete="current-password"
+              />
             </div>
             <div class="form-group">
               <label class="form-label" for="newPassword">New Password</label>
-              <input type="password" id="newPassword" class="form-input" autocomplete="new-password" />
+              <input
+                type="password"
+                id="newPassword"
+                class="form-input"
+                autocomplete="new-password"
+              />
             </div>
             <div class="form-group">
-              <label class="form-label" for="confirmPassword">Confirm New Password</label>
-              <input type="password" id="confirmPassword" class="form-input" autocomplete="new-password" />
+              <label class="form-label" for="confirmPassword"
+                >Confirm New Password</label
+              >
+              <input
+                type="password"
+                id="confirmPassword"
+                class="form-input"
+                autocomplete="new-password"
+              />
             </div>
             <button class="btn btn-secondary" id="changePasswordBtn">
               Update Password
             </button>
-            <span id="password-feedback" class="form-feedback" style="display:none"></span>
+            <span
+              id="password-feedback"
+              class="form-feedback"
+              style="display: none"
+            ></span>
           </div>
 
           <div class="settings-section danger-zone">
@@ -353,7 +389,11 @@
               <button class="btn btn-danger" id="deleteAccountBtn">
                 Delete Account
               </button>
-              <span id="delete-feedback" class="form-feedback" style="display:none"></span>
+              <span
+                id="delete-feedback"
+                class="form-feedback"
+                style="display: none"
+              ></span>
             </div>
           </div>
         </div>
@@ -496,5 +536,31 @@
         </div>
       </div>
     </div>
+    <template id="__error_template__">
+      <div id="__error_overlay__">
+        <div class="__err_backdrop__">
+          <div class="__err_card__">
+            <div class="__err_icon__"></div>
+            <div class="__err_code__"></div>
+            <h1 class="__err_title__"></h1>
+            <p class="__err_subtitle__"></p>
+            <p class="__err_hint__"></p>
+            <div class="__err_actions__">
+              <button
+                class="__err_btn__ __err_btn_primary__"
+                id="__err_primary_btn__"
+              ></button>
+              <button
+                class="__err_btn__ __err_btn_ghost__"
+                id="__err_back_btn__"
+              >
+                ← Go Back
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+    <script defer src="static/js/utils/error.interceptor.js"></script>
   </body>
 </html>

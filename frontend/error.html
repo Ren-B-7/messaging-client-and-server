@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Error — Chat App</title>
+    <meta name="robots" content="noindex, nofollow" />
+
+    <!-- Primary CSS -->
+    <link rel="stylesheet" href="static/css/var.css" fetchpriority="high" />
+    <link
+      rel="stylesheet"
+      href="static/css/base/base.light.css"
+      fetchpriority="high" data-theme-mod="base" data-theme-variant="light" />
+    <link
+      rel="stylesheet"
+      href="static/css/error/error.light.css"
+      fetchpriority="high" data-theme-mod="error" data-theme-variant="light" />
+
+    <!-- Synchronous theme detection — runs before render to avoid flash -->
+    <script>
+      (function () {
+        var t =
+          localStorage.getItem("theme") ||
+          (matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light");
+        document.documentElement.setAttribute("data-theme", t);
+        if (t === "dark") {
+          ["base", "error"].forEach(function (m) {
+            var l = document.createElement("link");
+            l.rel = "stylesheet";
+            l.href = "static/css/" + m + "/" + m + ".dark.css";
+            l.fetchPriority = "high";
+            l.dataset.themeMod = m;
+            l.dataset.themeVariant = "dark";
+            document.head.appendChild(l);
+          });
+        }
+        var ld = function (v) {
+          var e = document.getElementById("loading");
+          if (e) e.style.display = v;
+        };
+        window.addEventListener("beforeunload", function () {
+          ld("flex");
+        });
+        window.addEventListener("load", function () {
+          ld("none");
+        });
+        window.addEventListener("pageshow", function (e) {
+          if (e.persisted) ld("none");
+        });
+      })();
+    </script>
+
+    <!-- Preloads -->
+    <link rel="preload" href="static/js/utils/theme.manager.js" as="script" />
+    <link
+      rel="preload"
+      href="static/js/utils/error.interceptor.js"
+      as="script"
+    />
+
+    <!-- Scripts -->
+    <script defer src="static/js/utils/error.interceptor.js"></script>
+    <script defer src="static/js/utils/theme.manager.js"></script>
+  </head>
+  <body>
+    <div id="loading">Loading…</div>
+
+    <!-- Theme toggle — fixed top-right, same as other pages -->
+    <button
+      class="err-theme-toggle"
+      id="theme-toggle"
+      title="Toggle theme"
+      aria-label="Toggle theme"
+    >
+      <img src="static/icons/icons/sun.svg" alt="" width="18" height="18" />
+    </button>
+
+    <div id="__error_overlay__">
+      <div class="__err_backdrop__">
+        <div class="__err_card__">
+          <div class="__err_icon__" id="errIcon"></div>
+          <div class="__err_code__" id="errCode"></div>
+          <h1 class="__err_title__" id="errTitle"></h1>
+          <p class="__err_subtitle__" id="errSubtitle"></p>
+          <p class="__err_hint__" id="errHint"></p>
+          <div class="__err_actions__">
+            <button
+              class="__err_btn__ __err_btn_primary__"
+              id="errPrimaryBtn"
+            ></button>
+            <button class="__err_btn__ __err_btn_ghost__" id="errBackBtn">
+              ← Go Back
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // ── Theme manager init ─────────────────────────────────────────────────
+      document.addEventListener("DOMContentLoaded", function () {
+        themeManager.init(["base", "error"]);
+
+        var toggleBtn = document.getElementById("theme-toggle");
+        themeManager.syncIcon(toggleBtn);
+
+        // error.html does not reload on toggle (it's already an error page),
+        // so we re-sync the icon after the theme attribute changes.
+        toggleBtn?.addEventListener("click", function () {
+          themeManager.toggle();
+          // toggle() calls setTheme() which reloads — syncIcon will re-run
+          // on the fresh load via the DOMContentLoaded handler above.
+        });
+      });
+    </script>
+
+    <script>
+      (function () {
+        /**
+         * Error payload schema (all fields optional except `code`):
+         *
+         * {
+         *   code:       number | string   — HTTP status or short error code
+         *   title:      string            — Heading shown to the user
+         *   subtitle:   string            — Descriptive sentence
+         *   hint:       string            — Secondary help text / next steps
+         *   icon:       string            — Emoji or text icon
+         *   primary:    { label, href? }  — Primary action button
+         *   returnTo:   string            — URL the "Go Back" button navigates to
+         * }
+         *
+         * Delivery methods (checked in this order):
+         *   1. sessionStorage key "__error_payload__"
+         *   2. URL query param  "e"  (base64-encoded JSON)
+         *   3. URL query params "code", "title", "subtitle", "hint"
+         *   4. Path segment     /error/:code  (e.g. /error/404)
+         */
+
+        var DEFAULTS = {
+          400: {
+            icon: "⚠️",
+            title: "Bad Request",
+            subtitle: "The request could not be understood by the server.",
+            hint: "Check your input and try again.",
+          },
+          401: {
+            icon: "🔒",
+            title: "Unauthorised",
+            subtitle: "You need to sign in to access this page.",
+            hint: "Please log in and try again.",
+          },
+          403: {
+            icon: "🚫",
+            title: "Forbidden",
+            subtitle: "You don't have permission to view this resource.",
+            hint: "Contact an administrator if you believe this is a mistake.",
+          },
+          404: {
+            icon: "🔍",
+            title: "Page Not Found",
+            subtitle: "The page you're looking for doesn't exist.",
+            hint: "It may have been moved, renamed, or deleted.",
+          },
+          408: {
+            icon: "⏱️",
+            title: "Request Timeout",
+            subtitle: "The server took too long to respond.",
+            hint: "Check your connection and try again.",
+          },
+          429: {
+            icon: "🚦",
+            title: "Too Many Requests",
+            subtitle: "You've sent too many requests in a short period.",
+            hint: "Please wait a moment before trying again.",
+          },
+          500: {
+            icon: "💥",
+            title: "Internal Server Error",
+            subtitle: "Something went wrong on our end.",
+            hint: "Our team has been notified. Please try again shortly.",
+          },
+          502: {
+            icon: "🌐",
+            title: "Bad Gateway",
+            subtitle: "The server received an invalid response upstream.",
+            hint: "This is usually temporary — please try again.",
+          },
+          503: {
+            icon: "🔧",
+            title: "Service Unavailable",
+            subtitle: "The server is temporarily unable to handle requests.",
+            hint: "We're likely under maintenance. Check back soon.",
+          },
+          504: {
+            icon: "⏳",
+            title: "Gateway Timeout",
+            subtitle: "The upstream server didn't respond in time.",
+            hint: "This is usually temporary — please try again.",
+          },
+        };
+
+        var FALLBACK = {
+          icon: "❌",
+          title: "Something Went Wrong",
+          subtitle: "An unexpected error occurred.",
+          hint: "If this keeps happening, please contact support.",
+        };
+
+        // ── 1. Resolve payload ────────────────────────────────────────────────
+
+        var payload = null;
+
+        // Method 1: sessionStorage
+        try {
+          var stored = sessionStorage.getItem("__error_payload__");
+          if (stored) {
+            payload = JSON.parse(stored);
+            sessionStorage.removeItem("__error_payload__");
+          }
+        } catch (_) {}
+
+        // Method 2: base64-encoded JSON in ?e=
+        if (!payload) {
+          try {
+            var params = new URLSearchParams(location.search);
+            var encoded = params.get("e");
+            if (encoded) payload = JSON.parse(atob(encoded));
+          } catch (_) {}
+        }
+
+        // Method 3: flat query params
+        if (!payload) {
+          try {
+            var p = new URLSearchParams(location.search);
+            if (p.get("code") || p.get("title")) {
+              payload = {
+                code: p.get("code"),
+                title: p.get("title"),
+                subtitle: p.get("subtitle"),
+                hint: p.get("hint"),
+                icon: p.get("icon"),
+              };
+            }
+          } catch (_) {}
+        }
+
+        // Method 4: /error/:code path segment
+        if (!payload) {
+          try {
+            var seg = location.pathname.split("/").filter(Boolean);
+            if (seg[0] === "error" && seg[1] && /^\d+$/.test(seg[1])) {
+              payload = { code: parseInt(seg[1], 10) };
+            }
+          } catch (_) {}
+        }
+
+        // ── 2. Merge with defaults ────────────────────────────────────────────
+
+        payload = payload || {};
+
+        var code = payload.code || null;
+        var numCode = parseInt(code, 10);
+        var defaults =
+          numCode && DEFAULTS[numCode] ? DEFAULTS[numCode] : FALLBACK;
+
+        var icon = payload.icon || defaults.icon;
+        var title = payload.title || defaults.title;
+        var subtitle = payload.subtitle || defaults.subtitle;
+        var hint = payload.hint || defaults.hint;
+        var primary = payload.primary || null;
+        var returnTo = payload.returnTo || null;
+
+        // ── 3. Update <title> ─────────────────────────────────────────────────
+
+        document.title = code
+          ? code + " — " + title + " · Chat App"
+          : title + " · Chat App";
+
+        // ── 4. Render ─────────────────────────────────────────────────────────
+
+        document.getElementById("errIcon").textContent = icon;
+        document.getElementById("errTitle").textContent = title;
+        document.getElementById("errSubtitle").textContent = subtitle;
+        document.getElementById("errHint").textContent = hint;
+
+        var codeEl = document.getElementById("errCode");
+        if (code) {
+          codeEl.textContent = "Error " + code;
+        } else {
+          codeEl.style.display = "none";
+        }
+
+        var primaryBtn = document.getElementById("errPrimaryBtn");
+        if (primary && primary.label) {
+          primaryBtn.textContent = primary.label;
+          primaryBtn.addEventListener("click", function () {
+            if (primary.href) {
+              location.href = primary.href;
+            } else {
+              location.reload();
+            }
+          });
+        } else {
+          primaryBtn.textContent = "← Go Home";
+          primaryBtn.addEventListener("click", function () {
+            location.href = "/";
+          });
+        }
+
+        document
+          .getElementById("errBackBtn")
+          .addEventListener("click", function () {
+            if (returnTo) {
+              location.href = returnTo;
+            } else if (history.length > 1) {
+              history.back();
+            } else {
+              location.href = "/";
+            }
+          });
+      })();
+    </script>
+  </body>
+</html>

@@ -12,8 +12,10 @@ document.addEventListener("DOMContentLoaded", () => {
   // ── Theme ──────────────────────────────────────────────────────────────────
   themeManager.init(["base", "chat", "settings"]);
 
-  document.getElementById("themeToggle")?.addEventListener("click", () => {
-    themeManager.toggle();
+  const settingsThemeBtn = document.getElementById("themeToggle");
+  themeManager.syncIcon(settingsThemeBtn);
+  settingsThemeBtn?.addEventListener("click", () => {
+    themeManager.toggle(); // syncIcon auto-updates via themechange event
   });
 
   // ── User data ──────────────────────────────────────────────────────────────

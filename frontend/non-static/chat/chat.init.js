@@ -14,8 +14,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   // ── Theme ──────────────────────────────────────────────────────────────────
   themeManager.init(["base", "chat"]);
 
-  document.getElementById("themeToggle")?.addEventListener("click", () => {
-    themeManager.toggle();
+  const chatThemeBtn = document.getElementById("themeToggle");
+  themeManager.syncIcon(chatThemeBtn);
+  chatThemeBtn?.addEventListener("click", () => {
+    themeManager.toggle(); // syncIcon auto-updates via themechange event
   });
 
   // ── Fetch current user from server ─────────────────────────────────────────
