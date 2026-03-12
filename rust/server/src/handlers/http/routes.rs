@@ -4,7 +4,7 @@ use std::pin::Pin;
 
 use anyhow::{Context, Result};
 use bytes::Bytes;
-use http_body_util::{BodyExt, combinators::BoxBody};
+use http_body_util::combinators::BoxBody;
 use hyper::{Method, Request, Response, StatusCode};
 use tracing::{info, warn};
 

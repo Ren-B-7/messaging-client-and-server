@@ -129,6 +129,7 @@ async fn parse_update_body(
         ProfileError::InternalError
     })
 }
+
 async fn update_user_profile(
     user_id: i64,
     data: &UpdateProfileData,
@@ -370,9 +371,16 @@ async fn change_user_password(
             SettingsError::DatabaseError
         })?;
 
+    // Revoke all sessions — any stolen token is now dead
+    login::delete_all_user_sessions(&state.db, user_id)
+        .await
+        .map_err(|e| {
+            error!("Failed to revoke sessions after password change: {}", e);
+            SettingsError::DatabaseError
+        })?;
+
     Ok(())
 }
-
 // ===========================================================================
 // delete
 // ===========================================================================
