@@ -27,7 +27,13 @@ mod database;
 mod handlers;
 mod tower_middle;
 
-use handlers::{admin::AdminService, sse::SseManager, user::UserService};
+use database::{create, login, password};
+use handlers::{
+    admin::{AdminService, build_admin_router_with_config},
+    http::routes::Router,
+    sse::SseManager,
+    user::{UserService, build_user_router_with_config},
+};
 use tower_middle::{
     IpFilterLayer, MetricsLayer, RateLimiterLayer, TimeoutLayer,
     security::{IpFilter, Metrics, RateLimiter},
@@ -58,10 +64,18 @@ pub struct AppState {
     /// `AppState` is cheap.  Treat this like a password — load from env/config
     /// and never log it.
     pub jwt_secret: Arc<String>,
+    pub user_router: Arc<Router>,
+    pub admin_router: Arc<Router>,
 }
 
 impl AppState {
-    fn new(config: LiveConfig, db: Connection, jwt_secret: String) -> Self {
+    fn new(
+        config: LiveConfig,
+        db: Connection,
+        jwt_secret: String,
+        user_router: Arc<Router>,
+        admin_router: Arc<Router>,
+    ) -> Self {
         let rate_limiter = RateLimiter::new(100, 200);
 
         Self {
@@ -73,6 +87,8 @@ impl AppState {
             timeout: Duration::new(10, 0),
             sse_manager: Arc::new(SseManager::new()),
             jwt_secret: Arc::new(jwt_secret),
+            user_router,
+            admin_router,
         }
     }
 }
@@ -115,7 +131,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let config_path = args[1].clone();
 
-    let db: Connection = database::create::open_database("messaging.db").await?;
+    let db: Connection = create::open_database("messaging.db").await?;
     let app_config = config::load_config(&config_path).context("Failed to load configuration")?;
 
     // Resolve the JWT secret — env var takes priority over the config field.
@@ -123,9 +139,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // validate_config, so unwrap() is safe here.
     let jwt_secret = app_config.auth.resolved_jwt_secret().unwrap();
 
+    // Extract paths before app_config is moved into LiveConfig.
+    let web_dir = app_config.paths.web_dir.clone();
+    let icons = app_config.paths.icons.clone();
+
     let live_config = LiveConfig::new(app_config);
 
-    let state = AppState::new(live_config, db, jwt_secret);
+    // Build each router exactly once at startup, then share via Arc.
+    // Neither router is ever rebuilt per-connection.
+    let user_router = Arc::new(build_user_router_with_config(
+        Some(web_dir.clone()),
+        Some(icons.clone()),
+    ));
+    let admin_router = Arc::new(build_admin_router_with_config(
+        Some(web_dir),
+        Some(icons),
+    ));
+
+    let state = AppState::new(live_config, db, jwt_secret, user_router, admin_router);
 
     // Read the ports once at startup — these are fixed for the lifetime of the
     // process (changing them requires a restart, not a hot-reload).
@@ -147,26 +178,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let user_state = state.clone();
     let admin_state = state.clone();
 
-    let cleanup_state = state.clone();
+    let rate_limiter_cleanup = state.clone().rate_limiter;
+    let db_cleanup = state.clone().db;
     let sse_manager_clone = state.clone().sse_manager;
     let metrics_clone = state.clone().metrics;
 
-    // Rate limiter cleanup
+    // ── Background task: rate limiter + DB cleanup ───────────────────────────
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(60));
         loop {
             interval.tick().await;
-            cleanup_state.rate_limiter.cleanup().await;
+
+            rate_limiter_cleanup.cleanup().await;
             info!("Rate limiter cleanup completed");
+
+            match login::cleanup_expired_sessions(&db_cleanup).await {
+                Ok(n) if n > 0 => info!("Cleaned up {} expired sessions", n),
+                Err(e) => error!("Session cleanup failed: {}", e),
+                _ => {}
+            }
+
+            match password::cleanup_expired_reset_tokens(&db_cleanup).await {
+                Ok(n) if n > 0 => info!("Cleaned up {} expired reset tokens", n),
+                Err(e) => error!("Reset token cleanup failed: {}", e),
+                _ => {}
+            }
         }
     });
 
-    // Metric snapshot + sse cleanup
+    // ── Background task: metrics snapshot + SSE cleanup ──────────────────────
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(30));
         loop {
             interval.tick().await;
-            // SSE State cleanup before snapshots
             sse_manager_clone.cleanup().await;
             info!("SSE manager cleanup completed");
 
@@ -175,12 +219,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     });
 
-    // ── Background task: SIGHUP → hot-reload config ─────────────────────────
+    // ── Background task: SIGHUP → hot-reload config ──────────────────────────
     //
     // Send `kill -HUP <pid>` to reload the config file without restarting.
     // Ports and jwt_secret are NOT re-read after a reload.
     {
         let reload_handle = state.config.clone();
+        let path_for_reload = config_path.clone();
         tokio::spawn(async move {
             let mut signal =
                 match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup()) {
@@ -193,14 +238,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
             loop {
                 signal.recv().await;
-                info!("SIGHUP received — reloading config from {}", config_path);
-                match config::load_config(&config_path) {
+                info!("SIGHUP received — reloading config from {}", path_for_reload);
+                match config::load_config(&path_for_reload) {
                     Ok(new_cfg) => {
                         reload_handle.reload(new_cfg).await;
                         info!("Config hot-reloaded successfully");
                     }
                     Err(e) => error!("Config reload failed, keeping current config: {}", e),
                 }
+            }
+        });
+    }
+
+    // ── Background task: SIGTERM → graceful shutdown ─────────────────────────
+    //
+    // Send `kill <pid>` or `systemctl stop` to shut down cleanly.
+    // In-flight connections are allowed to drain before the process exits.
+    {
+        tokio::spawn(async move {
+            match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                Ok(mut signal) => {
+                    signal.recv().await;
+                    info!("SIGTERM received — shutting down");
+                    std::process::exit(0);
+                }
+                Err(e) => warn!("Could not install SIGTERM handler: {}", e),
             }
         });
     }
@@ -217,7 +279,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         loop {
             let (stream, addr) = listener.accept().await.unwrap();
 
-            let user_tower_service = UserService::new(user_state.clone(), user_sock).await;
+            // new() is plain fn — no .await, router is a cheap Arc clone.
+            let user_tower_service = UserService::new(
+                user_state.clone(),
+                addr,
+                Arc::clone(&user_state.user_router),
+            );
 
             // Order matters: outer layers run last on request, first on response.
             // TimeoutLayer is intentionally absent — the connection-level timeout
@@ -294,9 +361,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!("Admin server listening on http://{}", admin_sock);
 
         loop {
-            let (stream, _addr) = listener.accept().await.unwrap();
+            let (stream, addr) = listener.accept().await.unwrap();
 
-            let admin_tower_service = AdminService::new(admin_state.clone(), admin_sock).await;
+            // new() is plain fn — no .await, router is a cheap Arc clone.
+            let admin_tower_service = AdminService::new(
+                admin_state.clone(),
+                addr,
+                Arc::clone(&admin_state.admin_router),
+            );
 
             let tower_service = ServiceBuilder::new()
                 .layer(LoadShedLayer::new())
@@ -324,7 +396,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     tokio::select! {
                         res = conn.as_mut() => {
                             match res {
-                                Ok(()) => debug!("Connection closed"),
+                                Ok(()) => debug!("Connection closed: {}", addr),
                                 Err(e) => warn!("Error serving connection {:?}", e),
                             };
                             break;

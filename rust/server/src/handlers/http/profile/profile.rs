@@ -115,21 +115,6 @@ pub async fn handle_update_profile(
     }
 }
 
-async fn parse_body(
-    req: Request<hyper::body::Incoming>,
-) -> std::result::Result<ProfileData, ProfileError> {
-    let body = req
-        .collect()
-        .await
-        .map_err(|_| ProfileError::InternalError)?
-        .to_bytes();
-
-    serde_json::from_slice::<ProfileData>(&body).map_err(|e| {
-        error!("Failed to parse admin login JSON: {}", e);
-        ProfileError::InternalError
-    })
-}
-
 async fn parse_update_body(
     req: Request<hyper::body::Incoming>,
 ) -> std::result::Result<UpdateProfileData, ProfileError> {

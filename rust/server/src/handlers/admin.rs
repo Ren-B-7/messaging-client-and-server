@@ -2,6 +2,7 @@ use std::convert::Infallible;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use bytes::Bytes;
@@ -21,20 +22,15 @@ use crate::handlers::http::{admin, auth::handle_admin_login, utils::*};
 pub struct AdminService {
     state: AppState,
     addr: SocketAddr,
-    router: &'static Router,
+    router: Arc<Router>,
 }
 
 impl AdminService {
-    pub async fn new(state: AppState, addr: SocketAddr) -> Self {
-        let cfg = state.config.read().await.clone();
-        let router = build_admin_router_with_config(Some(cfg.paths.web_dir), Some(cfg.paths.icons));
-
-        let router_ref: &'static Router = Box::leak(Box::new(router));
-
+    pub fn new(state: AppState, addr: SocketAddr, router: Arc<Router>) -> Self {
         Self {
             state,
             addr,
-            router: router_ref,
+            router,
         }
     }
 }
@@ -51,10 +47,11 @@ impl Service<Request<IncomingBody>> for AdminService {
     fn call(&mut self, req: Request<IncomingBody>) -> Self::Future {
         let state = self.state.clone();
         let addr = self.addr;
-        let router = self.router;
+        // Arc::clone gives us a cheap reference-counted handle — no move out of self.
+        let router = Arc::clone(&self.router);
 
         Box::pin(async move {
-            match admin_conn(req, addr, state, router).await {
+            match admin_conn(req, addr, state, &router).await {
                 Ok(response) => Ok(response),
                 Err(e) => {
                     error!("Admin handler error: {:?}", e);
@@ -111,11 +108,14 @@ async fn admin_conn(
 /// Starts from the shared API base (`build_api_router_with_config`), layers on
 /// admin-only API endpoints (`build_admin_api_routes`), and finally registers
 /// the admin HTML pages and login routes.
+///
+/// Called exactly once at startup; the result is wrapped in `Arc` in `main`.
 pub fn build_admin_router_with_config(
     web_dir_static: Option<String>,
     icons_dir_static: Option<String>,
 ) -> Router {
-    // Leak paths for use in async closures that require 'static lifetime
+    // Leak paths for use in async closures that require 'static lifetime.
+    // Safe here because this function is called exactly once at startup.
     let web_dir: &'static str = web_dir_static
         .clone()
         .map(|d| -> &'static str { Box::leak(d.into_boxed_str()) })
@@ -191,7 +191,7 @@ pub fn build_admin_router_with_config(
 // `build_api_router_with_config`) and chains admin-only endpoints onto it.
 // It must never be called on the user service router.
 //
-// Every route is Hard-auth-gated at the router level, and the handler
+// Every route is hard-auth-gated at the router level, and the handler
 // additionally checks `claims.is_admin` — two independent privilege checks.
 // ---------------------------------------------------------------------------
 pub fn build_admin_api_routes(router: Router) -> Router {

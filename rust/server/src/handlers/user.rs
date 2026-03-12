@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use bytes::Bytes;
@@ -24,20 +25,15 @@ use crate::handlers::sse;
 pub struct UserService {
     state: AppState,
     addr: SocketAddr,
-    router: &'static Router,
+    router: Arc<Router>,
 }
 
 impl UserService {
-    pub async fn new(state: AppState, addr: SocketAddr) -> Self {
-        let cfg = state.config.read().await.clone();
-        let router = build_user_router_with_config(Some(cfg.paths.web_dir), Some(cfg.paths.icons));
-
-        let router_ref: &'static Router = Box::leak(Box::new(router));
-
+    pub fn new(state: AppState, addr: SocketAddr, router: Arc<Router>) -> Self {
         Self {
             state,
             addr,
-            router: router_ref,
+            router,
         }
     }
 }
@@ -54,10 +50,11 @@ impl Service<Request<IncomingBody>> for UserService {
     fn call(&mut self, req: Request<IncomingBody>) -> Self::Future {
         let state = self.state.clone();
         let addr = self.addr;
-        let router = self.router;
+        // Arc::clone gives us a cheap reference-counted handle — no move out of self.
+        let router = Arc::clone(&self.router);
 
         Box::pin(async move {
-            match user_conn(req, addr, state, router).await {
+            match user_conn(req, addr, state, &router).await {
                 Ok(response) => Ok(response),
                 Err(e) => {
                     error!("User handler error: {:?}", e);
@@ -129,6 +126,8 @@ async fn user_conn(
 /// on user-only pages, auth endpoints, and the SSE stream.  Admin paths are
 /// never registered here; `user_conn` additionally hard-blocks any `/admin`
 /// prefix as a defence-in-depth measure.
+///
+/// Called exactly once at startup; the result is wrapped in `Arc` in `main`.
 pub fn build_user_router_with_config(
     web_dir_static: Option<String>,
     icons_dir_static: Option<String>,

@@ -82,11 +82,13 @@ pub fn is_valid_email(email: &str) -> bool {
 
 /// Validate username (alphanumeric, underscore, 3-20 chars)
 pub fn is_valid_username(username: &str) -> bool {
-    if username.len() < 3 || username.len() > 20 {
+    if username.len() < 3 || username.len() > 32 {
         return false;
     }
 
-    username.chars().all(|c| c.is_alphanumeric() || c == '_')
+    username
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
 }
 
 /// Validate password strength (min 8 chars, at least one number, one letter)
@@ -183,7 +185,10 @@ mod tests {
     fn test_username_validation() {
         assert!(is_valid_username("alice"));
         assert!(is_valid_username("user_123"));
+        assert!(is_valid_username("bob-smith")); // hyphen now valid
+        assert!(is_valid_username(&"a".repeat(32))); // max length
         assert!(!is_valid_username("ab")); // too short
+        assert!(!is_valid_username(&"a".repeat(33))); // too long
         assert!(!is_valid_username("user@name")); // invalid char
     }
 
