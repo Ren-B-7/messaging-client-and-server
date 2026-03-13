@@ -1,6 +1,5 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rand;
 use uuid::Uuid;
 
 /// Get current Unix timestamp in seconds
@@ -14,11 +13,6 @@ pub fn get_timestamp() -> i64 {
 /// Generate a UUID-based session token
 pub fn generate_uuid_token() -> String {
     Uuid::new_v4().to_string()
-}
-
-/// Alias used by admin_login — same as generate_uuid_token
-pub fn generate_session_token() -> String {
-    generate_uuid_token()
 }
 
 /// Hash a password using Argon2id (recommended for production)
@@ -103,41 +97,9 @@ pub fn is_strong_password(password: &str) -> bool {
     has_letter && has_number
 }
 
-/// Convert timestamp to human-readable format
-pub fn timestamp_to_string(timestamp: i64) -> String {
-    use std::time::UNIX_EPOCH;
-    let duration = std::time::Duration::from_secs(timestamp as u64);
-    let datetime = UNIX_EPOCH + duration;
-    format!("{:?}", datetime)
-}
-
 /// Calculate session expiry (current time + duration in seconds)
 pub fn calculate_expiry(duration_secs: i64) -> i64 {
     get_timestamp() + duration_secs
-}
-
-/// Check if a timestamp is expired
-pub fn is_expired(timestamp: i64) -> bool {
-    timestamp < get_timestamp()
-}
-
-/// Generate a password reset token (secure random)
-pub fn generate_reset_token() -> String {
-    generate_uuid_token()
-}
-
-/// Sanitize string for database (remove null bytes, trim)
-pub fn sanitize_string(input: &str) -> String {
-    input.replace('\0', "").trim().to_string()
-}
-
-/// Truncate string to max length
-pub fn truncate_string(input: &str, max_length: usize) -> String {
-    if input.len() <= max_length {
-        input.to_string()
-    } else {
-        input.chars().take(max_length).collect()
-    }
 }
 
 #[cfg(test)]
@@ -198,26 +160,5 @@ mod tests {
         assert!(!is_strong_password("short1"));
         assert!(!is_strong_password("nodigits"));
         assert!(!is_strong_password("12345678"));
-    }
-
-    #[test]
-    fn test_expiry() {
-        let future = calculate_expiry(3600);
-        assert!(!is_expired(future));
-
-        let past = get_timestamp() - 3600;
-        assert!(is_expired(past));
-    }
-
-    #[test]
-    fn test_sanitize() {
-        assert_eq!(sanitize_string("  test  "), "test");
-        assert_eq!(sanitize_string("test\0null"), "testnull");
-    }
-
-    #[test]
-    fn test_truncate() {
-        assert_eq!(truncate_string("hello", 10), "hello");
-        assert_eq!(truncate_string("hello world", 5), "hello");
     }
 }

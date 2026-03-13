@@ -103,10 +103,7 @@ pub async fn create_session(conn: &Connection, new_session: NewSession) -> Resul
 ///
 /// Returns `None` when the `session_id` doesn't exist or has expired —
 /// i.e. the user logged out or the JWT should be treated as revoked.
-pub async fn validate_session_id(
-    conn: &Connection,
-    session_id: String,
-) -> Result<Option<Session>> {
+pub async fn validate_session_id(conn: &Connection, session_id: String) -> Result<Option<Session>> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -163,10 +160,7 @@ pub async fn delete_session_by_id(conn: &Connection, session_id: String) -> Resu
 /// Delete all sessions for a user (logout from all devices).
 pub async fn delete_all_user_sessions(conn: &Connection, user_id: i64) -> Result<()> {
     conn.call(move |conn: &mut rusqlite::Connection| {
-        conn.execute(
-            "DELETE FROM sessions WHERE user_id = ?1",
-            params![user_id],
-        )?;
+        conn.execute("DELETE FROM sessions WHERE user_id = ?1", params![user_id])?;
         Ok(())
     })
     .await
@@ -180,8 +174,7 @@ pub async fn cleanup_expired_sessions(conn: &Connection) -> Result<usize> {
         .as_secs() as i64;
 
     conn.call(move |conn: &mut rusqlite::Connection| {
-        let count =
-            conn.execute("DELETE FROM sessions WHERE expires_at < ?1", params![now])?;
+        let count = conn.execute("DELETE FROM sessions WHERE expires_at < ?1", params![now])?;
         Ok(count)
     })
     .await
@@ -208,10 +201,7 @@ pub async fn update_last_login(conn: &Connection, user_id: i64) -> Result<()> {
 ///
 /// Used by the admin server's auth guard.  Returns the admin's `user_id`
 /// only when both the session is active AND the user has `is_admin = 1`.
-pub async fn validate_admin_session(
-    conn: &Connection,
-    session_id: String,
-) -> Result<Option<i64>> {
+pub async fn validate_admin_session(conn: &Connection, session_id: String) -> Result<Option<i64>> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -282,3 +272,4 @@ pub async fn get_user_sessions(conn: &Connection, user_id: i64) -> Result<Vec<Se
     })
     .await
 }
+

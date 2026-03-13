@@ -31,12 +31,15 @@ use database::{create, login, password};
 use handlers::{
     admin::{AdminService, build_admin_router_with_config},
     http::routes::Router,
-    sse::SseManager,
+    sse::sse::SseManager,
     user::{UserService, build_user_router_with_config},
 };
 use tower_middle::{
-    IpFilterLayer, MetricsLayer, RateLimiterLayer, TimeoutLayer,
     security::{IpFilter, Metrics, RateLimiter},
+    tower_ip_filter::IpFilterLayer,
+    tower_metrics::MetricsLayer,
+    tower_rate_limiter::RateLimiterLayer,
+    tower_timeout_handler::TimeoutLayer,
 };
 
 use shared::config::{self, LiveConfig};
@@ -151,10 +154,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Some(web_dir.clone()),
         Some(icons.clone()),
     ));
-    let admin_router = Arc::new(build_admin_router_with_config(
-        Some(web_dir),
-        Some(icons),
-    ));
+    let admin_router = Arc::new(build_admin_router_with_config(Some(web_dir), Some(icons)));
 
     let state = AppState::new(live_config, db, jwt_secret, user_router, admin_router);
 
@@ -238,7 +238,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
             loop {
                 signal.recv().await;
-                info!("SIGHUP received — reloading config from {}", path_for_reload);
+                info!(
+                    "SIGHUP received — reloading config from {}",
+                    path_for_reload
+                );
                 match config::load_config(&path_for_reload) {
                     Ok(new_cfg) => {
                         reload_handle.reload(new_cfg).await;

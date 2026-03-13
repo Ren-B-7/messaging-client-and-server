@@ -586,6 +586,7 @@ mod server_stats_tests {
                 icons: "/icons".into(),
                 web_dir: "/web".into(),
                 blocked_paths: HashSet::new(),
+                uploads_dir: "/uploads".into(),
             },
             auth: AuthConfig {
                 token_expiry_minutes: 60,

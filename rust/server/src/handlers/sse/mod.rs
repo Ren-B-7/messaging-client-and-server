@@ -1,12 +1,10 @@
-mod sse;
-
-#[allow(unused_imports)]
-pub use sse::{ChatContext, SseManager, SseStreamBuilder, handle_sse_subscribe};
+pub mod sse;
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use shared::types::sse::SseEvent;
+    pub use sse::{ChatContext, SseManager};
 
     #[tokio::test]
     async fn test_get_channel_creates_channel() {

@@ -1,6 +1,7 @@
 #[allow(dead_code)]
 pub mod ban;
 pub mod create;
+pub mod files;
 #[allow(dead_code)]
 pub mod groups;
 #[allow(dead_code)]
@@ -13,3 +14,4 @@ pub mod password;
 pub mod register;
 #[allow(dead_code)]
 pub mod utils;
+

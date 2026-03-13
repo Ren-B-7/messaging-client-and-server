@@ -39,6 +39,7 @@ pub struct PathsConfig {
     pub web_dir: String,
     #[serde(default)]
     pub blocked_paths: HashSet<String>,
+    pub uploads_dir: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]

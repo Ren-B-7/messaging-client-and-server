@@ -20,7 +20,7 @@ use crate::handlers::http::routes::{
     Router, build_api_router_with_config, forbidden, unauthorized,
 };
 use crate::handlers::http::{auth, utils::*};
-use crate::handlers::sse;
+use crate::handlers::sse::sse;
 
 /// User service implementation
 #[derive(Clone, Debug)]
@@ -186,6 +186,68 @@ pub fn build_user_router_with_config(
                 .await
                 .context("Register failed")
         })
+        // POST /api/files/upload — multipart upload (hard auth)
+        .post_hard(
+            "/api/files/upload",
+            |req, state, user_id, _claims| async move {
+                crate::handlers::http::messaging::files::handle_upload_file(req, state, user_id)
+                    .await
+                    .context("File upload failed")
+            },
+        )
+        // GET /api/files?chat_id=N — list files in a chat (light auth)
+        .get_light("/api/files", |req, state, claims| async move {
+            crate::handlers::http::messaging::files::handle_get_chat_files(req, state, claims)
+                .await
+                .context("Get chat files failed")
+        })
+        // GET /api/files/:id — download a file (light auth)
+        .get_light("/api/files/:id", |req, state, claims| async move {
+            let file_id = req
+                .uri()
+                .path()
+                .split('/')
+                .nth(3)
+                .and_then(|s| s.parse::<i64>().ok());
+            match file_id {
+                Some(id) => crate::handlers::http::messaging::files::handle_download_file(
+                    req, state, claims, id,
+                )
+                .await
+                .context("File download failed"),
+                None => json_response::deliver_error_json(
+                    "BAD_REQUEST",
+                    "Invalid file id",
+                    StatusCode::BAD_REQUEST,
+                )
+                .context("Bad request"),
+            }
+        })
+        // DELETE /api/files/:id — delete own file (hard auth)
+        .delete_hard(
+            "/api/files/:id",
+            |req, state, user_id, _claims| async move {
+                let file_id = req
+                    .uri()
+                    .path()
+                    .split('/')
+                    .nth(3)
+                    .and_then(|s| s.parse::<i64>().ok());
+                match file_id {
+                    Some(id) => crate::handlers::http::messaging::files::handle_delete_file(
+                        req, state, user_id, id,
+                    )
+                    .await
+                    .context("File delete failed"),
+                    None => json_response::deliver_error_json(
+                        "BAD_REQUEST",
+                        "Invalid file id",
+                        StatusCode::BAD_REQUEST,
+                    )
+                    .context("Bad request"),
+                }
+            },
+        )
         // ── Real-time SSE stream ────────────────────────────────────────────
         //
         // Auth is handled inside handle_sse_subscribe (Bearer header or

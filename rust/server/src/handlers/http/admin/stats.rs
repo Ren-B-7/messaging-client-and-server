@@ -29,8 +29,15 @@ pub async fn handle_server_config(
                 .query_row("SELECT COUNT(*) FROM users", [], |r| r.get(0))
                 .unwrap_or(0);
 
+            // Only count non-expired sessions so the dashboard figure is
+            // meaningful — expired rows are cleaned up lazily by the periodic
+            // task but may linger between runs.
             let active_sessions: i64 = conn
-                .query_row("SELECT COUNT(*) FROM sessions", [], |r| r.get(0))
+                .query_row(
+                    "SELECT COUNT(*) FROM sessions WHERE expires_at > CAST(strftime('%s','now') AS INTEGER)",
+                    [],
+                    |r| r.get(0),
+                )
                 .unwrap_or(0);
 
             let banned_users: i64 = conn

@@ -83,13 +83,13 @@ pub async fn get_message_by_id(conn: &Connection, message_id: i64) -> Result<Opt
         let msg = stmt
             .query_row(params![message_id], |row| {
                 Ok(Message {
-                    id:           row.get(0)?,
-                    sender_id:    row.get(1)?,
-                    chat_id:      row.get(2)?,
-                    content:      row.get(3)?,
-                    sent_at:      row.get(4)?,
+                    id: row.get(0)?,
+                    sender_id: row.get(1)?,
+                    chat_id: row.get(2)?,
+                    content: row.get(3)?,
+                    sent_at: row.get(4)?,
                     delivered_at: row.get(5)?,
-                    read_at:      row.get(6)?,
+                    read_at: row.get(6)?,
                     is_encrypted: row.get::<_, i64>(7)? != 0,
                     message_type: row.get(8)?,
                 })
@@ -216,3 +216,4 @@ pub async fn get_recent_chats(
     })
     .await
 }
+

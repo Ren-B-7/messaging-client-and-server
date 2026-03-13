@@ -128,6 +128,15 @@ pub async fn handle_ban_user(
         .cloned()
         .unwrap_or_else(|| "No reason provided".to_string());
 
+    // Strip null bytes and cap length so a malformed request can't write
+    // unbounded data into the ban_reason column.
+    let reason = reason.replace('\0', "");
+    let reason = if reason.len() > 500 {
+        reason.chars().take(500).collect()
+    } else {
+        reason
+    };
+
     info!(
         "Admin {} banning user {} — reason: {}",
         admin_id, user_id, reason

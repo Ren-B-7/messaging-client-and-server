@@ -87,7 +87,17 @@ fn validate_login(data: &LoginData) -> std::result::Result<(), LoginError> {
     if data.username.is_empty() {
         return Err(LoginError::MissingField("username".to_string()));
     }
+    // Cap at 32 chars — same limit as registration. Prevents a client from
+    // sending a multi-MB username string that gets logged and passed to the DB.
+    if data.username.len() > 32 {
+        return Err(LoginError::MissingField("username".to_string()));
+    }
     if data.password.is_empty() {
+        return Err(LoginError::MissingField("password".to_string()));
+    }
+    // Passwords are never stored — Argon2id compares against the stored hash.
+    // Still cap at 1024 bytes to avoid a long-password DoS on the hash itself.
+    if data.password.len() > 1024 {
         return Err(LoginError::MissingField("password".to_string()));
     }
     Ok(())

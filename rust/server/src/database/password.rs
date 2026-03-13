@@ -2,16 +2,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use tokio_rusqlite::{Connection, OptionalExtension, Result, params, rusqlite};
 
-#[derive(Debug, Clone)]
-pub struct PasswordResetToken {
-    pub id: i64,
-    pub user_id: i64,
-    pub token: String,
-    pub created_at: i64,
-    pub expires_at: i64,
-    pub used: bool,
-}
-
 /// Change user password (when user knows current password)
 pub async fn change_password(
     conn: &Connection,

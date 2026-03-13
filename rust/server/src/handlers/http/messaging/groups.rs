@@ -8,7 +8,10 @@ use std::convert::Infallible;
 use tracing::info;
 
 use crate::AppState;
+use crate::database::groups as db_groups;
+use crate::database::register as db_register;
 use crate::handlers::http::utils::{deliver_error_json, deliver_success_json};
+use shared::types::groups::*;
 use shared::types::jwt::JwtClaims;
 
 // ---------------------------------------------------------------------------
@@ -29,8 +32,6 @@ pub async fn handle_get_groups(
     state: AppState,
     claims: JwtClaims,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    use crate::database::groups as db_groups;
-
     let user_id = claims.user_id;
     info!("Fetching groups for user {}", user_id);
 
@@ -69,8 +70,6 @@ pub async fn handle_create_group(
     state: AppState,
     user_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    use crate::database::groups as db_groups;
-
     info!("User {} creating a new group", user_id);
 
     let body = req
@@ -88,6 +87,8 @@ pub async fn handle_create_group(
         .ok_or_else(|| anyhow::anyhow!("Missing or invalid group name"))?
         .to_string();
 
+    let name = name.replace('\0', ""); // strip null bytes
+
     if name.trim().is_empty() {
         return deliver_error_json(
             "INVALID_INPUT",
@@ -96,14 +97,26 @@ pub async fn handle_create_group(
         );
     }
 
-    let description: Option<String> = params
-        .get("description")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+    if name.len() > 100 {
+        return deliver_error_json(
+            "INVALID_INPUT",
+            "Group name cannot exceed 100 characters",
+            StatusCode::BAD_REQUEST,
+        );
+    }
+
+    let description: Option<String> = params.get("description").and_then(|v| v.as_str()).map(|s| {
+        let s = s.replace('\0', ""); // strip null bytes
+        if s.len() > 500 {
+            s.chars().take(500).collect()
+        } else {
+            s
+        }
+    });
 
     let chat_id = db_groups::create_group(
         &state.db,
-        db_groups::NewGroup {
+        NewGroup {
             name: name.clone(),
             created_by: user_id,
             description: description.clone(),
@@ -136,9 +149,6 @@ pub async fn handle_get_members(
     _claims: JwtClaims,
     chat_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    use crate::database::groups as db_groups;
-    use crate::database::register as db_register;
-
     info!("Fetching members for group {}", chat_id);
 
     let members = db_groups::get_group_members(&state.db, chat_id)
@@ -185,9 +195,6 @@ pub async fn handle_add_member(
     _user_id: i64,
     chat_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    use crate::database::groups as db_groups;
-    use crate::database::register as db_register;
-
     info!("Adding member to group {}", chat_id);
 
     let body = req
@@ -234,11 +241,15 @@ pub async fn handle_add_member(
         );
     }
 
-    let role = params
+    let role = match params
         .get("role")
         .and_then(|v| v.as_str())
         .unwrap_or("member")
-        .to_string();
+    {
+        "admin" => "admin",
+        _ => "member", // reject arbitrary strings — default to member
+    }
+    .to_string();
 
     db_groups::add_group_member(&state.db, chat_id, target_user_id, role)
         .await
@@ -265,8 +276,6 @@ pub async fn handle_rename_group(
     user_id: i64,
     chat_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    use crate::database::groups as db_groups;
-
     info!("User {} renaming group {}", user_id, chat_id);
 
     // Verify the caller is a member of the group
@@ -295,6 +304,7 @@ pub async fn handle_rename_group(
         .get("name")
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow::anyhow!("Missing or invalid group name"))?
+        .replace('\0', "") // strip null bytes before trim
         .trim()
         .to_string();
 
@@ -318,7 +328,10 @@ pub async fn handle_rename_group(
         .await
         .context("Failed to rename group")?;
 
-    info!("Group {} renamed to '{}' by user {}", chat_id, new_name, user_id);
+    info!(
+        "Group {} renamed to '{}' by user {}",
+        chat_id, new_name, user_id
+    );
 
     deliver_success_json(
         Some(serde_json::json!({
@@ -339,8 +352,6 @@ pub async fn handle_delete_group(
     user_id: i64,
     chat_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    use crate::database::groups as db_groups;
-
     info!("User {} deleting group {}", user_id, chat_id);
 
     // Fetch the group to verify it exists and is a group (not a DM)
@@ -389,8 +400,6 @@ pub async fn handle_search_users(
     state: AppState,
     claims: JwtClaims,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    use crate::database::register as db_register;
-
     let query_str = req.uri().query().unwrap_or("");
     let q: String = form_urlencoded::parse(query_str.as_bytes())
         .find(|(k, _)| k == "q")
@@ -446,8 +455,6 @@ pub async fn handle_remove_member(
     _user_id: i64,
     chat_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    use crate::database::groups as db_groups;
-
     info!("Removing member from group {}", chat_id);
 
     let body = req

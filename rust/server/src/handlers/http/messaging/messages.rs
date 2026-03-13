@@ -12,6 +12,7 @@ use crate::AppState;
 use crate::handlers::http::utils::{
     deliver_error_json, deliver_serialized_json, deliver_success_json,
 };
+use shared::types::groups::*;
 use shared::types::jwt::JwtClaims;
 use shared::types::message::*;
 use shared::types::sse::SseEvent;
@@ -146,7 +147,7 @@ pub async fn handle_create_chat(
 
     let chat_id = db_groups::create_group(
         &state.db,
-        db_groups::NewGroup {
+        NewGroup {
             name: internal_name.clone(),
             created_by: user_id,
             description: None,

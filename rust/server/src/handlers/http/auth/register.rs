@@ -18,6 +18,7 @@ use crate::handlers::http::utils::{
 use shared::types::jwt::JwtClaims;
 use shared::types::login::*;
 use shared::types::register::*;
+use shared::types::user::*;
 
 /// POST /api/register
 pub async fn handle_register(
@@ -66,7 +67,10 @@ pub async fn handle_register(
         create_session_for_new_user(user_id, &session_id, &state, ip_address).await;
 
     if let Err(e) = session_created {
-        error!("Failed to create session after registration: {}", e.to_code());
+        error!(
+            "Failed to create session after registration: {}",
+            e.to_code()
+        );
         return deliver_serialized_json(
             &RegisterError::DatabaseError.to_response(),
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -105,7 +109,10 @@ pub async fn handle_register(
     let instance_cookie = create_session_cookie("auth_id", &jwt, secure_cookie)
         .context("Failed to create session cookie")?;
 
-    Ok(deliver_redirect_with_cookie("/chat", Some(instance_cookie))?)
+    Ok(deliver_redirect_with_cookie(
+        "/chat",
+        Some(instance_cookie),
+    )?)
 }
 
 // ---------------------------------------------------------------------------
@@ -229,7 +236,7 @@ async fn create_user(
 
     db_register::register_user(
         &state.db,
-        db_register::NewUser {
+        NewUser {
             username: data.username.clone(),
             password_hash,
             email: data.email.clone(),

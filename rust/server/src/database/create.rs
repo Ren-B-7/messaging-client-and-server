@@ -3,7 +3,7 @@ use tracing::{info, warn};
 
 /// Current schema version.  Bump this whenever the schema changes and add a
 /// corresponding migration arm in `run_migrations`.
-const SCHEMA_VERSION: u32 = 4;
+const SCHEMA_VERSION: u32 = 5;
 
 /// Initialize the database schema and run any pending migrations.
 pub async fn create_tables(conn: &Connection) -> Result<()> {
@@ -117,6 +117,25 @@ async fn create_schema(conn: &Connection) -> Result<()> {
             [],
         )?;
 
+        // Files
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS files (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        uploader_id  INTEGER NOT NULL,
+        chat_id      INTEGER NOT NULL,
+        filename     TEXT    NOT NULL,
+        mime_type    TEXT    NOT NULL DEFAULT 'application/octet-stream',
+        size         INTEGER NOT NULL,
+        storage_path TEXT    NOT NULL UNIQUE,
+        uploaded_at  INTEGER NOT NULL,
+        message_id   INTEGER,
+        FOREIGN KEY (uploader_id) REFERENCES users(id)    ON DELETE CASCADE,
+        FOREIGN KEY (chat_id)     REFERENCES groups(id)   ON DELETE CASCADE,
+        FOREIGN KEY (message_id)  REFERENCES messages(id) ON DELETE SET NULL
+    )",
+            [],
+        )?;
+
         // --- Indexes --------------------------------------------------------
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_users_username      ON users(username)",
@@ -156,6 +175,14 @@ async fn create_schema(conn: &Connection) -> Result<()> {
         )?;
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_groups_chat_type    ON groups(chat_type)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_files_chat       ON files(chat_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_files_uploader   ON files(uploader_id)",
             [],
         )?;
         conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
@@ -410,6 +437,41 @@ async fn run_migrations(conn: &Connection) -> Result<()> {
     }
 
     // Add future migration arms here:
+    if current_version < 5 {
+        conn.call(|conn| {
+            conn.execute_batch(
+                "
+            BEGIN;
+ 
+            CREATE TABLE IF NOT EXISTS files (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                uploader_id  INTEGER NOT NULL,
+                chat_id      INTEGER NOT NULL,
+                filename     TEXT    NOT NULL,
+                mime_type    TEXT    NOT NULL DEFAULT 'application/octet-stream',
+                size         INTEGER NOT NULL,
+                storage_path TEXT    NOT NULL UNIQUE,
+                uploaded_at  INTEGER NOT NULL,
+                message_id   INTEGER,
+                FOREIGN KEY (uploader_id) REFERENCES users(id)    ON DELETE CASCADE,
+                FOREIGN KEY (chat_id)     REFERENCES groups(id)   ON DELETE CASCADE,
+                FOREIGN KEY (message_id)  REFERENCES messages(id) ON DELETE SET NULL
+            );
+ 
+            CREATE INDEX IF NOT EXISTS idx_files_chat     ON files(chat_id);
+            CREATE INDEX IF NOT EXISTS idx_files_uploader ON files(uploader_id);
+ 
+            PRAGMA user_version = 5;
+ 
+            COMMIT;
+        ",
+            )?;
+            Ok::<_, rusqlite::Error>(())
+        })
+        .await?;
+
+        info!("Schema version set to 5 (files table added).");
+    }
     // if current_version < 6 { ... }
 
     Ok(())

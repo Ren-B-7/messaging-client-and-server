@@ -3,21 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio_rusqlite::{Connection, OptionalExtension, Result, params, rusqlite};
 use tracing::info;
 
-#[derive(Debug, Clone)]
-pub struct NewUser {
-    pub username: String,
-    pub password_hash: String,
-    pub email: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct User {
-    pub id: i64,
-    pub username: String,
-    pub email: Option<String>,
-    pub created_at: i64,
-    pub is_banned: bool,
-}
+use shared::types::user::*;
 
 /// Register a new user. The very first user registered is automatically made admin.
 pub async fn register_user(conn: &Connection, new_user: NewUser) -> Result<i64> {
@@ -180,11 +166,11 @@ pub async fn search_users_by_username(
         let users = stmt
             .query_map(params![pattern, limit], |row: &rusqlite::Row| {
                 Ok(User {
-                    id:         row.get(0)?,
-                    username:   row.get(1)?,
-                    email:      row.get(2)?,
+                    id: row.get(0)?,
+                    username: row.get(1)?,
+                    email: row.get(2)?,
                     created_at: row.get(3)?,
-                    is_banned:  row.get::<_, i64>(4)? != 0,
+                    is_banned: row.get::<_, i64>(4)? != 0,
                 })
             })?
             .collect::<std::result::Result<Vec<User>, rusqlite::Error>>()?;
@@ -193,3 +179,4 @@ pub async fn search_users_by_username(
     })
     .await
 }
+

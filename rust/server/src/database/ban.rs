@@ -2,15 +2,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use tokio_rusqlite::{Connection, OptionalExtension, Result, params, rusqlite};
 
-#[derive(Debug, Clone)]
-pub struct BanInfo {
-    pub user_id: i64,
-    pub username: String,
-    pub is_banned: bool,
-    pub ban_reason: Option<String>,
-    pub banned_at: Option<i64>,
-    pub banned_by: Option<i64>,
-}
+use shared::types::user::BanInfo;
 
 /// Ban a user
 pub async fn ban_user(
