@@ -96,9 +96,8 @@ const ChatUI = {
   // ── Action buttons setup ─────────────────────────────────────────────────
 
   setupActionButtons() {
-    document.getElementById("voiceCallBtn")?.addEventListener("click", () => alert("Voice calls — Coming soon!"));
-    document.getElementById("videoCallBtn")?.addEventListener("click", () => alert("Video calls — Coming soon!"));
-    document.getElementById("attachFileBtn")?.addEventListener("click", () => alert("File attachments — Coming soon!"));
+    // File upload + files modal wired in chat.files.js
+    ChatFiles.setupUpload();
 
     // Quick-add button in header
     document.getElementById("addMemberBtn")?.addEventListener("click", () => {
