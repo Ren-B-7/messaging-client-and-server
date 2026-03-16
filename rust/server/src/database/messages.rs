@@ -216,4 +216,3 @@ pub async fn get_recent_chats(
     })
     .await
 }
-

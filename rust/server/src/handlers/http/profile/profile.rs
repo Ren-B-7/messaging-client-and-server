@@ -488,29 +488,37 @@ pub async fn handle_upload_avatar(
     {
         if field.name().unwrap_or("") != "avatar" {
             // Drain unknown fields silently.
-            while field.chunk().await.map_err(|e| anyhow::anyhow!("{}", e))?.is_some() {}
+            while field
+                .chunk()
+                .await
+                .map_err(|e| anyhow::anyhow!("{}", e))?
+                .is_some()
+            {}
             continue;
         }
 
         // Derive extension from MIME type reported by the client.
         let mime = field.content_type().map(|m| m.to_string());
-        detected_ext = Some(match mime.as_deref().unwrap_or("") {
-            "image/jpeg" | "image/jpg" => "jpg",
-            "image/png"                => "png",
-            "image/gif"                => "gif",
-            "image/webp"               => "webp",
-            other => {
-                // Reject non-image content types up front.
-                if !other.is_empty() {
-                    return deliver_error_json(
-                        "INVALID_TYPE",
-                        "Avatar must be a JPEG, PNG, GIF, or WebP image",
-                        StatusCode::BAD_REQUEST,
-                    );
+        detected_ext = Some(
+            match mime.as_deref().unwrap_or("") {
+                "image/jpeg" | "image/jpg" => "jpg",
+                "image/png" => "png",
+                "image/gif" => "gif",
+                "image/webp" => "webp",
+                other => {
+                    // Reject non-image content types up front.
+                    if !other.is_empty() {
+                        return deliver_error_json(
+                            "INVALID_TYPE",
+                            "Avatar must be a JPEG, PNG, GIF, or WebP image",
+                            StatusCode::BAD_REQUEST,
+                        );
+                    }
+                    "jpg" // fallback when client omits Content-Type
                 }
-                "jpg" // fallback when client omits Content-Type
             }
-        }.to_string());
+            .to_string(),
+        );
 
         let mut buf = Vec::new();
         while let Some(chunk) = field.chunk().await.map_err(|e| anyhow::anyhow!("{}", e))? {
@@ -619,11 +627,7 @@ pub async fn handle_get_avatar(
             error!("Avatar file missing from disk ({:?}): {}", avatar_path, e);
             // Treat a missing file as "no avatar" — clean up the stale DB row.
             let _ = register::clear_user_avatar(&state.db, target_user_id).await;
-            return deliver_error_json(
-                "NOT_FOUND",
-                "Avatar not found",
-                StatusCode::NOT_FOUND,
-            );
+            return deliver_error_json("NOT_FOUND", "Avatar not found", StatusCode::NOT_FOUND);
         }
     };
 
@@ -636,10 +640,10 @@ pub async fn handle_get_avatar(
         .as_str()
     {
         "jpg" | "jpeg" => "image/jpeg",
-        "png"          => "image/png",
-        "gif"          => "image/gif",
-        "webp"         => "image/webp",
-        _              => "application/octet-stream",
+        "png" => "image/png",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        _ => "application/octet-stream",
     };
 
     Ok(Response::builder()
@@ -648,10 +652,7 @@ pub async fn handle_get_avatar(
         // Cache for 5 minutes — short enough to show a fresh upload quickly,
         // long enough to avoid hammering the disk on every re-render.
         .header(hyper::header::CACHE_CONTROL, "public, max-age=300")
-        .body(
-            Full::new(Bytes::from(bytes))
-                .boxed(),
-        )
+        .body(Full::new(Bytes::from(bytes)).boxed())
         .context("Failed to build avatar response")?)
 }
 

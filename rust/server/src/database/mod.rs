@@ -14,4 +14,3 @@ pub mod password;
 pub mod register;
 #[allow(dead_code)]
 pub mod utils;
-

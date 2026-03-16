@@ -241,7 +241,10 @@ pub async fn handle_sse_subscribe(
             SseError::ChannelSendFailed("Database error".to_string())
         })?
         .ok_or_else(|| {
-            warn!("SSE subscribe rejected: session {} not found or expired", claims.session_id);
+            warn!(
+                "SSE subscribe rejected: session {} not found or expired",
+                claims.session_id
+            );
             SseError::ChannelSendFailed("Unauthorized".to_string())
         })?;
 
@@ -376,5 +379,3 @@ pub async fn handle_sse_subscribe(
             SseError::ChannelSendFailed("Failed to build SSE response".to_string())
         })
 }
-
-

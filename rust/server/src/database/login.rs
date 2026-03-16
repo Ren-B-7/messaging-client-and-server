@@ -272,4 +272,3 @@ pub async fn get_user_sessions(conn: &Connection, user_id: i64) -> Result<Vec<Se
     })
     .await
 }
-

@@ -42,7 +42,10 @@ pub async fn handle_login(
 
     match attempt_login(&login_data, &state, ip_address, user_agent).await {
         Ok((user_id, username, jwt)) => {
-            info!("User logged in successfully: {} (ID: {})", username, user_id);
+            info!(
+                "User logged in successfully: {} (ID: {})",
+                username, user_id
+            );
 
             let token_expiry_secs = state.config.read().await.auth.token_expiry_minutes * 60;
 
@@ -55,7 +58,10 @@ pub async fn handle_login(
                     .context("Failed to create session instance cookie")?
             };
 
-            Ok(deliver_redirect_with_cookie("/chat", Some(instance_cookie))?)
+            Ok(deliver_redirect_with_cookie(
+                "/chat",
+                Some(instance_cookie),
+            )?)
         }
         Err(e) => {
             warn!("Login failed: {:?}", e.to_code());
@@ -138,11 +144,12 @@ async fn attempt_login(
     }
 
     let password_valid =
-        crate::database::utils::verify_password(&user_auth.password_hash, &data.password)
-            .map_err(|e| {
+        crate::database::utils::verify_password(&user_auth.password_hash, &data.password).map_err(
+            |e| {
                 error!("Password verification error: {}", e);
                 LoginError::InternalError
-            })?;
+            },
+        )?;
 
     if !password_valid {
         warn!("Invalid password for user: {}", data.username);

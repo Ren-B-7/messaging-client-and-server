@@ -36,7 +36,10 @@ pub async fn register_user(conn: &Connection, new_user: NewUser) -> Result<i64> 
 /// Promote a user to admin.
 pub async fn promote_user(conn: &Connection, user_id: i64) -> Result<()> {
     conn.call(move |conn: &mut rusqlite::Connection| {
-        conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?1", params![user_id])?;
+        conn.execute(
+            "UPDATE users SET is_admin = 1 WHERE id = ?1",
+            params![user_id],
+        )?;
         info!("User promoted! {}", user_id);
         Ok(())
     })
@@ -46,7 +49,10 @@ pub async fn promote_user(conn: &Connection, user_id: i64) -> Result<()> {
 /// Demote an admin back to a regular user.
 pub async fn demote_user(conn: &Connection, user_id: i64) -> Result<()> {
     conn.call(move |conn: &mut rusqlite::Connection| {
-        conn.execute("UPDATE users SET is_admin = 0 WHERE id = ?1", params![user_id])?;
+        conn.execute(
+            "UPDATE users SET is_admin = 0 WHERE id = ?1",
+            params![user_id],
+        )?;
         info!("User demoted! {}", user_id);
         Ok(())
     })
@@ -124,7 +130,10 @@ pub async fn update_username(conn: &Connection, user_id: i64, new_username: Stri
             "UPDATE users SET username = ?1 WHERE id = ?2",
             params![new_username, user_id],
         )?;
-        info!("Username updated! username:{} userid:{}", new_username, user_id);
+        info!(
+            "Username updated! username:{} userid:{}",
+            new_username, user_id
+        );
         Ok(())
     })
     .await
