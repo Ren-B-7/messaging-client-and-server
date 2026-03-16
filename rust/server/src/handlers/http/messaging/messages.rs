@@ -36,24 +36,46 @@ pub async fn handle_get_chats(
     info!("Processing get chats request for user {}", user_id);
 
     use crate::database::groups as db_groups;
+    use crate::database::register as db_register;
 
     let chats = db_groups::get_user_groups(&state.db, user_id)
         .await
         .map_err(|e| anyhow::anyhow!("Database error getting chats: {}", e))?;
 
-    let chats_json: Vec<serde_json::Value> = chats
-        .into_iter()
-        .map(|g| {
-            serde_json::json!({
-                "chat_id":     g.id,
-                "name":        g.name,
-                "description": g.description,
-                "chat_type":   g.chat_type,
-                "created_by":  g.created_by,
-                "created_at":  g.created_at,
-            })
-        })
-        .collect();
+    let mut chats_json: Vec<serde_json::Value> = Vec::with_capacity(chats.len());
+
+    for g in chats {
+        // For DMs, replace the internal UUID name with the other participant's username.
+        let display_name = if g.chat_type == "direct" {
+            let members = db_groups::get_group_members(&state.db, g.id)
+                .await
+                .unwrap_or_default();
+
+            let other = members.iter().find(|m| m.user_id != user_id);
+
+            if let Some(other_member) = other {
+                db_register::get_user_by_id(&state.db, other_member.user_id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .map(|u| u.username)
+                    .unwrap_or_else(|| format!("user_{}", other_member.user_id))
+            } else {
+                g.name.clone()
+            }
+        } else {
+            g.name.clone()
+        };
+
+        chats_json.push(serde_json::json!({
+            "chat_id":     g.id,
+            "name":        display_name,
+            "description": g.description,
+            "chat_type":   g.chat_type,
+            "created_by":  g.created_by,
+            "created_at":  g.created_at,
+        }));
+    }
 
     deliver_serialized_json(
         &serde_json::json!({ "status": "success", "data": { "chats": chats_json } }),
@@ -117,6 +139,14 @@ pub async fn handle_create_chat(
         );
     }
 
+    // Resolve the other user's display name once — used in both branches below.
+    let other_username = db_register::get_user_by_id(&state.db, other_user_id)
+        .await
+        .ok()
+        .flatten()
+        .map(|u| u.username)
+        .unwrap_or_else(|| format!("user_{}", other_user_id));
+
     // Idempotency check
     if let Some(existing_chat_id) =
         db_groups::find_existing_dm(&state.db, user_id, other_user_id).await?
@@ -134,7 +164,8 @@ pub async fn handle_create_chat(
             Some(serde_json::json!({
                 "id":        chat.id,
                 "chat_id":   chat.id,
-                "name":      chat.name,
+                // Return the other person's username, not the internal UUID name.
+                "name":      other_username,
                 "chat_type": "direct",
                 "created_at": chat.created_at,
             })),
@@ -173,7 +204,8 @@ pub async fn handle_create_chat(
         Some(serde_json::json!({
             "id":        chat_id,
             "chat_id":   chat_id,
-            "name":      internal_name,
+            // Return the other person's username, not the internal UUID name.
+            "name":      other_username,
             "chat_type": "direct",
             "created_at": crate::database::utils::get_timestamp(),
         })),
