@@ -7,6 +7,7 @@ use std::convert::Infallible;
 use tracing::{error, info, warn};
 
 use crate::AppState;
+use crate::database::login;
 use crate::handlers::http::utils::{
     create_persistent_cookie, create_session_cookie, deliver_redirect_with_cookie,
     deliver_serialized_json, encode_jwt, get_client_ip, get_user_agent, is_https,
@@ -116,11 +117,9 @@ async fn attempt_login(
     ip_address: Option<String>,
     user_agent: String,
 ) -> std::result::Result<(i64, String, String), LoginError> {
-    use crate::database::login as db_login;
-
     info!("Attempting admin login for user: {}", data.username);
 
-    let admin_auth = db_login::get_admin_auth(&state.db, data.username.clone())
+    let admin_auth = login::get_admin_auth(&state.db, data.username.clone())
         .await
         .map_err(|e| {
             error!("Database error getting admin auth: {}", e);
@@ -152,7 +151,7 @@ async fn attempt_login(
     let token_expiry_secs = state.config.read().await.auth.token_expiry_minutes * 60;
     let expires_at = crate::database::utils::calculate_expiry(token_expiry_secs as i64);
 
-    db_login::create_admin_session(
+    login::create_admin_session(
         &state.db,
         NewSession {
             user_id: admin_auth.id,
@@ -167,7 +166,7 @@ async fn attempt_login(
         LoginError::DatabaseError
     })?;
 
-    db_login::update_admin_last_login(&state.db, admin_auth.id)
+    login::update_admin_last_login(&state.db, admin_auth.id)
         .await
         .map_err(|e| error!("Failed to update admin last login: {}", e))
         .ok();

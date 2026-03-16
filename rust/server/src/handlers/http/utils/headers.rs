@@ -6,6 +6,8 @@ use tracing::{debug, warn};
 
 use shared::types::jwt::JwtClaims;
 
+use crate::database::login;
+
 // ---------------------------------------------------------------------------
 // Generic header helpers
 // ---------------------------------------------------------------------------
@@ -235,13 +237,11 @@ pub async fn validate_jwt_secure(
     req: &Request<hyper::body::Incoming>,
     state: &crate::AppState,
 ) -> std::result::Result<(i64, JwtClaims), String> {
-    use crate::database::login as db_login;
-
     // Step 1 — cryptographic JWT verification (no DB).
     let claims = decode_jwt_claims(req, &state.jwt_secret)?;
 
     // Step 2 — confirm the session_id still exists and hasn't expired.
-    let session = db_login::validate_session_id(&state.db, claims.session_id.clone())
+    let session = login::validate_session_id(&state.db, claims.session_id.clone())
         .await
         .map_err(|e| format!("Database error: {}", e))?
         .ok_or("Session not found or expired — please log in again")?;

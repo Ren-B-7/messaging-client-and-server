@@ -7,7 +7,7 @@ use std::convert::Infallible;
 use tracing::{error, info, warn};
 
 use crate::AppState;
-use crate::database::login as db_login;
+use crate::database::login;
 use crate::handlers::http::utils::{
     create_persistent_cookie, create_session_cookie, deliver_redirect_with_cookie,
     deliver_serialized_json, encode_jwt, get_client_ip, get_user_agent, is_https,
@@ -127,7 +127,7 @@ async fn attempt_login(
 ) -> std::result::Result<(i64, String, String), LoginError> {
     info!("Attempting login for user: {}", data.username);
 
-    let user_auth = db_login::get_user_auth(&state.db, data.username.clone())
+    let user_auth = login::get_user_auth(&state.db, data.username.clone())
         .await
         .map_err(|e| {
             error!("Database error getting user auth: {}", e);
@@ -176,7 +176,7 @@ async fn attempt_login(
     let token_expiry_secs = state.config.read().await.auth.token_expiry_minutes * 60;
     let expires_at = crate::database::utils::calculate_expiry(token_expiry_secs as i64);
 
-    db_login::create_session(
+    login::create_session(
         &state.db,
         NewSession {
             user_id: user_auth.id,
@@ -191,7 +191,7 @@ async fn attempt_login(
         LoginError::DatabaseError
     })?;
 
-    db_login::update_last_login(&state.db, user_auth.id)
+    login::update_last_login(&state.db, user_auth.id)
         .await
         .map_err(|e| error!("Failed to update last login: {}", e))
         .ok();

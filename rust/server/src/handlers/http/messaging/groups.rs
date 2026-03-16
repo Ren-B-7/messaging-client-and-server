@@ -8,8 +8,7 @@ use std::convert::Infallible;
 use tracing::info;
 
 use crate::AppState;
-use crate::database::groups as db_groups;
-use crate::database::register as db_register;
+use crate::database::{groups, register};
 use crate::handlers::http::utils::{deliver_error_json, deliver_success_json};
 use shared::types::groups::*;
 use shared::types::jwt::JwtClaims;
@@ -35,7 +34,7 @@ pub async fn handle_get_groups(
     let user_id = claims.user_id;
     info!("Fetching groups for user {}", user_id);
 
-    let groups = db_groups::get_user_groups(&state.db, user_id)
+    let groups = groups::get_user_groups(&state.db, user_id)
         .await
         .context("Failed to fetch groups")?;
 
@@ -114,7 +113,7 @@ pub async fn handle_create_group(
         }
     });
 
-    let chat_id = db_groups::create_group(
+    let chat_id = groups::create_group(
         &state.db,
         NewGroup {
             name: name.clone(),
@@ -151,14 +150,14 @@ pub async fn handle_get_members(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Fetching members for group {}", chat_id);
 
-    let members = db_groups::get_group_members(&state.db, chat_id)
+    let members = groups::get_group_members(&state.db, chat_id)
         .await
         .context("Failed to fetch group members")?;
 
     // Resolve usernames for each member
     let mut members_json: Vec<serde_json::Value> = Vec::with_capacity(members.len());
     for m in members {
-        let username = db_register::get_user_by_id(&state.db, m.user_id)
+        let username = register::get_user_by_id(&state.db, m.user_id)
             .await
             .ok()
             .flatten()
@@ -210,7 +209,7 @@ pub async fn handle_add_member(
     let target_user_id: i64 = if let Some(uid) = params.get("user_id").and_then(|v| v.as_i64()) {
         uid
     } else if let Some(username) = params.get("username").and_then(|v| v.as_str()) {
-        match db_register::get_user_by_username(&state.db, username.to_string()).await? {
+        match register::get_user_by_username(&state.db, username.to_string()).await? {
             Some(user) => user.id,
             None => {
                 return deliver_error_json(
@@ -229,7 +228,7 @@ pub async fn handle_add_member(
     };
 
     // Check if already a member
-    let already_member = db_groups::is_group_member(&state.db, chat_id, target_user_id)
+    let already_member = groups::is_group_member(&state.db, chat_id, target_user_id)
         .await
         .unwrap_or(false);
 
@@ -251,7 +250,7 @@ pub async fn handle_add_member(
     }
     .to_string();
 
-    db_groups::add_group_member(&state.db, chat_id, target_user_id, role)
+    groups::add_group_member(&state.db, chat_id, target_user_id, role)
         .await
         .context("Failed to add group member")?;
 
@@ -279,7 +278,7 @@ pub async fn handle_rename_group(
     info!("User {} renaming group {}", user_id, chat_id);
 
     // Verify the caller is a member of the group
-    let is_member = db_groups::is_group_member(&state.db, chat_id, user_id)
+    let is_member = groups::is_group_member(&state.db, chat_id, user_id)
         .await
         .unwrap_or(false);
 
@@ -324,7 +323,7 @@ pub async fn handle_rename_group(
         );
     }
 
-    db_groups::update_group_name(&state.db, chat_id, new_name.clone())
+    groups::update_group_name(&state.db, chat_id, new_name.clone())
         .await
         .context("Failed to rename group")?;
 
@@ -355,7 +354,7 @@ pub async fn handle_delete_group(
     info!("User {} deleting group {}", user_id, chat_id);
 
     // Fetch the group to verify it exists and is a group (not a DM)
-    let group = match db_groups::get_group(&state.db, chat_id).await? {
+    let group = match groups::get_group(&state.db, chat_id).await? {
         Some(g) => g,
         None => {
             return deliver_error_json("NOT_FOUND", "Group not found", StatusCode::NOT_FOUND);
@@ -379,7 +378,7 @@ pub async fn handle_delete_group(
         );
     }
 
-    db_groups::delete_group(&state.db, chat_id)
+    groups::delete_group(&state.db, chat_id)
         .await
         .context("Failed to delete group")?;
 
@@ -424,7 +423,7 @@ pub async fn handle_search_users(
         );
     }
 
-    let users = db_register::search_users_by_username(&state.db, &q, 10)
+    let users = register::search_users_by_username(&state.db, &q, 10)
         .await
         .context("Failed to search users")?;
 
@@ -471,7 +470,7 @@ pub async fn handle_remove_member(
         .and_then(|v| v.as_i64())
         .ok_or_else(|| anyhow::anyhow!("Invalid or missing user_id"))?;
 
-    let removed = db_groups::remove_group_member(&state.db, chat_id, target_user_id)
+    let removed = groups::remove_group_member(&state.db, chat_id, target_user_id)
         .await
         .context("Failed to remove group member")?;
 

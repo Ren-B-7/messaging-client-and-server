@@ -8,14 +8,16 @@ use hyper::{Request, Response, StatusCode};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use crate::AppState;
-use crate::handlers::http::utils::{
-    deliver_error_json, deliver_serialized_json, deliver_success_json,
-};
 use shared::types::groups::*;
 use shared::types::jwt::JwtClaims;
 use shared::types::message::*;
 use shared::types::sse::SseEvent;
+
+use crate::AppState;
+use crate::database::{groups, messages, register};
+use crate::handlers::http::utils::{
+    deliver_error_json, deliver_serialized_json, deliver_success_json,
+};
 
 // ---------------------------------------------------------------------------
 // Handlers
@@ -35,10 +37,7 @@ pub async fn handle_get_chats(
     let user_id = claims.user_id;
     info!("Processing get chats request for user {}", user_id);
 
-    use crate::database::groups as db_groups;
-    use crate::database::register as db_register;
-
-    let chats = db_groups::get_user_groups(&state.db, user_id)
+    let chats = groups::get_user_groups(&state.db, user_id)
         .await
         .map_err(|e| anyhow::anyhow!("Database error getting chats: {}", e))?;
 
@@ -48,7 +47,7 @@ pub async fn handle_get_chats(
         // For DMs, replace the internal UUID name with the other participant's
         // username and resolve their avatar URL.
         let (display_name, avatar_url) = if g.chat_type == "direct" {
-            let members = db_groups::get_group_members(&state.db, g.id)
+            let members = groups::get_group_members(&state.db, g.id)
                 .await
                 .unwrap_or_default();
 
@@ -57,7 +56,7 @@ pub async fn handle_get_chats(
             if let Some(other_member) = other {
                 let other_id = other_member.user_id;
 
-                let name = db_register::get_user_by_id(&state.db, other_id)
+                let name = register::get_user_by_id(&state.db, other_id)
                     .await
                     .ok()
                     .flatten()
@@ -65,7 +64,7 @@ pub async fn handle_get_chats(
                     .unwrap_or_else(|| format!("user_{}", other_id));
 
                 // Only set avatar_url when the other user actually has one.
-                let url = db_register::get_user_avatar(&state.db, other_id)
+                let url = register::get_user_avatar(&state.db, other_id)
                     .await
                     .ok()
                     .flatten()
@@ -110,9 +109,6 @@ pub async fn handle_create_chat(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing create chat request from user {}", user_id);
 
-    use crate::database::groups as db_groups;
-    use crate::database::register as db_register;
-
     let body = req
         .collect()
         .await
@@ -126,7 +122,7 @@ pub async fn handle_create_chat(
     let other_user_id: i64 = if let Some(uid) = params.get("user_id").and_then(|v| v.as_i64()) {
         uid
     } else if let Some(username) = params.get("username").and_then(|v| v.as_str()) {
-        match db_register::get_user_by_username(&state.db, username.to_string()).await? {
+        match register::get_user_by_username(&state.db, username.to_string()).await? {
             Some(user) => user.id,
             None => {
                 return deliver_error_json(
@@ -153,7 +149,7 @@ pub async fn handle_create_chat(
     }
 
     // Resolve the other user's display name once — used in both branches below.
-    let other_username = db_register::get_user_by_id(&state.db, other_user_id)
+    let other_username = register::get_user_by_id(&state.db, other_user_id)
         .await
         .ok()
         .flatten()
@@ -161,7 +157,7 @@ pub async fn handle_create_chat(
         .unwrap_or_else(|| format!("user_{}", other_user_id));
 
     // Resolve avatar URL for the other participant.
-    let other_avatar_url = db_register::get_user_avatar(&state.db, other_user_id)
+    let other_avatar_url = register::get_user_avatar(&state.db, other_user_id)
         .await
         .ok()
         .flatten()
@@ -169,9 +165,9 @@ pub async fn handle_create_chat(
 
     // Idempotency check
     if let Some(existing_chat_id) =
-        db_groups::find_existing_dm(&state.db, user_id, other_user_id).await?
+        groups::find_existing_dm(&state.db, user_id, other_user_id).await?
     {
-        let chat = db_groups::get_group(&state.db, existing_chat_id)
+        let chat = groups::get_group(&state.db, existing_chat_id)
             .await?
             .context("Failed to retrieve existing chat")?;
 
@@ -196,7 +192,7 @@ pub async fn handle_create_chat(
 
     let internal_name = Uuid::new_v4().to_string();
 
-    let chat_id = db_groups::create_group(
+    let chat_id = groups::create_group(
         &state.db,
         NewGroup {
             name: internal_name.clone(),
@@ -208,7 +204,7 @@ pub async fn handle_create_chat(
     .await
     .context("Failed to create DM")?;
 
-    db_groups::add_group_member(&state.db, chat_id, other_user_id, "admin".to_string())
+    groups::add_group_member(&state.db, chat_id, other_user_id, "admin".to_string())
         .await
         .context("Failed to add other participant to DM")?;
 
@@ -337,14 +333,12 @@ pub async fn handle_mark_read(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Marking message {} as read by user {}", message_id, user_id);
 
-    use crate::database::messages as db_messages;
-
     // Fetch the message first so we have chat_id + sender_id for the broadcast
-    let msg = db_messages::get_message_by_id(&state.db, message_id)
+    let msg = messages::get_message_by_id(&state.db, message_id)
         .await
         .context("Failed to fetch message")?;
 
-    db_messages::mark_read(&state.db, message_id)
+    messages::mark_read(&state.db, message_id)
         .await
         .context("Failed to mark message as read")?;
 
@@ -370,8 +364,6 @@ pub async fn handle_typing(
     state: AppState,
     user_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    use crate::database::groups as db_groups;
-
     let body = req
         .collect()
         .await
@@ -396,7 +388,7 @@ pub async fn handle_typing(
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
 
-    let members = db_groups::get_group_members(&state.db, chat_id)
+    let members = groups::get_group_members(&state.db, chat_id)
         .await
         .unwrap_or_default();
 
@@ -451,9 +443,7 @@ async fn sse_broadcast_message_sent(
     message_type: &str,
     sent_at: i64,
 ) {
-    use crate::database::groups as db_groups;
-
-    let members = match db_groups::get_group_members(&state.db, chat_id).await {
+    let members = match groups::get_group_members(&state.db, chat_id).await {
         Ok(m) => m,
         Err(e) => {
             error!(
@@ -509,11 +499,9 @@ async fn sse_broadcast_message_read(
     chat_id: i64,
     sender_id: i64,
 ) {
-    use crate::database::groups as db_groups;
-
     let now = crate::database::utils::get_timestamp();
 
-    let members = match db_groups::get_group_members(&state.db, chat_id).await {
+    let members = match groups::get_group_members(&state.db, chat_id).await {
         Ok(m) => m,
         Err(e) => {
             error!(
@@ -659,15 +647,12 @@ async fn persist_message(
     data: &SendMessageData,
     state: &AppState,
 ) -> std::result::Result<(i64, i64), MessageError> {
-    use crate::database::groups as db_groups;
-    use crate::database::messages as db_messages;
-
-    let _chat = db_groups::get_group(&state.db, data.chat_id)
+    let _chat = groups::get_group(&state.db, data.chat_id)
         .await
         .map_err(|_| MessageError::DatabaseError)?
         .ok_or(MessageError::InvalidChat)?;
 
-    let is_member = db_groups::is_group_member(&state.db, data.chat_id, sender_id)
+    let is_member = groups::is_group_member(&state.db, data.chat_id, sender_id)
         .await
         .map_err(|_| MessageError::DatabaseError)?;
 
@@ -681,7 +666,7 @@ async fn persist_message(
             MessageError::InternalError
         })?;
 
-    let message_id = db_messages::send_message(
+    let message_id = messages::send_message(
         &state.db,
         NewMessage {
             sender_id,
@@ -721,17 +706,14 @@ async fn retrieve_messages(
     query: &GetMessagesQuery,
     state: &AppState,
 ) -> std::result::Result<Vec<MessageResponse>, MessageError> {
-    use crate::database::groups as db_groups;
-    use crate::database::messages as db_messages;
-
     let chat_id = query.chat_id.ok_or(MessageError::MissingChat)?;
 
-    let _chat = db_groups::get_group(&state.db, chat_id)
+    let _chat = groups::get_group(&state.db, chat_id)
         .await
         .map_err(|_| MessageError::DatabaseError)?
         .ok_or(MessageError::InvalidChat)?;
 
-    let is_member = db_groups::is_group_member(&state.db, chat_id, user_id)
+    let is_member = groups::is_group_member(&state.db, chat_id, user_id)
         .await
         .map_err(|_| MessageError::DatabaseError)?;
 
@@ -742,7 +724,7 @@ async fn retrieve_messages(
     let limit = query.limit.unwrap_or(50).min(100);
     let offset = query.offset.unwrap_or(0);
 
-    let messages = db_messages::get_chat_messages(&state.db, chat_id, limit, offset)
+    let messages = messages::get_chat_messages(&state.db, chat_id, limit, offset)
         .await
         .map_err(|e| {
             error!("Database error getting messages: {}", e);

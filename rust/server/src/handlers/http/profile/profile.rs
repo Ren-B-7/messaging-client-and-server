@@ -20,6 +20,7 @@ use anyhow::{Context, Result};
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full, combinators::BoxBody};
 use hyper::{Request, Response, StatusCode};
+use multer::Multipart;
 use tokio_rusqlite::rusqlite;
 use tracing::{error, info, warn};
 
@@ -457,10 +458,6 @@ pub async fn handle_upload_avatar(
     state: AppState,
     user_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    use http_body_util::BodyExt as _;
-    use multer::Multipart;
-    use uuid::Uuid;
-
     info!("Avatar upload request from user {}", user_id);
 
     const MAX_AVATAR_BYTES: usize = 5 * 1024 * 1024; // 5 MiB
@@ -602,7 +599,7 @@ pub async fn handle_upload_avatar(
 /// Light-auth: `claims` are pre-verified by the router (JWT only).
 /// The auth cookie is sent automatically on same-origin `<img>` requests.
 pub async fn handle_get_avatar(
-    req: Request<hyper::body::Incoming>,
+    _req: Request<hyper::body::Incoming>,
     state: AppState,
     _claims: JwtClaims,
     target_user_id: i64,

@@ -111,14 +111,6 @@ pub struct AdminAuth {
     pub ban_reason: Option<String>,
 }
 
-// ---------------------------------------------------------------------------
-// Session types (v2 — JWT migration)
-//
-//   REMOVED:  session_token  →  replaced by session_id (UUID embedded in JWT)
-//   REMOVED:  user_agent     →  now lives exclusively in the JWT claims
-//   ADDED:    session_id     →  revocation handle stored in the DB sessions table
-// ---------------------------------------------------------------------------
-
 /// Data required to INSERT a new session row.
 ///
 /// `session_id` is a UUID v4 generated at login time, embedded in the JWT

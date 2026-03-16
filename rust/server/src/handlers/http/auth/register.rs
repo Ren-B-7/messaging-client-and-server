@@ -7,9 +7,8 @@ use std::convert::Infallible;
 use tracing::{error, info, warn};
 
 use crate::AppState;
-use crate::database::login as db_login;
-use crate::database::register as db_register;
 use crate::database::utils::{calculate_expiry, generate_uuid_token, hash_password};
+use crate::database::{login, register};
 use crate::handlers::http::utils::{
     create_session_cookie, deliver_redirect_with_cookie, deliver_serialized_json, encode_jwt,
     get_client_ip, get_user_agent, is_https,
@@ -197,7 +196,7 @@ async fn check_username_available(
     username: &str,
     state: &AppState,
 ) -> std::result::Result<(), RegisterError> {
-    let exists = db_register::username_exists(&state.db, username.to_string())
+    let exists = register::username_exists(&state.db, username.to_string())
         .await
         .map_err(|e| {
             error!("DB error checking username: {}", e);
@@ -213,7 +212,7 @@ async fn check_email_available(
     email: &str,
     state: &AppState,
 ) -> std::result::Result<(), RegisterError> {
-    let exists = db_register::email_exists(&state.db, email.to_string())
+    let exists = register::email_exists(&state.db, email.to_string())
         .await
         .map_err(|e| {
             error!("DB error checking email: {}", e);
@@ -234,7 +233,7 @@ async fn create_user(
         RegisterError::InternalError
     })?;
 
-    db_register::register_user(
+    register::register_user(
         &state.db,
         NewUser {
             username: data.username.clone(),
@@ -258,7 +257,7 @@ async fn create_session_for_new_user(
     let token_expiry_secs = state.config.read().await.auth.token_expiry_minutes * 60;
     let expires_at = calculate_expiry(token_expiry_secs as i64);
 
-    db_login::create_session(
+    login::create_session(
         &state.db,
         NewSession {
             user_id,

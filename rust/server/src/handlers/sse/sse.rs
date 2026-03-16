@@ -11,9 +11,7 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::database::login as db_login;
-use crate::database::messages as db_messages;
-use crate::database::utils as db_utils;
+use crate::database::{login, messages, utils};
 use crate::handlers::http::utils::headers::decode_jwt_claims;
 use shared::types::login::Session;
 
@@ -234,7 +232,7 @@ pub async fn handle_sse_subscribe(
         SseError::ChannelSendFailed("Unauthorized".to_string())
     })?;
 
-    let session: Session = db_login::validate_session_id(&state.db, claims.session_id.clone())
+    let session: Session = login::validate_session_id(&state.db, claims.session_id.clone())
         .await
         .map_err(|e| {
             error!("SSE auth DB error: {}", e);
@@ -279,7 +277,7 @@ pub async fn handle_sse_subscribe(
     // ── 3. Fetch history ───────────────────────────────────────────────────
     let history = match &chat_ctx {
         ChatContext::Chat { chat_id } => {
-            db_messages::get_chat_messages(&state.db, *chat_id, limit, offset)
+            messages::get_chat_messages(&state.db, *chat_id, limit, offset)
                 .await
                 .map_err(|e| {
                     error!("SSE history fetch (chat) failed: {}", e);
@@ -297,7 +295,7 @@ pub async fn handle_sse_subscribe(
     ));
 
     for msg in &history {
-        let content = db_utils::decompress_data(&msg.content).map_err(|e| {
+        let content = utils::decompress_data(&msg.content).map_err(|e| {
             error!("SSE history decompress failed for msg {}: {}", msg.id, e);
             SseError::ChannelSendFailed("Failed to decompress message".to_string())
         })?;

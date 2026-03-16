@@ -20,9 +20,7 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::database::files as db_files;
-use crate::database::groups as db_groups;
-use crate::database::messages as db_messages;
+use crate::database::{files, groups, messages};
 use crate::handlers::http::utils::{deliver_error_json, deliver_serialized_json};
 use shared::types::jwt::JwtClaims;
 use shared::types::message::NewMessage;
@@ -165,7 +163,7 @@ pub async fn handle_upload_file(
     let mime_type = mime_type.unwrap_or_else(|| "application/octet-stream".to_string());
 
     // ── 4. Authorization — must be a chat member ─────────────────────────────
-    let is_member = db_groups::is_group_member(&state.db, chat_id, user_id)
+    let is_member = groups::is_group_member(&state.db, chat_id, user_id)
         .await
         .context("DB error checking membership")?;
 
@@ -192,9 +190,9 @@ pub async fn handle_upload_file(
     let file_size = file_bytes.len() as i64;
 
     // ── 6. Insert file record ────────────────────────────────────────────────
-    let file_id = db_files::store_file_record(
+    let file_id = files::store_file_record(
         &state.db,
-        db_files::NewFileRecord {
+        files::NewFileRecord {
             uploader_id: user_id,
             chat_id,
             filename: filename.clone(),
@@ -221,7 +219,7 @@ pub async fn handle_upload_file(
     let compressed = crate::database::utils::compress_data(msg_content.as_bytes())
         .context("Failed to compress message content")?;
 
-    let message_id = db_messages::send_message(
+    let message_id = messages::send_message(
         &state.db,
         NewMessage {
             sender_id: user_id,
@@ -235,7 +233,7 @@ pub async fn handle_upload_file(
     .context("Failed to create file message")?;
 
     // Back-fill the message_id on the files row.
-    db_files::set_file_message_id(&state.db, file_id, message_id)
+    files::set_file_message_id(&state.db, file_id, message_id)
         .await
         .context("Failed to link message to file")?;
 
@@ -283,7 +281,7 @@ pub async fn handle_download_file(
     info!("File download: file={} user={}", file_id, user_id);
 
     // ── 1. Load metadata ─────────────────────────────────────────────────────
-    let rec = match db_files::get_file(&state.db, file_id).await? {
+    let rec = match files::get_file(&state.db, file_id).await? {
         Some(r) => r,
         None => {
             return deliver_error_json("NOT_FOUND", "File not found", StatusCode::NOT_FOUND);
@@ -291,7 +289,7 @@ pub async fn handle_download_file(
     };
 
     // ── 2. Auth — must be a chat member ──────────────────────────────────────
-    let is_member = db_groups::is_group_member(&state.db, rec.chat_id, user_id)
+    let is_member = groups::is_group_member(&state.db, rec.chat_id, user_id)
         .await
         .context("DB error checking membership")?;
 
@@ -382,7 +380,7 @@ pub async fn handle_get_chat_files(
         .unwrap_or(0);
 
     // Auth — must be a chat member.
-    let is_member = db_groups::is_group_member(&state.db, chat_id, user_id)
+    let is_member = groups::is_group_member(&state.db, chat_id, user_id)
         .await
         .context("DB error checking membership")?;
 
@@ -394,7 +392,7 @@ pub async fn handle_get_chat_files(
         );
     }
 
-    let files = db_files::get_files_for_chat(&state.db, chat_id, limit, offset)
+    let files = files::get_files_for_chat(&state.db, chat_id, limit, offset)
         .await
         .context("Failed to fetch files")?;
 
@@ -441,7 +439,7 @@ pub async fn handle_delete_file(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Delete file {} requested by user {}", file_id, user_id);
 
-    let rec = match db_files::get_file(&state.db, file_id).await? {
+    let rec = match files::get_file(&state.db, file_id).await? {
         Some(r) => r,
         None => {
             return deliver_error_json("NOT_FOUND", "File not found", StatusCode::NOT_FOUND);
@@ -459,7 +457,7 @@ pub async fn handle_delete_file(
     }
 
     // Remove DB record first so a crash between DB and disk doesn't leak access.
-    let deleted = db_files::delete_file_record(&state.db, file_id)
+    let deleted = files::delete_file_record(&state.db, file_id)
         .await
         .context("Failed to delete file record")?;
 
@@ -499,7 +497,7 @@ async fn sse_broadcast_file_shared(
 ) {
     let now = crate::database::utils::get_timestamp();
 
-    let members = match db_groups::get_group_members(&state.db, chat_id).await {
+    let members = match groups::get_group_members(&state.db, chat_id).await {
         Ok(m) => m,
         Err(e) => {
             error!(

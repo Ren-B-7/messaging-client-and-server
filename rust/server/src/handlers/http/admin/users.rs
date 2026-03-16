@@ -9,7 +9,7 @@ use hyper::{Request, Response, StatusCode};
 use tracing::info;
 
 use crate::AppState;
-use crate::database::{ban as db_ban, register as db_register, utils::get_timestamp};
+use crate::database::{ban, register, utils::get_timestamp};
 use crate::handlers::http::utils::{deliver_serialized_json, deliver_success_json};
 
 /// GET /admin/api/users — list all users.
@@ -142,7 +142,7 @@ pub async fn handle_ban_user(
         admin_id, user_id, reason
     );
 
-    db_ban::ban_user(&state.db, user_id, admin_id, Some(reason.clone()))
+    ban::ban_user(&state.db, user_id, admin_id, Some(reason.clone()))
         .await
         .context("Failed to ban user in database")?;
 
@@ -176,7 +176,7 @@ pub async fn handle_unban_user(
 
     info!("Admin {} unbanning user {}", admin_id, user_id);
 
-    db_ban::unban_user(&state.db, user_id)
+    ban::unban_user(&state.db, user_id)
         .await
         .context("Failed to unban user in database")?;
 
@@ -260,12 +260,12 @@ pub async fn handle_promote_user(
         );
     }
 
-    let user = db_register::get_user_by_id(&state.db, user_id)
+    let user = register::get_user_by_id(&state.db, user_id)
         .await
         .map_err(|e| anyhow::anyhow!("DB error: {}", e))?
         .ok_or_else(|| anyhow::anyhow!("User not found"))?;
 
-    db_register::promote_user(&state.db, user_id)
+    register::promote_user(&state.db, user_id)
         .await
         .map_err(|e| anyhow::anyhow!("DB error promoting user: {}", e))?;
 
@@ -310,12 +310,12 @@ pub async fn handle_demote_user(
         );
     }
 
-    let user = db_register::get_user_by_id(&state.db, user_id)
+    let user = register::get_user_by_id(&state.db, user_id)
         .await
         .map_err(|e| anyhow::anyhow!("DB error: {}", e))?
         .ok_or_else(|| anyhow::anyhow!("User not found"))?;
 
-    db_register::demote_user(&state.db, user_id)
+    register::demote_user(&state.db, user_id)
         .await
         .map_err(|e| anyhow::anyhow!("DB error demoting user: {}", e))?;
 
