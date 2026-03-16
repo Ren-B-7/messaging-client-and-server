@@ -9,7 +9,7 @@ use tokio_rusqlite::rusqlite;
 use tracing::info;
 
 use crate::AppState;
-use crate::handlers::http::utils::{deliver_serialized_json, deliver_success_json};
+use crate::handlers::http::utils::json_response::*;
 use shared::types::server_stats::{DatabaseInfo, ServerStats};
 
 /// GET /admin/api/stats — serve live server and database statistics.

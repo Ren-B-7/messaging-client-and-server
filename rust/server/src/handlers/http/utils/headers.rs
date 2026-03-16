@@ -295,7 +295,7 @@ pub fn encode_jwt(claims: &JwtClaims, jwt_secret: &str) -> Result<String> {
 }
 
 // ---------------------------------------------------------------------------
-// Cache / ETag helpers  (unchanged from original)
+// Cache / ETag helpers
 // ---------------------------------------------------------------------------
 
 /// Replace all cache-related headers with `no-cache, no-store, must-revalidate`.

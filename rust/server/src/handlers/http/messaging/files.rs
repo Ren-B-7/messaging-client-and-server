@@ -31,10 +31,10 @@ use shared::types::sse::SseEvent;
 // ---------------------------------------------------------------------------
 
 /// Hard cap on a single uploaded file (50 MiB).
-const MAX_FILE_SIZE: usize = 50 * 1024 * 1024;
+pub const MAX_FILE_SIZE: usize = 50 * 1024 * 1024;
 
 /// How many files to return per page by default.
-const DEFAULT_PAGE_SIZE: i64 = 50;
+pub const DEFAULT_PAGE_SIZE: i64 = 50;
 
 // ---------------------------------------------------------------------------
 // POST /api/files/upload
@@ -542,7 +542,7 @@ async fn sse_broadcast_file_shared(
 /// Derive a collision-free on-disk path for a new upload.
 ///
 /// Layout: `<uploads_dir>/<uuid>_<sanitized-filename>`
-fn build_storage_path(uploads_dir: &str, filename: &str) -> PathBuf {
+pub fn build_storage_path(uploads_dir: &str, filename: &str) -> PathBuf {
     let uuid = Uuid::new_v4().to_string();
     let stored_name = format!("{}_{}", uuid, filename);
     PathBuf::from(uploads_dir).join(stored_name)
@@ -550,7 +550,7 @@ fn build_storage_path(uploads_dir: &str, filename: &str) -> PathBuf {
 
 /// Strip directory traversal, null bytes, and other hazardous characters from
 /// a filename supplied by the client.
-fn sanitize_filename(name: &str) -> String {
+pub fn sanitize_filename(name: &str) -> String {
     // Take only the last path component (handles Windows \ separators too).
     let base = name
         .replace('\\', "/")
@@ -564,46 +564,4 @@ fn sanitize_filename(name: &str) -> String {
     base.chars()
         .filter(|c| !c.is_control() && *c != '\0')
         .collect()
-}
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sanitize_strips_path_traversal() {
-        assert_eq!(sanitize_filename("../../etc/passwd"), "passwd");
-    }
-
-    #[test]
-    fn sanitize_strips_windows_separators() {
-        assert_eq!(sanitize_filename("C:\\Users\\file.txt"), "file.txt");
-    }
-
-    #[test]
-    fn sanitize_normal_filename_unchanged() {
-        assert_eq!(sanitize_filename("report-2026.pdf"), "report-2026.pdf");
-    }
-
-    #[test]
-    fn sanitize_null_byte_removed() {
-        assert_eq!(sanitize_filename("file\0name.txt"), "filename.txt");
-    }
-
-    #[test]
-    fn sanitize_empty_becomes_unnamed() {
-        assert_eq!(sanitize_filename(""), "unnamed");
-    }
-
-    #[test]
-    fn build_storage_path_includes_filename() {
-        let p = build_storage_path("/uploads", "photo.jpg");
-        let name = p.file_name().unwrap().to_str().unwrap();
-        assert!(name.ends_with("photo.jpg"));
-        assert!(name.len() > "photo.jpg".len()); // has UUID prefix
-    }
 }

@@ -105,30 +105,3 @@ pub struct RateLimiterStats {
     pub capacity: usize,
     pub refill_rate: usize,
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_rate_limiter() {
-        let limiter = RateLimiter::new(10, 5); // 10 req/sec, burst of 5
-        let ip: IpAddr = "192.168.1.1".parse().unwrap();
-
-        // First 5 requests should succeed (burst)
-        for _ in 0..5 {
-            assert!(limiter.check(ip).await);
-        }
-
-        // 6th request should fail (no tokens left)
-        assert!(!limiter.check(ip).await);
-
-        // Wait for refill
-        tokio::time::sleep(Duration::from_millis(200)).await;
-
-        // Should have ~2 tokens now (200ms * 10 req/sec)
-        assert!(limiter.check(ip).await);
-        assert!(limiter.check(ip).await);
-        assert!(!limiter.check(ip).await);
-    }
-}

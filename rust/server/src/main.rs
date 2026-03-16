@@ -4,13 +4,8 @@ use anyhow::Context;
 use tracing::{debug, error, info, warn};
 
 use tokio::net::TcpListener;
-use tokio_rusqlite::Connection;
 
-use hyper::{
-    Method,
-    header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderValue},
-    server::conn::http1,
-};
+use hyper::server::conn::http1;
 use hyper_util::{
     rt::{TokioIo, TokioTimer},
     service::TowerToHyperService,
@@ -18,109 +13,16 @@ use hyper_util::{
 
 use tower::ServiceBuilder;
 use tower::load_shed::LoadShedLayer;
-use tower_http::{
-    compression::{CompressionLayer, CompressionLevel},
-    cors::CorsLayer,
+use tower_http::compression::{CompressionLayer, CompressionLevel};
+
+use server::{
+    database::create,
+    handlers::{admin::AdminService, user::UserService},
+    tower_middle::tower_timeout_handler::TimeoutLayer,
+    AppState, create_cors_layer,
 };
 
-mod database;
-mod handlers;
-mod tower_middle;
-
-use database::{create, login, password};
-use handlers::{
-    admin::{AdminService, build_admin_router_with_config},
-    http::routes::Router,
-    sse::sse::SseManager,
-    user::{UserService, build_user_router_with_config},
-};
-use tower_middle::{
-    security::{IpFilter, Metrics, RateLimiter},
-    tower_ip_filter::IpFilterLayer,
-    tower_metrics::MetricsLayer,
-    tower_rate_limiter::RateLimiterLayer,
-    tower_timeout_handler::TimeoutLayer,
-};
-
-use shared::config::{self, LiveConfig};
-
-/// Shared application state.
-///
-/// `config` is a `LiveConfig` — a cheaply-cloneable `Arc<RwLock<AppConfig>>`
-/// wrapper. Every clone of `AppState` shares the **same** underlying config,
-/// so an admin-triggered reload or SIGHUP is visible everywhere immediately.
-///
-/// `jwt_secret` is intentionally **not** inside `LiveConfig` / the hot-reload
-/// path.  Changing the secret invalidates every live session instantly —
-/// that is a deliberate operator action that requires a server restart, not
-/// something that should happen silently on SIGHUP.
-#[derive(Clone, Debug)]
-pub struct AppState {
-    pub db: Arc<Connection>,
-    pub config: LiveConfig,
-    pub ip_filter: IpFilter,
-    pub rate_limiter: RateLimiter,
-    pub metrics: Metrics,
-    pub timeout: Duration,
-    pub sse_manager: Arc<SseManager>,
-    /// HMAC key used to sign and verify JWTs.  Shared via `Arc` so cloning
-    /// `AppState` is cheap.  Treat this like a password — load from env/config
-    /// and never log it.
-    pub jwt_secret: Arc<String>,
-    pub user_router: Arc<Router>,
-    pub admin_router: Arc<Router>,
-}
-
-impl AppState {
-    fn new(
-        config: LiveConfig,
-        db: Connection,
-        jwt_secret: String,
-        user_router: Arc<Router>,
-        admin_router: Arc<Router>,
-    ) -> Self {
-        let rate_limiter = RateLimiter::new(100, 200);
-
-        Self {
-            db: Arc::new(db),
-            config,
-            ip_filter: IpFilter::new(),
-            rate_limiter,
-            metrics: Metrics::new(),
-            timeout: Duration::new(10, 0),
-            sse_manager: Arc::new(SseManager::new()),
-            jwt_secret: Arc::new(jwt_secret),
-            user_router,
-            admin_router,
-        }
-    }
-}
-
-/// Create CORS layer based on environment
-fn create_cors_layer() -> CorsLayer {
-    if cfg!(debug_assertions) {
-        info!("Using permissive CORS (development mode)");
-        CorsLayer::permissive()
-    } else {
-        info!("Using restrictive CORS (production mode)");
-        CorsLayer::new()
-            .allow_origin([
-                "http://127.0.0.1:1337".parse::<HeaderValue>().unwrap(),
-                "http://127.0.0.1:1338".parse::<HeaderValue>().unwrap(),
-            ])
-            .allow_methods([
-                Method::GET,
-                Method::POST,
-                Method::PUT,
-                Method::DELETE,
-                Method::HEAD,
-                Method::OPTIONS,
-            ])
-            .allow_headers([AUTHORIZATION, CONTENT_TYPE, ACCEPT])
-            .allow_credentials(true)
-            .max_age(Duration::from_secs(3600))
-    }
-}
+use shared::config;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -134,7 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let config_path = args[1].clone();
 
-    let db: Connection = create::open_database("messaging.db").await?;
+    let db = create::open_database("messaging.db").await?;
     let app_config = config::load_config(&config_path).context("Failed to load configuration")?;
 
     // Resolve the JWT secret — env var takes priority over the config field.
@@ -146,15 +48,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let web_dir = app_config.paths.web_dir.clone();
     let icons = app_config.paths.icons.clone();
 
-    let live_config = LiveConfig::new(app_config);
+    let live_config = config::LiveConfig::new(app_config);
 
     // Build each router exactly once at startup, then share via Arc.
     // Neither router is ever rebuilt per-connection.
-    let user_router = Arc::new(build_user_router_with_config(
+    let user_router = Arc::new(server::build_user_router_with_config(
         Some(web_dir.clone()),
         Some(icons.clone()),
     ));
-    let admin_router = Arc::new(build_admin_router_with_config(Some(web_dir), Some(icons)));
+    let admin_router = Arc::new(server::build_admin_router_with_config(Some(web_dir), Some(icons)));
 
     let state = AppState::new(live_config, db, jwt_secret, user_router, admin_router);
 
@@ -192,13 +94,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             rate_limiter_cleanup.cleanup().await;
             info!("Rate limiter cleanup completed");
 
-            match login::cleanup_expired_sessions(&db_cleanup).await {
+            match server::login::cleanup_expired_sessions(&db_cleanup).await {
                 Ok(n) if n > 0 => info!("Cleaned up {} expired sessions", n),
                 Err(e) => error!("Session cleanup failed: {}", e),
                 _ => {}
             }
 
-            match password::cleanup_expired_reset_tokens(&db_cleanup).await {
+            match server::password::cleanup_expired_reset_tokens(&db_cleanup).await {
                 Ok(n) if n > 0 => info!("Cleaned up {} expired reset tokens", n),
                 Err(e) => error!("Reset token cleanup failed: {}", e),
                 _ => {}
@@ -295,9 +197,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             // indefinitely (they are driven to completion after the loop exits).
             let tower_service = ServiceBuilder::new()
                 .layer(LoadShedLayer::new())
-                .layer(IpFilterLayer::new(user_state.ip_filter.clone()))
-                .layer(RateLimiterLayer::new(user_state.rate_limiter.clone()))
-                .layer(MetricsLayer::new(user_state.metrics.clone()))
+                .layer(server::IpFilterLayer::new(user_state.ip_filter.clone()))
+                .layer(server::RateLimiterLayer::new(user_state.rate_limiter.clone()))
+                .layer(server::MetricsLayer::new(user_state.metrics.clone()))
                 .layer(create_cors_layer())
                 .layer(CompressionLayer::new().quality(CompressionLevel::Default))
                 .service(user_tower_service);
@@ -375,10 +277,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
             let tower_service = ServiceBuilder::new()
                 .layer(LoadShedLayer::new())
-                .layer(IpFilterLayer::new(admin_state.ip_filter.clone()))
-                .layer(RateLimiterLayer::new(admin_state.rate_limiter.clone()))
+                .layer(server::IpFilterLayer::new(admin_state.ip_filter.clone()))
+                .layer(server::RateLimiterLayer::new(admin_state.rate_limiter.clone()))
                 .layer(TimeoutLayer::new(Duration::from_secs(10)))
-                .layer(MetricsLayer::new(admin_state.metrics.clone()))
+                .layer(server::MetricsLayer::new(admin_state.metrics.clone()))
                 .layer(create_cors_layer())
                 .layer(CompressionLayer::new().quality(CompressionLevel::Default))
                 .service(admin_tower_service);
