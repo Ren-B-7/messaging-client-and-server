@@ -14,11 +14,23 @@
     <link
       rel="stylesheet"
       href="static/css/base/base.light.css"
-      fetchpriority="high" data-theme-mod="base" data-theme-variant="light" />
+      fetchpriority="high"
+      data-theme-mod="base"
+      data-theme-variant="light"
+    />
     <link
       rel="stylesheet"
       href="static/css/chat/chat.light.css"
-      fetchpriority="high" data-theme-mod="chat" data-theme-variant="light" />
+      fetchpriority="high"
+      data-theme-mod="chat"
+      data-theme-variant="light"
+    />
+    <!-- Chrome styles — no data-theme-* attrs so the theme manager never removes this -->
+    <link
+      rel="stylesheet"
+      href="static/css/chat/chat.override.css"
+      fetchpriority="low"
+    />
     <link
       rel="stylesheet"
       href="static/css/error.interceptor.css"
@@ -61,11 +73,13 @@
       })();
     </script>
 
-    <!-- Panel tabs, refresh button, and conversation modal styles -->
-
     <!-- Preloads -->
     <link rel="preload" href="static/js/utils/theme.manager.js" as="script" />
-    <link rel="preload" href="static/js/utils/error.interceptor.js" as="script" />
+    <link
+      rel="preload"
+      href="static/js/utils/error.interceptor.js"
+      as="script"
+    />
     <link
       rel="preload"
       href="static/js/config/platform.config.js"
@@ -268,13 +282,23 @@
                 id="viewFilesBtn"
                 title="View files"
               >
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="none"
-                     stroke="currentColor" stroke-width="2"
-                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                  <polyline points="14 2 14 8 20 8"/>
-                  <line x1="9" y1="13" x2="15" y2="13"/>
-                  <line x1="9" y1="17" x2="13" y2="17"/>
+                <svg
+                  viewBox="0 0 24 24"
+                  width="20"
+                  height="20"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+                  />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="9" y1="13" x2="15" y2="13" />
+                  <line x1="9" y1="17" x2="13" y2="17" />
                 </svg>
               </button>
             </div>
@@ -292,7 +316,12 @@
             <!-- id="messageInputArea" lets ChatUI insert the typing banner just above -->
             <div class="message-input-area" id="messageInputArea">
               <!-- Hidden file picker — triggered by the paperclip button -->
-              <input type="file" id="fileInput" style="display:none" multiple />
+              <input
+                type="file"
+                id="fileInput"
+                style="display: none"
+                multiple
+              />
               <div class="input-tools">
                 <button
                   class="input-tool-btn"
@@ -308,7 +337,11 @@
                 </button>
               </div>
               <!-- Upload progress/status strip -->
-              <div id="uploadStatus" class="upload-status" style="display:none"></div>
+              <div
+                id="uploadStatus"
+                class="upload-status"
+                style="display: none"
+              ></div>
               <div class="message-input-wrapper">
                 <textarea
                   class="message-input"
@@ -585,22 +618,32 @@
             class="conv-modal-close"
             data-close-conv-modal="files-modal"
             aria-label="Close"
-          >×</button>
+          >
+            ×
+          </button>
         </div>
-        <div class="conv-modal-body" style="padding:0">
+        <div class="conv-modal-body" style="padding: 0">
           <div id="filesModalList" class="files-modal-list">
-            <p style="color:var(--fg-tertiary);font-size:var(--text-sm);padding:var(--space-6)">Loading…</p>
+            <p
+              style="
+                color: var(--fg-tertiary);
+                font-size: var(--text-sm);
+                padding: var(--space-6);
+              "
+            >
+              Loading…
+            </p>
           </div>
         </div>
         <div class="conv-modal-footer">
           <button
             class="btn btn-secondary btn-sm"
             data-close-conv-modal="files-modal"
-          >Close</button>
+          >
+            Close
+          </button>
         </div>
       </div>
     </div>
-
-    <script defer src="non-static/chat/chat.files.js"></script>
   </body>
 </html>
