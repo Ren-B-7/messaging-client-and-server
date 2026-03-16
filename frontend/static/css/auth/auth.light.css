@@ -21,7 +21,7 @@
 }
 
 .auth-container {
-  width: 100%;
+  width: 100 %;
   max-width: 420px;
 }
 
@@ -80,8 +80,8 @@
 .password-toggle {
   position: absolute;
   right: var(--space-4);
-  top: 50%;
-  transform: translateY(-50%);
+  top: 50 %;
+  transform: translateY(-50 %);
   background: none;
   border: none;
   color: var(--fg-tertiary);
@@ -93,7 +93,7 @@
   transition: color var(--transition-fast);
 }
 
-.password-toggle:hover {
+.password-toggle : hover {
   color: var(--fg-secondary);
 }
 
@@ -137,7 +137,7 @@
   text-decoration: none;
 }
 
-.auth-link-text a:hover {
+.auth-link-text a : hover {
   text-decoration: underline;
 }
 
@@ -188,7 +188,7 @@
   transition: all var(--transition-fast);
 }
 
-.social-btn:hover {
+.social-btn : hover {
   background: var(--bg-tertiary);
   border-color: var(--border-dark);
 }
@@ -204,7 +204,7 @@
  */
 .steps-container {
   display: flex;
-  align-items: flex-start;   /* align to top so labels don't affect connector height */
+  align-items: flex-start; /* align to top so labels don't affect connector height */
   justify-content: center;
   margin-bottom: var(--space-8);
 }
@@ -234,13 +234,13 @@
   flex-shrink: 0;
 }
 
-.step.active .step-circle {
+.step.active.step-circle {
   background: var(--accent);
   border-color: var(--accent);
   color: white;
 }
 
-.step.completed .step-circle {
+.step.completed.step-circle {
   background: var(--success);
   border-color: var(--success);
   color: white;
@@ -253,18 +253,18 @@
   white-space: nowrap;
 }
 
-.step.active .step-label {
+.step.active.step-label {
   color: var(--accent);
   font-weight: 600;
 }
 
 /* The connector sits between two .step elements.
- * margin-top centres it against the 40px circle (40/2 - 1px line/2 = 19px). */
+ * margin-top centres it against the 40px circle (40/2-1px line/2 = 19px). */
 .step-connector {
   width: 48px;
   height: 2px;
   background: var(--border);
-  margin-top: 19px;         /* vertically centres the line with the circles */
+  margin-top: 19px; /* vertically centres the line with the circles */
   flex-shrink: 0;
   transition: background var(--transition-base);
   z-index: 1;
@@ -309,14 +309,14 @@
   transition: all var(--transition-base);
 }
 
-.avatar-preview:hover {
+.avatar-preview : hover {
   border-color: var(--accent);
   background: var(--accent-light);
 }
 
 .avatar-preview img {
-  width: 100%;
-  height: 100%;
+  width: 100 %;
+  height: 100 %;
   object-fit: cover;
 }
 
@@ -338,24 +338,24 @@
 }
 
 .strength-fill {
-  height: 100%;
+  height: 100 %;
   width: 0;
   border-radius: var(--radius-sm);
   transition: all var(--transition-base);
 }
 
 .strength-fill.weak {
-  width: 33%;
+  width: 33 %;
   background: var(--danger);
 }
 
 .strength-fill.fair {
-  width: 66%;
+  width: 66 %;
   background: var(--warning);
 }
 
 .strength-fill.strong {
-  width: 100%;
+  width: 100 %;
   background: var(--success);
 }
 
@@ -371,7 +371,7 @@
   margin-top: var(--space-4);
 }
 
-.form-actions .btn {
+.form-actions.btn {
   flex: 1;
 }
 

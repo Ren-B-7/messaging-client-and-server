@@ -8,8 +8,8 @@
  */
 
 :root[data-theme="dark"] {
-  --error-bg:            #0f1419;
-  --error-card-bg:       #1c2127;
+  --error-bg: #0f1419;
+  --error-card-bg: #1c2127;
   --error-backdrop-glow: var(--accent, #3b8ff3);
 }
 

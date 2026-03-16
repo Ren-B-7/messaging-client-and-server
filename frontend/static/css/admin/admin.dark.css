@@ -70,7 +70,8 @@
 /* All other styles inherit from admin.light.css */
 /* Only color variables are overridden in dark theme */
 
-/* ── Expired sessions ─────────────────────────────────────────────────────── */
+/* ── Expired sessions ───────────────────────────────────────────────────────
+ */
 :root[data-theme="dark"] tbody tr.is-expired {
   background: rgba(248, 81, 73, 0.08);
 }

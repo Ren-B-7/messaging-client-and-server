@@ -2,14 +2,16 @@
  * Chat Chrome
  * Theme-agnostic structural styles for the chat UI.
  *
- * This file is loaded with a plain <link> (no data-theme-mod / data-theme-variant)
- * so the theme manager never removes or replaces it when the user toggles themes.
- * All rules use CSS variables so they respond correctly to whichever theme is active.
+ * This file is loaded with a plain <link> (no data-theme-mod /
+ * data-theme-variant) so the theme manager never removes or replaces it when
+ * the user toggles themes. All rules use CSS variables so they respond
+ * correctly to whichever theme is active.
  */
 
 /* =============================================================================
    Panel tabs
-   ============================================================================= */
+   =============================================================================
+ */
 
 .panel-tabs {
   display: flex;
@@ -37,14 +39,15 @@
   border-bottom-color: var(--accent);
 }
 
-.panel-tab:hover:not(.active) {
+.panel-tab : hover : not(.active) {
   color: var(--fg-primary);
   background: var(--hover);
 }
 
 /* =============================================================================
    Refresh button
-   ============================================================================= */
+   =============================================================================
+ */
 
 .refresh-btn {
   width: 36px;
@@ -62,19 +65,20 @@
   flex-shrink: 0;
 }
 
-.refresh-btn:hover {
+.refresh-btn : hover {
   background: var(--hover);
   color: var(--fg-primary);
 }
 
-.refresh-btn:disabled {
+.refresh-btn : disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
 /* =============================================================================
    Conversation modals
-   ============================================================================= */
+   =============================================================================
+ */
 
 .conv-modal-backdrop {
   position: fixed;
@@ -95,7 +99,7 @@
   background: var(--bg-primary);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
-  width: 100%;
+  width: 100 %;
   max-width: 400px;
   box-shadow: var(--shadow-xl);
   overflow: hidden;
@@ -130,7 +134,7 @@
   transition: color var(--transition-fast);
 }
 
-.conv-modal-close:hover {
+.conv-modal-close : hover {
   color: var(--fg-primary);
 }
 
@@ -166,7 +170,8 @@
 
 /* =============================================================================
    Upload status strip
-   ============================================================================= */
+   =============================================================================
+ */
 
 .upload-status {
   font-size: var(--text-xs);
@@ -174,7 +179,7 @@
   padding: var(--space-1) var(--space-3);
   background: var(--bg-secondary);
   border-top: 1px solid var(--border);
-  width: 100%;
+  width: 100 %;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -182,7 +187,8 @@
 
 /* =============================================================================
    Files modal list
-   ============================================================================= */
+   =============================================================================
+ */
 
 .files-modal-list {
   max-height: 420px;
@@ -199,11 +205,11 @@
   transition: background var(--transition-fast);
 }
 
-.files-modal-item:last-child {
+.files-modal-item : last-child {
   border-bottom: none;
 }
 
-.files-modal-item:hover {
+.files-modal-item : hover {
   background: var(--hover);
 }
 
