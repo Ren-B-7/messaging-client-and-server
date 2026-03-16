@@ -5,22 +5,22 @@
 
 const RouteConfig = {
   // Route definitions
-  routes: {
-    login: "/",
-    register: "/register",
-    chat: "/chat",
-    settings: "/settings",
-    contacts: "/contacts",
-    help: "/help",
-    terms: "/terms",
-    privacy: "/privacy",
+  routes : {
+    login : "/",
+    register : "/register",
+    chat : "/chat",
+    settings : "/settings",
+    contacts : "/contacts",
+    help : "/help",
+    terms : "/terms",
+    privacy : "/privacy",
   },
 
   // Auth required routes
-  authRequired: ["/chat", "/settings", "/contacts"],
+  authRequired : [ "/chat", "/settings", "/contacts" ],
 
   // Public routes (no auth needed)
-  publicRoutes: ["/", "/register", "/help", "/terms", "/privacy"],
+  publicRoutes : [ "/", "/register", "/help", "/terms", "/privacy" ],
 
   /**
    * Check if current route requires authentication
@@ -42,10 +42,10 @@ const RouteConfig = {
    */
   getCurrentRoute() {
     const path = window.location.pathname;
-    return (
-      Object.entries(this.routes).find(([_, route]) => route === path)?.[0] ||
-      "unknown"
-    );
+    return (Object.entries(this.routes)
+                .find(([ _, route ]) => route === path)
+                ?.[0] ||
+            "unknown");
   },
 };
 

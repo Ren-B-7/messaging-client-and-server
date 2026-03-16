@@ -12,7 +12,7 @@
 
 document.addEventListener("DOMContentLoaded", async () => {
   // ── Theme ──────────────────────────────────────────────────────────────────
-  themeManager.init(["base", "chat"]);
+  themeManager.init([ "base", "chat" ]);
 
   const chatThemeBtn = document.getElementById("themeToggle");
   themeManager.syncIcon(chatThemeBtn);
@@ -28,26 +28,44 @@ document.addEventListener("DOMContentLoaded", async () => {
       const data = await res.json();
       const profile = data.data ?? data;
       ChatState.currentUser = {
-        id: Number(profile.user_id),
-        username: profile.username ?? "",
-        email: profile.email ?? "",
-        isAdmin: profile.is_admin ?? false,
+        id : Number(profile.user_id),
+        username : profile.username ?? "",
+        email : profile.email ?? "",
+        isAdmin : profile.is_admin ?? false,
+        avatarUrl : profile.avatar_url ?? null,
       };
       Utils.setStorage("user", ChatState.currentUser);
       console.info("[init] Current user:", ChatState.currentUser);
     } else {
       console.warn(
-        "[init] Could not fetch profile — sent messages may render incorrectly",
+          "[init] Could not fetch profile — sent messages may render incorrectly",
       );
     }
   } catch (e) {
     console.error("[init] Profile fetch failed:", e);
   }
 
-  // ── Update avatar initials ─────────────────────────────────────────────────
+  // ── Update own avatar / initials in the sidebar header ────────────────────
   const initialsEl = document.getElementById("userInitials");
-  if (initialsEl && ChatState.currentUser) {
-    initialsEl.textContent = Utils.getInitials(ChatState.currentUser.username);
+  const userAvatarEl = document.getElementById("userAvatarImg");
+
+  if (ChatState.currentUser) {
+    if (ChatState.currentUser.avatarUrl && userAvatarEl) {
+      userAvatarEl.src = ChatState.currentUser.avatarUrl;
+      userAvatarEl.style.display = "block";
+      if (initialsEl)
+        initialsEl.style.display = "none";
+    } else if (initialsEl) {
+      initialsEl.textContent =
+          Utils.getInitials(ChatState.currentUser.username);
+    }
+
+    // Populate the avatar preview on the settings/profile section if present
+    const avatarPreviewEl = document.getElementById("avatarPreview");
+    if (avatarPreviewEl && ChatState.currentUser.avatarUrl) {
+      avatarPreviewEl.src = ChatState.currentUser.avatarUrl;
+      avatarPreviewEl.style.display = "block";
+    }
   }
 
   // ── Load persisted state ───────────────────────────────────────────────────
@@ -66,17 +84,19 @@ document.addEventListener("DOMContentLoaded", async () => {
   // ── Restore previously open conversation (if any) ─────────────────────────
   if (ChatState.currentConversation) {
     ChatConversations.open(
-      ChatState.currentConversation.id,
-      ChatState.currentConversationType,
+        ChatState.currentConversation.id,
+        ChatState.currentConversationType,
     );
   }
 
-  // ── Tear down SSE and clear transient data when the user leaves ─────────────
+  // ── Tear down SSE and clear transient data when the user leaves
+  // ─────────────
   window.addEventListener("beforeunload", () => {
     // Cleanly close the SSE stream so the server reclaims the channel promptly.
     ChatSSE.disconnect();
 
-    // Clear per-session data that is always re-fetched from the server on reload.
+    // Clear per-session data that is always re-fetched from the server on
+    // reload.
     Utils.removeStorage("messages");
     Utils.removeStorage("conversations");
     Utils.removeStorage("groups");

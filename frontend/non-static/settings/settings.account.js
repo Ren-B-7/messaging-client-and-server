@@ -15,22 +15,17 @@ const SettingsAccount = {
    */
   load(user) {
     const emailInput = document.getElementById("accountEmail");
-    if (emailInput) emailInput.value = user.email || "";
+    if (emailInput)
+      emailInput.value = user.email || "";
   },
 
   /** Attach click handlers for change-password and delete-account buttons. */
   setup() {
-    document
-      .getElementById("changePasswordBtn")
-      ?.addEventListener("click", () => {
-        this._changePassword();
-      });
+    document.getElementById("changePasswordBtn")
+        ?.addEventListener("click", () => { this._changePassword(); });
 
-    document
-      .getElementById("deleteAccountBtn")
-      ?.addEventListener("click", () => {
-        this._deleteAccount();
-      });
+    document.getElementById("deleteAccountBtn")
+        ?.addEventListener("click", () => { this._deleteAccount(); });
   },
 
   // ── Private ───────────────────────────────────────────────────────────────
@@ -46,9 +41,9 @@ const SettingsAccount = {
     }
     if (next.length < 8) {
       this._feedback(
-        "password",
-        "New password must be at least 8 characters.",
-        "error",
+          "password",
+          "New password must be at least 8 characters.",
+          "error",
       );
       return;
     }
@@ -62,29 +57,30 @@ const SettingsAccount = {
 
     try {
       const res = await this._post("/api/settings/password", {
-        current_password: current,
-        new_password: next,
-        confirm_password: confirm,
+        current_password : current,
+        new_password : next,
+        confirm_password : confirm,
       });
 
       if (res.status === "success") {
         this._feedback("password", "Password updated successfully.", "success");
         ["currentPassword", "newPassword", "confirmPassword"].forEach((id) => {
           const el = document.getElementById(id);
-          if (el) el.value = "";
+          if (el)
+            el.value = "";
         });
       } else {
         this._feedback(
-          "password",
-          res.message || "Failed to update password.",
-          "error",
+            "password",
+            res.message || "Failed to update password.",
+            "error",
         );
       }
     } catch (e) {
       this._feedback(
-        "password",
-        "Request failed — check your connection.",
-        "error",
+          "password",
+          "Request failed — check your connection.",
+          "error",
       );
       console.error("[settings] changePassword:", e);
     }
@@ -93,16 +89,15 @@ const SettingsAccount = {
   },
 
   async _deleteAccount() {
-    const emailConfirm = document
-      .getElementById("deleteEmailConfirm")
-      ?.value.trim();
+    const emailConfirm =
+        document.getElementById("deleteEmailConfirm")?.value.trim();
     const user = Utils.getStorage("user") || {};
 
     if (!emailConfirm) {
       this._feedback(
-        "delete",
-        "Please enter your email address to confirm.",
-        "error",
+          "delete",
+          "Please enter your email address to confirm.",
+          "error",
       );
       return;
     }
@@ -122,17 +117,17 @@ const SettingsAccount = {
         window.location.href = "/";
       } else {
         this._feedback(
-          "delete",
-          res.message || "Failed to delete account.",
-          "error",
+            "delete",
+            res.message || "Failed to delete account.",
+            "error",
         );
         this._setLoading(btn, false);
       }
     } catch (e) {
       this._feedback(
-        "delete",
-        "Request failed — check your connection.",
-        "error",
+          "delete",
+          "Request failed — check your connection.",
+          "error",
       );
       console.error("[settings] deleteAccount:", e);
       this._setLoading(btn, false);
@@ -143,18 +138,18 @@ const SettingsAccount = {
 
   _feedback(section, message, type) {
     const el = document.getElementById(`${section}-feedback`);
-    if (!el) return;
+    if (!el)
+      return;
     el.textContent = message;
     el.className = `form-feedback ${type}`;
     el.style.display = "block";
     if (type === "success")
-      setTimeout(() => {
-        el.style.display = "none";
-      }, 4000);
+      setTimeout(() => { el.style.display = "none"; }, 4000);
   },
 
   _setLoading(btn, loading) {
-    if (!btn) return;
+    if (!btn)
+      return;
     btn.disabled = loading;
     if (loading) {
       btn._html = btn.innerHTML;
@@ -167,17 +162,19 @@ const SettingsAccount = {
 
   async _post(url, body) {
     const res = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
+      method : "POST",
+      headers : {"content-type" : "application/json"},
+      body : JSON.stringify(body),
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok)
+      throw new Error(`HTTP ${res.status}`);
     return res.json();
   },
 
   async _delete(url) {
-    const res = await fetch(url, { method: "DELETE" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const res = await fetch(url, {method : "DELETE"});
+    if (!res.ok)
+      throw new Error(`HTTP ${res.status}`);
     return res.json();
   },
 };

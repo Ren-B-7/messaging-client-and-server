@@ -13,12 +13,13 @@
  */
 
 const AuthRegister = {
-  currentStep: 0,
-  formData: {},
+  currentStep : 0,
+  formData : {},
 
   setup() {
     const form = document.getElementById("registerForm");
-    if (!form) return;
+    if (!form)
+      return;
 
     AuthPassword.setupToggles();
     AuthPassword.setupStrengthMeter();
@@ -38,28 +39,31 @@ const AuthRegister = {
   _checkUrlError() {
     const error = new URLSearchParams(window.location.search).get("error");
     const map = {
-      username_taken: [
+      username_taken : [
         "regUsername",
         "This username is already taken. Please choose another.",
       ],
-      email_taken: [
+      email_taken : [
         "regEmail",
         "This email is already registered. Please sign in instead.",
       ],
-      validation_failed: ["regEmail", "Please check your input and try again."],
-      registration_failed: [
+      validation_failed :
+          [ "regEmail", "Please check your input and try again." ],
+      registration_failed : [
         "regEmail",
         "Registration failed. Please try again.",
       ],
     };
     const entry = map[error];
-    if (entry) AuthLogin.showError(entry[0], entry[1]);
+    if (entry)
+      AuthLogin.showError(entry[0], entry[1]);
   },
 
   // ── Live validation (instant feedback as the user types) ──────────────────
 
   _setupLiveValidation() {
-    // Email: validate format on blur so it doesn't interrupt typing mid-address.
+    // Email: validate format on blur so it doesn't interrupt typing
+    // mid-address.
     document.getElementById("regEmail")?.addEventListener("blur", (e) => {
       const val = e.target.value.trim();
       if (val && !Utils.isValidEmail(val)) {
@@ -67,13 +71,14 @@ const AuthRegister = {
       }
     });
 
-    // Password: warn immediately if too short, refresh strength meter on every keystroke.
+    // Password: warn immediately if too short, refresh strength meter on every
+    // keystroke.
     document.getElementById("regPassword")?.addEventListener("input", (e) => {
       const val = e.target.value;
       if (val.length > 0 && val.length < 8) {
         AuthLogin.showError(
-          "regPassword",
-          "Password must be at least 8 characters",
+            "regPassword",
+            "Password must be at least 8 characters",
         );
       } else {
         // Clear the error once the length requirement is met — the strength bar
@@ -95,20 +100,18 @@ const AuthRegister = {
         AuthLogin.showError("regConfirmPassword", "Passwords do not match");
       }
     };
-    document
-      .getElementById("regPassword")
-      ?.addEventListener("change", checkMatch);
-    document
-      .getElementById("regConfirmPassword")
-      ?.addEventListener("input", checkMatch);
+    document.getElementById("regPassword")
+        ?.addEventListener("change", checkMatch);
+    document.getElementById("regConfirmPassword")
+        ?.addEventListener("input", checkMatch);
 
     // Username: only allow valid characters, warn immediately on invalid input.
     document.getElementById("regUsername")?.addEventListener("input", (e) => {
       const val = e.target.value;
       if (val && !/^[a-zA-Z0-9_]*$/.test(val)) {
         AuthLogin.showError(
-          "usernameError",
-          "Only letters, numbers and underscores are allowed",
+            "usernameError",
+            "Only letters, numbers and underscores are allowed",
         );
       }
     });
@@ -118,7 +121,8 @@ const AuthRegister = {
 
   _setupStepNavigation() {
     document.getElementById("nextBtn1")?.addEventListener("click", () => {
-      if (this._validateStep1()) this._goToStep(1);
+      if (this._validateStep1())
+        this._goToStep(1);
     });
 
     document.getElementById("nextBtn2")?.addEventListener("click", () => {
@@ -128,23 +132,22 @@ const AuthRegister = {
       }
     });
 
-    document
-      .getElementById("prevBtn2")
-      ?.addEventListener("click", () => this._goToStep(0));
-    document
-      .getElementById("prevBtn3")
-      ?.addEventListener("click", () => this._goToStep(1));
+    document.getElementById("prevBtn2")
+        ?.addEventListener("click", () => this._goToStep(0));
+    document.getElementById("prevBtn3")
+        ?.addEventListener("click", () => this._goToStep(1));
   },
 
   _goToStep(n) {
     document.querySelectorAll(".step").forEach((el, i) => {
       el.classList.remove("active", "completed");
-      if (i < n) el.classList.add("completed");
-      else if (i === n) el.classList.add("active");
+      if (i < n)
+        el.classList.add("completed");
+      else if (i === n)
+        el.classList.add("active");
     });
-    document.querySelectorAll(".form-step").forEach((el, i) => {
-      el.classList.toggle("active", i === n);
-    });
+    document.querySelectorAll(".form-step")
+        .forEach((el, i) => { el.classList.toggle("active", i === n); });
     this.currentStep = n;
   },
 
@@ -173,17 +176,17 @@ const AuthRegister = {
       valid = false;
     } else if (password.length < 8) {
       AuthLogin.showError(
-        "regPassword",
-        "Password must be at least 8 characters",
+          "regPassword",
+          "Password must be at least 8 characters",
       );
       valid = false;
     } else {
       // Strength check — warn (but don't block) if still weak/fair.
-      const { level } = AuthPassword._calcStrength(password);
+      const {level} = AuthPassword._calcStrength(password);
       if (level === "weak") {
         AuthLogin.showError(
-          "regPassword",
-          "This password is too weak. Add uppercase letters, numbers, or symbols.",
+            "regPassword",
+            "This password is too weak. Add uppercase letters, numbers, or symbols.",
         );
         valid = false;
       }
@@ -227,20 +230,20 @@ const AuthRegister = {
       valid = false;
     } else if (username.length < 3) {
       AuthLogin.showError(
-        "usernameError",
-        "Username must be at least 3 characters",
+          "usernameError",
+          "Username must be at least 3 characters",
       );
       valid = false;
     } else if (username.length > 32) {
       AuthLogin.showError(
-        "usernameError",
-        "Username must be 32 characters or fewer",
+          "usernameError",
+          "Username must be 32 characters or fewer",
       );
       valid = false;
     } else if (!/^[a-zA-Z0-9_]+$/.test(username)) {
       AuthLogin.showError(
-        "usernameError",
-        "Only letters, numbers and underscores are allowed",
+          "usernameError",
+          "Only letters, numbers and underscores are allowed",
       );
       valid = false;
     }
@@ -257,11 +260,11 @@ const AuthRegister = {
 
   _updateReview() {
     document.getElementById("reviewEmail").textContent =
-      this.formData.email || "—";
+        this.formData.email || "—";
     document.getElementById("reviewName").textContent =
-      this.formData.fullName || "—";
+        this.formData.fullName || "—";
     document.getElementById("reviewUsername").textContent =
-      this.formData.username || "—";
+        this.formData.username || "—";
   },
 
   // ── Submission ────────────────────────────────────────────────────────────
@@ -269,8 +272,8 @@ const AuthRegister = {
   async _handleRegistration() {
     if (!document.getElementById("termsCheckbox")?.checked) {
       AuthLogin.showError(
-        "termsCheckbox",
-        "Please accept the Terms of Service and Privacy Policy",
+          "termsCheckbox",
+          "Please accept the Terms of Service and Privacy Policy",
       );
       return;
     }
@@ -279,18 +282,18 @@ const AuthRegister = {
     this._setLoading(submitBtn, true);
 
     const payload = {
-      email: this.formData.email,
-      password: this.formData.password,
-      confirm_password: this.formData.confirm_password,
-      username: this.formData.username,
-      full_name: this.formData.fullName,
+      email : this.formData.email,
+      password : this.formData.password,
+      confirm_password : this.formData.confirm_password,
+      username : this.formData.username,
+      full_name : this.formData.fullName,
     };
 
     try {
       const response = await fetch("/api/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        method : "POST",
+        headers : {"Content-Type" : "application/json"},
+        body : JSON.stringify(payload),
       });
 
       if (response.redirected) {
@@ -298,7 +301,8 @@ const AuthRegister = {
         return;
       }
 
-      // Guard against non-JSON responses (e.g. server returning an HTML error page).
+      // Guard against non-JSON responses (e.g. server returning an HTML error
+      // page).
       const contentType = response.headers.get("content-type") || "";
       if (!contentType.includes("application/json")) {
         throw new Error(`Unexpected response type: ${contentType}`);
@@ -316,8 +320,8 @@ const AuthRegister = {
     } catch (err) {
       console.error("[register] submission error:", err);
       AuthLogin.showError(
-        "regEmail",
-        "Could not reach the server. Please check your connection and try again.",
+          "regEmail",
+          "Could not reach the server. Please check your connection and try again.",
       );
     } finally {
       this._setLoading(submitBtn, false);
@@ -328,39 +332,40 @@ const AuthRegister = {
 
   _handleServerError(data) {
     const msg =
-      data.message ?? "An unexpected error occurred. Please try again.";
+        data.message ?? "An unexpected error occurred. Please try again.";
 
     switch (data.code) {
-      case "USERNAME_TAKEN":
-      case "INVALID_USERNAME":
-        this._goToStep(1);
-        AuthLogin.showError("regUsername", msg);
-        break;
-      case "EMAIL_TAKEN":
-      case "INVALID_EMAIL":
-      case "EMAIL_REQUIRED":
-        this._goToStep(0);
-        AuthLogin.showError("regEmail", msg);
-        break;
-      case "INVALID_PASSWORD":
-      case "WEAK_PASSWORD":
-        this._goToStep(0);
-        AuthLogin.showError("regPassword", msg);
-        break;
-      case "MISSING_FIELD":
-        this._goToStep(0);
-        AuthLogin.showError("regEmail", `Missing required field: ${msg}`);
-        break;
-      default:
-        this._goToStep(0);
-        AuthLogin.showError("regEmail", msg);
+    case "USERNAME_TAKEN":
+    case "INVALID_USERNAME":
+      this._goToStep(1);
+      AuthLogin.showError("regUsername", msg);
+      break;
+    case "EMAIL_TAKEN":
+    case "INVALID_EMAIL":
+    case "EMAIL_REQUIRED":
+      this._goToStep(0);
+      AuthLogin.showError("regEmail", msg);
+      break;
+    case "INVALID_PASSWORD":
+    case "WEAK_PASSWORD":
+      this._goToStep(0);
+      AuthLogin.showError("regPassword", msg);
+      break;
+    case "MISSING_FIELD":
+      this._goToStep(0);
+      AuthLogin.showError("regEmail", `Missing required field: ${msg}`);
+      break;
+    default:
+      this._goToStep(0);
+      AuthLogin.showError("regEmail", msg);
     }
   },
 
   // ── UI helpers ────────────────────────────────────────────────────────────
 
   _setLoading(btn, isLoading) {
-    if (!btn) return;
+    if (!btn)
+      return;
     btn.disabled = isLoading;
     btn.textContent = isLoading ? "Creating account…" : "Create Account";
   },

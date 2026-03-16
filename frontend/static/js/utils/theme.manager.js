@@ -23,15 +23,15 @@
 
 const themeManager = {
 
-  config: {
-    themes:       ['light', 'dark'],
-    defaultTheme: 'light',
-    storageKey:   'theme',
-    attribute:    'data-theme',
+  config : {
+    themes : [ 'light', 'dark' ],
+    defaultTheme : 'light',
+    storageKey : 'theme',
+    attribute : 'data-theme',
   },
 
   // Tracks which modules this page has registered (set by init).
-  _modules: [],
+  _modules : [],
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -40,12 +40,13 @@ const themeManager = {
    * Also wires the system-preference change listener.
    * @param {string[]} modules  e.g. ['base', 'chat']
    */
-  init(modules = ['base']) {
+  init(modules = [ 'base' ]) {
     this._modules = modules;
     const theme = this.getTheme();
     document.documentElement.setAttribute(this.config.attribute, theme);
     this._loadLight(modules);
-    if (theme === 'dark') this._enableDark(modules);
+    if (theme === 'dark')
+      this._enableDark(modules);
     this._watchSystem();
   },
 
@@ -55,10 +56,11 @@ const themeManager = {
    */
   getTheme() {
     const stored = localStorage.getItem(this.config.storageKey);
-    if (stored && this.config.themes.includes(stored)) return stored;
+    if (stored && this.config.themes.includes(stored))
+      return stored;
     return window.matchMedia?.('(prefers-color-scheme: dark)').matches
-      ? 'dark'
-      : this.config.defaultTheme;
+               ? 'dark'
+               : this.config.defaultTheme;
   },
 
   /**
@@ -82,13 +84,11 @@ const themeManager = {
     }
 
     // Notify any listeners (e.g. icon sync, settings radio buttons).
-    window.dispatchEvent(new CustomEvent('themechange', { detail: { theme } }));
+    window.dispatchEvent(new CustomEvent('themechange', {detail : {theme}}));
   },
 
   /** Toggle between light and dark. */
-  toggle() {
-    this.setTheme(this.getTheme() === 'light' ? 'dark' : 'light');
-  },
+  toggle() { this.setTheme(this.getTheme() === 'light' ? 'dark' : 'light'); },
 
   /**
    * Sync a theme-toggle button's <img> to reflect the action that clicking
@@ -104,21 +104,23 @@ const themeManager = {
    */
   syncIcon(btn) {
     const el = typeof btn === 'string' ? document.getElementById(btn) : btn;
-    if (!el) return;
+    if (!el)
+      return;
 
     const update = () => {
       const img = el.querySelector('img');
-      if (!img) return;
+      if (!img)
+        return;
       const isDark = this.getTheme() === 'dark';
-      img.src = isDark
-        ? 'static/icons/icons/sun.svg'
-        : 'static/icons/icons/moon.svg';
+      img.src =
+          isDark ? 'static/icons/icons/sun.svg' : 'static/icons/icons/moon.svg';
       img.alt = isDark ? 'Switch to light mode' : 'Switch to dark mode';
     };
 
     update();
 
-    // Re-sync automatically whenever the theme changes — no manual calls needed.
+    // Re-sync automatically whenever the theme changes — no manual calls
+    // needed.
     window.addEventListener('themechange', update);
   },
 
@@ -132,7 +134,8 @@ const themeManager = {
    */
   _loadLight(modules) {
     modules.forEach(mod => {
-      if (this._link(mod, 'light')) return; // already present (e.g. from <head>)
+      if (this._link(mod, 'light'))
+        return; // already present (e.g. from <head>)
       this._appendLink(mod, 'light');
     });
   },
@@ -161,15 +164,16 @@ const themeManager = {
   _disableDark(modules) {
     modules.forEach(mod => {
       const link = this._link(mod, 'dark');
-      if (link) link.disabled = true;
+      if (link)
+        link.disabled = true;
     });
   },
 
   /** Find an existing managed <link> by module name and variant. */
   _link(mod, variant) {
-    return document.querySelector(
-      `link[data-theme-mod="${mod}"][data-theme-variant="${variant}"]`
-    ) || null;
+    return document.querySelector(`link[data-theme-mod="${
+               mod}"][data-theme-variant="${variant}"]`) ||
+           null;
   },
 
   _appendLink(mod, variant) {
@@ -179,28 +183,31 @@ const themeManager = {
     const href = `static/css/${mod}/${mod}.${variant}.css`;
     const prerendered = document.querySelector(`link[href="${href}"]`);
     if (prerendered) {
-      prerendered.dataset.themeMod     = mod;
+      prerendered.dataset.themeMod = mod;
       prerendered.dataset.themeVariant = variant;
       return prerendered;
     }
 
     const link = document.createElement('link');
-    link.rel                     = 'stylesheet';
-    link.href                    = href;
-    link.dataset.themeMod        = mod;
-    link.dataset.themeVariant    = variant;
+    link.rel = 'stylesheet';
+    link.href = href;
+    link.dataset.themeMod = mod;
+    link.dataset.themeVariant = variant;
     document.head.appendChild(link);
     return link;
   },
 
-  /** Auto-switch when the OS preference changes, unless the user has pinned a theme. */
+  /**
+     Auto-switch when the OS preference changes, unless the user has pinned a
+     theme.
+   */
   _watchSystem() {
     window.matchMedia?.('(prefers-color-scheme: dark)')
-      .addEventListener('change', e => {
-        if (!localStorage.getItem(this.config.storageKey)) {
-          this.setTheme(e.matches ? 'dark' : 'light');
-        }
-      });
+        .addEventListener('change', e => {
+          if (!localStorage.getItem(this.config.storageKey)) {
+            this.setTheme(e.matches ? 'dark' : 'light');
+          }
+        });
   },
 };
 

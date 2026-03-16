@@ -16,11 +16,12 @@ const SettingsPreferences = {
 
     this._setChecked('pushNotifications', prefs.pushNotifications !== false);
     this._setChecked('notificationSound', prefs.notificationSound !== false);
-    this._setChecked('showLastSeen',      prefs.showLastSeen      !== false);
-    this._setChecked('showProfilePhoto',  prefs.showProfilePhoto  !== false);
+    this._setChecked('showLastSeen', prefs.showLastSeen !== false);
+    this._setChecked('showProfilePhoto', prefs.showProfilePhoto !== false);
 
     const radio = document.getElementById(`${themeManager.getTheme()}Theme`);
-    if (radio) radio.checked = true;
+    if (radio)
+      radio.checked = true;
   },
 
   /** Wire theme radios and all toggle switches. */
@@ -47,44 +48,48 @@ const SettingsPreferences = {
       document.getElementById(id)?.addEventListener('change', e => {
         const value = e.target.checked;
         this._savePref(prefKey, value);
-        this._syncToApi({ [prefKey]: value });
+        this._syncToApi({[prefKey] : value});
         extraHandler?.(value);
       });
     };
 
     bind('pushNotifications', 'pushNotifications', enabled => {
-      if (enabled && 'Notification' in window && Notification.permission === 'default') {
+      if (enabled && 'Notification' in window &&
+          Notification.permission === 'default') {
         Notification.requestPermission();
       }
     });
 
     bind('notificationSound', 'notificationSound');
-    bind('showLastSeen',      'showLastSeen');
-    bind('showProfilePhoto',  'showProfilePhoto');
+    bind('showLastSeen', 'showLastSeen');
+    bind('showProfilePhoto', 'showProfilePhoto');
   },
 
   _savePref(key, value) {
     const prefs = Utils.getStorage('preferences') || {};
-    prefs[key]  = value;
+    prefs[key] = value;
     Utils.setStorage('preferences', prefs);
   },
 
   async _syncToApi(patch) {
     try {
       const res = await fetch('/api/user/preferences', {
-        method:  'PUT',
-        headers: { 'content-type': 'application/json' },
-        body:    JSON.stringify(patch),
+        method : 'PUT',
+        headers : {'content-type' : 'application/json'},
+        body : JSON.stringify(patch),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok)
+        throw new Error(`HTTP ${res.status}`);
     } catch (e) {
-      // Preference sync failures are non-critical; log but don't surface to user.
+      // Preference sync failures are non-critical; log but don't surface to
+      // user.
       console.warn('[settings] preferences sync failed:', e);
     }
   },
 
   _setChecked(id, value) {
     const el = document.getElementById(id);
-    if (el) el.checked = value;
+    if (el)
+      el.checked = value;
   },
 };

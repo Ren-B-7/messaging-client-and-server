@@ -8,7 +8,7 @@
 const SettingsNav = {
   setup() {
     const navItems = document.querySelectorAll('.settings-nav-item');
-    const tabs     = document.querySelectorAll('.settings-tab');
+    const tabs = document.querySelectorAll('.settings-tab');
 
     navItems.forEach(item => {
       item.addEventListener('click', e => {
@@ -22,7 +22,8 @@ const SettingsNav = {
         document.getElementById(tabId)?.classList.add('active');
 
         const hash = item.getAttribute('href');
-        if (hash) window.location.hash = hash;
+        if (hash)
+          window.location.hash = hash;
       });
     });
 

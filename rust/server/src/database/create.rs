@@ -3,7 +3,7 @@ use tracing::{info, warn};
 
 /// Current schema version.  Bump this whenever the schema changes and add a
 /// corresponding migration arm in `run_migrations`.
-const SCHEMA_VERSION: u32 = 5;
+const SCHEMA_VERSION: u32 = 6;
 
 /// Initialize the database schema and run any pending migrations.
 pub async fn create_tables(conn: &Connection) -> Result<()> {
@@ -29,6 +29,7 @@ async fn create_schema(conn: &Connection) -> Result<()> {
                 ban_reason    TEXT,
                 banned_at     INTEGER,
                 banned_by     INTEGER,
+                avatar_path   TEXT,
                 FOREIGN KEY (banned_by) REFERENCES users(id)
             )",
             [],
@@ -185,7 +186,17 @@ async fn create_schema(conn: &Connection) -> Result<()> {
             "CREATE INDEX IF NOT EXISTS idx_files_uploader   ON files(uploader_id)",
             [],
         )?;
-        conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+
+        // Only stamp the version when we are creating a truly brand-new database
+        // (user_version == 0).  For existing databases the version is already > 0
+        // and run_migrations is responsible for bumping it — if we unconditionally
+        // set it here we would skip every pending migration on an existing DB.
+        let existing_version: u32 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap_or(0);
+        if existing_version == 0 {
+            conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+        }
 
         Ok(())
     })
@@ -472,7 +483,49 @@ async fn run_migrations(conn: &Connection) -> Result<()> {
 
         info!("Schema version set to 5 (files table added).");
     }
-    // if current_version < 6 { ... }
+    // ── v5 → v6: add avatar_path column to users ─────────────────────────
+    if current_version < 6 {
+        let needs_migration: bool = conn
+            .call(|conn| {
+                let mut stmt = conn.prepare("PRAGMA table_info(users)")?;
+                let col_missing = stmt
+                    .query_map([], |row| {
+                        let col_name: String = row.get(1)?;
+                        Ok(col_name)
+                    })?
+                    .flatten()
+                    .all(|name| name != "avatar_path");
+                Ok::<_, rusqlite::Error>(col_missing)
+            })
+            .await?;
+
+        if needs_migration {
+            warn!("Migrating users table from v5 to v6 (add avatar_path)…");
+
+            conn.call(|conn| {
+                conn.execute_batch(
+                    "
+                    BEGIN;
+                    ALTER TABLE users ADD COLUMN avatar_path TEXT;
+                    COMMIT;
+                ",
+                )?;
+                Ok::<_, rusqlite::Error>(())
+            })
+            .await?;
+
+            info!("users table migration complete (avatar_path column added).");
+        }
+
+        conn.call(|conn| {
+            conn.execute_batch("PRAGMA user_version = 6")?;
+            Ok::<_, rusqlite::Error>(())
+        })
+        .await?;
+
+        info!("Schema version set to 6.");
+    }
+    // if current_version < 7 { ... }
 
     Ok(())
 }

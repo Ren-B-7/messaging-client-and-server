@@ -26,10 +26,14 @@ const ChatFiles = {
     body.append('file', file);
     body.append('chat_id', String(chatId));
 
-    const res = await fetch('/api/files/upload', { method: 'POST', body });
+    const res = await fetch('/api/files/upload', {method : 'POST', body});
     if (!res.ok) {
       let msg = `Upload failed (HTTP ${res.status})`;
-      try { const e = await res.json(); msg = e.message || msg; } catch (_) {}
+      try {
+        const e = await res.json();
+        msg = e.message || msg;
+      } catch (_) {
+      }
       throw new Error(msg);
     }
     return res.json();
@@ -42,7 +46,8 @@ const ChatFiles = {
    */
   async list(chatId) {
     const res = await fetch(`/api/files?chat_id=${encodeURIComponent(chatId)}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok)
+      throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     return data.data?.files ?? data.files ?? [];
   },
@@ -51,11 +56,15 @@ const ChatFiles = {
    * Delete a file by its ID.
    * @param {string|number} fileId
    */
-  async delete(fileId) {
-    const res = await fetch(`/api/files/${fileId}`, { method: 'DELETE' });
+  async delete (fileId) {
+    const res = await fetch(`/api/files/${fileId}`, {method : 'DELETE'});
     if (!res.ok) {
       let msg = `Delete failed (HTTP ${res.status})`;
-      try { const e = await res.json(); msg = e.message || msg; } catch (_) {}
+      try {
+        const e = await res.json();
+        msg = e.message || msg;
+      } catch (_) {
+      }
       throw new Error(msg);
     }
   },
@@ -73,7 +82,8 @@ const ChatFiles = {
 
     if (attachBtn && fileInput) {
       attachBtn.addEventListener('click', () => {
-        if (!ChatState.currentConversation) return;
+        if (!ChatState.currentConversation)
+          return;
         fileInput.click();
       });
 
@@ -81,7 +91,8 @@ const ChatFiles = {
         const files = Array.from(fileInput.files ?? []);
         // Reset immediately so the same file can be re-selected later
         fileInput.value = '';
-        if (!files.length || !ChatState.currentConversation) return;
+        if (!files.length || !ChatState.currentConversation)
+          return;
         for (const file of files) {
           await this._uploadOne(file, ChatState.currentConversation.id);
         }
@@ -90,19 +101,22 @@ const ChatFiles = {
 
     // View files header button
     document.getElementById('viewFilesBtn')?.addEventListener('click', () => {
-      if (ChatState.currentConversation) this.openModal();
+      if (ChatState.currentConversation)
+        this.openModal();
     });
 
     // Files modal close triggers
-    document.querySelectorAll('[data-close-conv-modal="files-modal"]').forEach(btn => {
-      btn.addEventListener('click', () => this.closeModal());
-    });
+    document.querySelectorAll('[data-close-conv-modal="files-modal"]')
+        .forEach(
+            btn => { btn.addEventListener('click', () => this.closeModal()); });
     document.getElementById('files-modal')?.addEventListener('click', e => {
-      if (e.target === e.currentTarget) this.closeModal();
+      if (e.target === e.currentTarget)
+        this.closeModal();
     });
 
     document.addEventListener('keydown', e => {
-      if (e.key === 'Escape') this.closeModal();
+      if (e.key === 'Escape')
+        this.closeModal();
     });
   },
 
@@ -122,14 +136,16 @@ const ChatFiles = {
   },
 
   _setStatus(el, text, color) {
-    if (!el) return;
+    if (!el)
+      return;
     el.textContent = text;
     el.style.color = color || '';
     el.style.display = 'block';
   },
 
   _hideStatus(el) {
-    if (!el) return;
+    if (!el)
+      return;
     el.style.display = 'none';
     el.style.color = '';
   },
@@ -138,7 +154,8 @@ const ChatFiles = {
 
   openModal() {
     const modal = document.getElementById('files-modal');
-    if (!modal) return;
+    if (!modal)
+      return;
     modal.classList.add('open');
     this._loadModal();
   },
@@ -149,45 +166,55 @@ const ChatFiles = {
 
   async _loadModal() {
     const listEl = document.getElementById('filesModalList');
-    if (!listEl) return;
+    if (!listEl)
+      return;
 
     const conv = ChatState.currentConversation;
-    if (!conv) return;
+    if (!conv)
+      return;
 
-    listEl.innerHTML = '<p style="color:var(--fg-tertiary);font-size:var(--text-sm);padding:var(--space-6)">Loading…</p>';
+    listEl.innerHTML =
+        '<p style="color:var(--fg-tertiary);font-size:var(--text-sm);padding:var(--space-6)">Loading…</p>';
 
     try {
       const files = await this.list(conv.id);
       this._renderModal(files);
     } catch (e) {
-      listEl.innerHTML = '<p style="color:var(--danger);font-size:var(--text-sm);padding:var(--space-6)">Failed to load files.</p>';
+      listEl.innerHTML =
+          '<p style="color:var(--danger);font-size:var(--text-sm);padding:var(--space-6)">Failed to load files.</p>';
       console.error('[files] List error:', e);
     }
   },
 
   _renderModal(files) {
     const listEl = document.getElementById('filesModalList');
-    if (!listEl) return;
+    if (!listEl)
+      return;
 
     if (!files.length) {
-      listEl.innerHTML = '<p style="color:var(--fg-tertiary);font-size:var(--text-sm);padding:var(--space-6)">No files in this conversation yet.</p>';
+      listEl.innerHTML =
+          '<p style="color:var(--fg-tertiary);font-size:var(--text-sm);padding:var(--space-6)">No files in this conversation yet.</p>';
       return;
     }
 
     const myId = ChatState.currentUser?.id ?? null;
 
-    listEl.innerHTML = files.map(f => {
-      const fileId   = f.id ?? f.file_id;
-      const filename = f.filename ?? f.file_name ?? 'file';
-      const size     = this._formatSize(f.size ?? f.file_size ?? 0);
-      const uploader = f.uploader_id ?? f.sender_id ?? null;
-      const canDelete = myId !== null && uploader === myId;
+    listEl.innerHTML =
+        files
+            .map(f => {
+              const fileId = f.id ?? f.file_id;
+              const filename = f.filename ?? f.file_name ?? 'file';
+              const size = this._formatSize(f.size ?? f.file_size ?? 0);
+              const uploader = f.uploader_id ?? f.sender_id ?? null;
+              const canDelete = myId !== null && uploader === myId;
 
-      return `
+              return `
         <div class="files-modal-item" data-file-id="${fileId}">
           <div class="files-modal-icon">${this._fileIcon(filename)}</div>
           <div class="files-modal-info">
-            <span class="files-modal-name" title="${Utils.escapeHtml(filename)}">${Utils.escapeHtml(filename)}</span>
+            <span class="files-modal-name" title="${
+                  Utils.escapeHtml(
+                      filename)}">${Utils.escapeHtml(filename)}</span>
             <span class="files-modal-meta">${size}</span>
           </div>
           <div class="files-modal-actions">
@@ -198,25 +225,28 @@ const ChatFiles = {
               title="Download"
               aria-label="Download ${Utils.escapeHtml(filename)}"
             >↓</a>
-            ${canDelete
-              ? `<button
+            ${
+                  canDelete ? `<button
                    class="btn btn-ghost btn-sm files-delete-btn"
                    data-file-id="${fileId}"
                    title="Delete"
                    aria-label="Delete ${Utils.escapeHtml(filename)}"
                  >✕</button>`
-              : ''}
+                            : ''}
           </div>
         </div>`;
-    }).join('');
+            })
+            .join('');
 
     listEl.querySelectorAll('.files-delete-btn').forEach(btn => {
-      btn.addEventListener('click', () => this._confirmDelete(btn.dataset.fileId));
+      btn.addEventListener('click',
+                           () => this._confirmDelete(btn.dataset.fileId));
     });
   },
 
   async _confirmDelete(fileId) {
-    if (!confirm('Delete this file? This cannot be undone.')) return;
+    if (!confirm('Delete this file? This cannot be undone.'))
+      return;
     try {
       await this.delete(fileId);
       // Re-load the list to reflect the deletion
@@ -229,10 +259,14 @@ const ChatFiles = {
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   _formatSize(bytes) {
-    if (!bytes || bytes === 0) return '';
-    if (bytes < 1_024)             return `${bytes} B`;
-    if (bytes < 1_048_576)         return `${(bytes / 1_024).toFixed(1)} KB`;
-    if (bytes < 1_073_741_824)     return `${(bytes / 1_048_576).toFixed(1)} MB`;
+    if (!bytes || bytes === 0)
+      return '';
+    if (bytes < 1_024)
+      return `${bytes} B`;
+    if (bytes < 1_048_576)
+      return `${(bytes / 1_024).toFixed(1)} KB`;
+    if (bytes < 1_073_741_824)
+      return `${(bytes / 1_048_576).toFixed(1)} MB`;
     return `${(bytes / 1_073_741_824).toFixed(1)} GB`;
   },
 
@@ -240,19 +274,48 @@ const ChatFiles = {
     const ext = (filename.split('.').pop() ?? '').toLowerCase();
     const map = {
       // Images
-      jpg: '🖼️', jpeg: '🖼️', png: '🖼️', gif: '🖼️', webp: '🖼️', svg: '🖼️',
+      jpg : '🖼️',
+      jpeg : '🖼️',
+      png : '🖼️',
+      gif : '🖼️',
+      webp : '🖼️',
+      svg : '🖼️',
       // Video
-      mp4: '🎬', webm: '🎬', mov: '🎬', avi: '🎬', mkv: '🎬',
+      mp4 : '🎬',
+      webm : '🎬',
+      mov : '🎬',
+      avi : '🎬',
+      mkv : '🎬',
       // Audio
-      mp3: '🎵', wav: '🎵', ogg: '🎵', flac: '🎵', aac: '🎵',
+      mp3 : '🎵',
+      wav : '🎵',
+      ogg : '🎵',
+      flac : '🎵',
+      aac : '🎵',
       // Documents
-      pdf: '📄', doc: '📝', docx: '📝', txt: '📝', md: '📝',
+      pdf : '📄',
+      doc : '📝',
+      docx : '📝',
+      txt : '📝',
+      md : '📝',
       // Spreadsheets
-      xls: '📊', xlsx: '📊', csv: '📊',
+      xls : '📊',
+      xlsx : '📊',
+      csv : '📊',
       // Archives
-      zip: '📦', tar: '📦', gz: '📦', rar: '📦', '7z': '📦',
+      zip : '📦',
+      tar : '📦',
+      gz : '📦',
+      rar : '📦',
+      '7z' : '📦',
       // Code
-      js: '💻', ts: '💻', py: '💻', rs: '💻', go: '💻', html: '💻', css: '💻',
+      js : '💻',
+      ts : '💻',
+      py : '💻',
+      rs : '💻',
+      go : '💻',
+      html : '💻',
+      css : '💻',
     };
     return map[ext] ?? '📎';
   },

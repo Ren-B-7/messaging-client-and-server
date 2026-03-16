@@ -248,6 +248,37 @@ pub fn build_user_router_with_config(
                 }
             },
         )
+        // POST /api/profile/avatar — upload / replace profile picture (hard auth)
+        .post_hard(
+            "/api/profile/avatar",
+            |req, state, user_id, _claims| async move {
+                crate::handlers::http::profile::handle_upload_avatar(req, state, user_id)
+                    .await
+                    .context("Avatar upload failed")
+            },
+        )
+        // GET /api/avatar/:user_id — serve any user's avatar image (light auth)
+        .get_light("/api/avatar/:user_id", |req, state, claims| async move {
+            let target_user_id = req
+                .uri()
+                .path()
+                .split('/')
+                .nth(3)
+                .and_then(|s| s.parse::<i64>().ok());
+            match target_user_id {
+                Some(uid) => {
+                    crate::handlers::http::profile::handle_get_avatar(req, state, claims, uid)
+                        .await
+                        .context("Avatar fetch failed")
+                }
+                None => crate::handlers::http::utils::json_response::deliver_error_json(
+                    "BAD_REQUEST",
+                    "Invalid user id",
+                    hyper::StatusCode::BAD_REQUEST,
+                )
+                .context("Bad request"),
+            }
+        })
         // ── Real-time SSE stream ────────────────────────────────────────────
         //
         // Auth is handled inside handle_sse_subscribe (Bearer header or

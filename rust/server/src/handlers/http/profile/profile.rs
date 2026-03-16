@@ -58,6 +58,13 @@ pub async fn handle_get_profile(
         Err(e) => return Err(anyhow::anyhow!("Database error: {}", e)),
     };
 
+    // Resolve avatar URL — returns a usable path the browser can GET directly.
+    let avatar_url = register::get_user_avatar(&state.db, claims.user_id)
+        .await
+        .ok()
+        .flatten()
+        .map(|_| format!("/api/avatar/{}", claims.user_id));
+
     let profile_json = serde_json::json!({
         "status": "success",
         "data": {
@@ -66,6 +73,7 @@ pub async fn handle_get_profile(
             "email":      user.email,
             "is_admin":   claims.is_admin,
             "created_at": user.created_at,
+            "avatar_url": avatar_url,
         }
     });
 
@@ -432,6 +440,219 @@ pub async fn handle_delete_profile(
         StatusCode::OK,
         clear_cookie,
     )?)
+}
+
+// ===========================================================================
+// avatar — upload
+// ===========================================================================
+
+/// POST /api/profile/avatar — replace the authenticated user's profile picture.
+///
+/// Accepts `multipart/form-data` with a single field named `avatar`.
+/// Allowed types: JPEG, PNG, GIF, WebP.  Hard cap: 5 MiB.
+///
+/// Hard-auth: `user_id` is pre-verified by the router (JWT + DB + IP).
+pub async fn handle_upload_avatar(
+    req: Request<hyper::body::Incoming>,
+    state: AppState,
+    user_id: i64,
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    use http_body_util::BodyExt as _;
+    use multer::Multipart;
+    use uuid::Uuid;
+
+    info!("Avatar upload request from user {}", user_id);
+
+    const MAX_AVATAR_BYTES: usize = 5 * 1024 * 1024; // 5 MiB
+
+    // ── Parse multipart boundary ─────────────────────────────────────────────
+    let content_type = req
+        .headers()
+        .get(hyper::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    let boundary = multer::parse_boundary(content_type)
+        .map_err(|e| anyhow::anyhow!("Invalid multipart boundary: {}", e))?;
+
+    let body_stream = req.into_body().into_data_stream();
+    let mut multipart = Multipart::new(body_stream, boundary);
+
+    let mut file_bytes: Option<Vec<u8>> = None;
+    let mut detected_ext: Option<String> = None;
+
+    while let Some(mut field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| anyhow::anyhow!("Multipart read error: {}", e))?
+    {
+        if field.name().unwrap_or("") != "avatar" {
+            // Drain unknown fields silently.
+            while field.chunk().await.map_err(|e| anyhow::anyhow!("{}", e))?.is_some() {}
+            continue;
+        }
+
+        // Derive extension from MIME type reported by the client.
+        let mime = field.content_type().map(|m| m.to_string());
+        detected_ext = Some(match mime.as_deref().unwrap_or("") {
+            "image/jpeg" | "image/jpg" => "jpg",
+            "image/png"                => "png",
+            "image/gif"                => "gif",
+            "image/webp"               => "webp",
+            other => {
+                // Reject non-image content types up front.
+                if !other.is_empty() {
+                    return deliver_error_json(
+                        "INVALID_TYPE",
+                        "Avatar must be a JPEG, PNG, GIF, or WebP image",
+                        StatusCode::BAD_REQUEST,
+                    );
+                }
+                "jpg" // fallback when client omits Content-Type
+            }
+        }.to_string());
+
+        let mut buf = Vec::new();
+        while let Some(chunk) = field.chunk().await.map_err(|e| anyhow::anyhow!("{}", e))? {
+            buf.extend_from_slice(&chunk);
+            if buf.len() > MAX_AVATAR_BYTES {
+                return deliver_error_json(
+                    "FILE_TOO_LARGE",
+                    "Avatar must not exceed 5 MiB",
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                );
+            }
+        }
+        file_bytes = Some(buf);
+    }
+
+    let file_bytes = match file_bytes {
+        Some(b) if !b.is_empty() => b,
+        _ => {
+            return deliver_error_json(
+                "MISSING_FILE",
+                "No avatar data received — send a field named 'avatar'",
+                StatusCode::BAD_REQUEST,
+            );
+        }
+    };
+
+    let ext = detected_ext.unwrap_or_else(|| "jpg".to_string());
+
+    // ── Write new file to disk ───────────────────────────────────────────────
+    let uploads_dir = state.config.read().await.paths.uploads_dir.clone();
+    let avatars_dir = format!("{}/avatars", uploads_dir);
+
+    tokio::fs::create_dir_all(&avatars_dir)
+        .await
+        .context("Failed to create avatars directory")?;
+
+    // Deterministic filename: <user_id>.<ext>
+    // Writing this path overwrites the old avatar automatically when the
+    // extension matches.  If the extension changed we delete the old file
+    // first so stale files don't accumulate on disk.
+    let filename = format!("{}.{}", user_id, ext);
+    let new_path = format!("{}/{}", avatars_dir, filename);
+
+    tokio::fs::write(&new_path, &file_bytes)
+        .await
+        .with_context(|| format!("Failed to write avatar to {}", new_path))?;
+
+    // ── Swap out old file (best-effort) ──────────────────────────────────────
+    if let Ok(Some(old_path)) = register::get_user_avatar(&state.db, user_id).await {
+        if let Err(e) = tokio::fs::remove_file(&old_path).await {
+            warn!("Could not remove old avatar {:?}: {}", old_path, e);
+        }
+    }
+
+    // ── Persist new path ─────────────────────────────────────────────────────
+    register::set_user_avatar(&state.db, user_id, new_path)
+        .await
+        .context("Failed to update avatar path in DB")?;
+
+    info!("Avatar updated for user {}", user_id);
+
+    deliver_serialized_json(
+        &serde_json::json!({
+            "status":     "success",
+            "message":    "Avatar updated successfully",
+            "avatar_url": format!("/api/avatar/{}", user_id),
+        }),
+        StatusCode::OK,
+    )
+}
+
+// ===========================================================================
+// avatar — serve
+// ===========================================================================
+
+/// GET /api/avatar/:user_id — serve a user's avatar image.
+///
+/// Returns 404 when the user has no avatar set, allowing the frontend to
+/// fall back to initials gracefully.
+///
+/// Light-auth: `claims` are pre-verified by the router (JWT only).
+/// The auth cookie is sent automatically on same-origin `<img>` requests.
+pub async fn handle_get_avatar(
+    req: Request<hyper::body::Incoming>,
+    state: AppState,
+    _claims: JwtClaims,
+    target_user_id: i64,
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    // Look up stored path
+    let avatar_path = match register::get_user_avatar(&state.db, target_user_id).await {
+        Ok(Some(p)) => p,
+        Ok(None) => {
+            return deliver_error_json(
+                "NOT_FOUND",
+                "This user has no avatar",
+                StatusCode::NOT_FOUND,
+            );
+        }
+        Err(e) => return Err(anyhow::anyhow!("DB error fetching avatar: {}", e)),
+    };
+
+    // Read bytes from disk
+    let bytes = match tokio::fs::read(&avatar_path).await {
+        Ok(b) => b,
+        Err(e) => {
+            error!("Avatar file missing from disk ({:?}): {}", avatar_path, e);
+            // Treat a missing file as "no avatar" — clean up the stale DB row.
+            let _ = register::clear_user_avatar(&state.db, target_user_id).await;
+            return deliver_error_json(
+                "NOT_FOUND",
+                "Avatar not found",
+                StatusCode::NOT_FOUND,
+            );
+        }
+    };
+
+    // Derive MIME type from extension
+    let mime = match std::path::Path::new(&avatar_path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase()
+        .as_str()
+    {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png"          => "image/png",
+        "gif"          => "image/gif",
+        "webp"         => "image/webp",
+        _              => "application/octet-stream",
+    };
+
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(hyper::header::CONTENT_TYPE, mime)
+        // Cache for 5 minutes — short enough to show a fresh upload quickly,
+        // long enough to avoid hammering the disk on every re-render.
+        .header(hyper::header::CACHE_CONTROL, "public, max-age=300")
+        .body(
+            Full::new(Bytes::from(bytes))
+                .boxed(),
+        )
+        .context("Failed to build avatar response")?)
 }
 
 // ===========================================================================

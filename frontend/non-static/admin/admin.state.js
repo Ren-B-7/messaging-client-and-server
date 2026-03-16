@@ -6,30 +6,29 @@
 
 const AdminState = {
   /** All users returned from /admin/api/users */
-  users: [],
+  users : [],
 
   /** All sessions returned from /admin/api/sessions */
-  sessions: [],
+  sessions : [],
 
   /** Activity log entries (newest first), capped at 200 */
-  log: [],
+  log : [],
 
   /** Last fetched stats from /admin/api/stats */
-  stats: null,
+  stats : null,
 
   /** Currently active tab name */
-  activeTab: "dashboard",
+  activeTab : "dashboard",
 
   // ── Log ──────────────────────────────────────────────────────────────────
 
   addLog(type, message) {
-    this.log.unshift({ type, message, time: new Date() });
-    if (this.log.length > 200) this.log.pop();
+    this.log.unshift({type, message, time : new Date()});
+    if (this.log.length > 200)
+      this.log.pop();
   },
 
-  clearLog() {
-    this.log = [];
-  },
+  clearLog() { this.log = []; },
 
   // ── Users ─────────────────────────────────────────────────────────────────
   // User list is always re-fetched from the API after mutations.

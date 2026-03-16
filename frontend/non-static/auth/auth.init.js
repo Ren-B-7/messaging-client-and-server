@@ -10,11 +10,13 @@
 
 function authInit() {
   // ── Theme ────────────────────────────────────────────────────────────────
-  themeManager.init(['base', 'auth']);
+  themeManager.init([ 'base', 'auth' ]);
 
   // ── Form routing ─────────────────────────────────────────────────────────
-  if (document.getElementById('loginForm'))    AuthLogin.setup();
-  if (document.getElementById('registerForm')) AuthRegister.setup();
+  if (document.getElementById('loginForm'))
+    AuthLogin.setup();
+  if (document.getElementById('registerForm'))
+    AuthRegister.setup();
 }
 
 // DOMContentLoaded fires after HTML is parsed. Deferred scripts also run after

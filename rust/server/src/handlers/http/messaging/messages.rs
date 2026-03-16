@@ -45,8 +45,9 @@ pub async fn handle_get_chats(
     let mut chats_json: Vec<serde_json::Value> = Vec::with_capacity(chats.len());
 
     for g in chats {
-        // For DMs, replace the internal UUID name with the other participant's username.
-        let display_name = if g.chat_type == "direct" {
+        // For DMs, replace the internal UUID name with the other participant's
+        // username and resolve their avatar URL.
+        let (display_name, avatar_url) = if g.chat_type == "direct" {
             let members = db_groups::get_group_members(&state.db, g.id)
                 .await
                 .unwrap_or_default();
@@ -54,17 +55,28 @@ pub async fn handle_get_chats(
             let other = members.iter().find(|m| m.user_id != user_id);
 
             if let Some(other_member) = other {
-                db_register::get_user_by_id(&state.db, other_member.user_id)
+                let other_id = other_member.user_id;
+
+                let name = db_register::get_user_by_id(&state.db, other_id)
                     .await
                     .ok()
                     .flatten()
                     .map(|u| u.username)
-                    .unwrap_or_else(|| format!("user_{}", other_member.user_id))
+                    .unwrap_or_else(|| format!("user_{}", other_id));
+
+                // Only set avatar_url when the other user actually has one.
+                let url = db_register::get_user_avatar(&state.db, other_id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .map(|_| format!("/api/avatar/{}", other_id));
+
+                (name, url)
             } else {
-                g.name.clone()
+                (g.name.clone(), None)
             }
         } else {
-            g.name.clone()
+            (g.name.clone(), None)
         };
 
         chats_json.push(serde_json::json!({
@@ -74,6 +86,7 @@ pub async fn handle_get_chats(
             "chat_type":   g.chat_type,
             "created_by":  g.created_by,
             "created_at":  g.created_at,
+            "avatar_url":  avatar_url,
         }));
     }
 
@@ -147,6 +160,13 @@ pub async fn handle_create_chat(
         .map(|u| u.username)
         .unwrap_or_else(|| format!("user_{}", other_user_id));
 
+    // Resolve avatar URL for the other participant.
+    let other_avatar_url = db_register::get_user_avatar(&state.db, other_user_id)
+        .await
+        .ok()
+        .flatten()
+        .map(|_| format!("/api/avatar/{}", other_user_id));
+
     // Idempotency check
     if let Some(existing_chat_id) =
         db_groups::find_existing_dm(&state.db, user_id, other_user_id).await?
@@ -162,12 +182,12 @@ pub async fn handle_create_chat(
 
         return deliver_success_json(
             Some(serde_json::json!({
-                "id":        chat.id,
-                "chat_id":   chat.id,
-                // Return the other person's username, not the internal UUID name.
-                "name":      other_username,
-                "chat_type": "direct",
+                "id":         chat.id,
+                "chat_id":    chat.id,
+                "name":       other_username,
+                "chat_type":  "direct",
                 "created_at": chat.created_at,
+                "avatar_url": other_avatar_url,
             })),
             Some("Existing DM returned"),
             StatusCode::OK,
@@ -202,12 +222,12 @@ pub async fn handle_create_chat(
 
     deliver_success_json(
         Some(serde_json::json!({
-            "id":        chat_id,
-            "chat_id":   chat_id,
-            // Return the other person's username, not the internal UUID name.
-            "name":      other_username,
-            "chat_type": "direct",
+            "id":         chat_id,
+            "chat_id":    chat_id,
+            "name":       other_username,
+            "chat_type":  "direct",
             "created_at": crate::database::utils::get_timestamp(),
+            "avatar_url": other_avatar_url,
         })),
         Some("DM created successfully"),
         StatusCode::CREATED,

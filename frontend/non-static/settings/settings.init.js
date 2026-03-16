@@ -1,6 +1,7 @@
 /**
  * Settings — Initialiser
- * User data loading and sub-module boot sequence.
+ * Fetches the current user profile from the API (so avatar_url is always
+ * fresh), merges into localStorage, then boots all settings sub-modules.
  *
  * Load order (all deferred):
  *   theme.manager.js → platform.config.js → utils.js
@@ -8,24 +9,52 @@
  *   → settings.preferences.js → settings.init.js
  */
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   // ── Theme ──────────────────────────────────────────────────────────────────
-  themeManager.init(["base", "chat", "settings"]);
+  themeManager.init([ "base", "chat", "settings" ]);
 
   const settingsThemeBtn = document.getElementById("themeToggle");
   themeManager.syncIcon(settingsThemeBtn);
-  settingsThemeBtn?.addEventListener("click", () => {
-    themeManager.toggle(); // syncIcon auto-updates via themechange event
-  });
+  settingsThemeBtn?.addEventListener("click", () => { themeManager.toggle(); });
 
-  // ── User data ──────────────────────────────────────────────────────────────
-  // Read from storage — never rely on a bare `user` global.
-  const user = Utils.getStorage("user") || {};
+  // ── Fetch fresh user data from the API ─────────────────────────────────────
+  // Always hit /api/profile so avatar_url, username, and email are current.
+  let user = Utils.getStorage("user") || {};
 
-  // ── Navbar avatar ──────────────────────────────────────────────────────────
+  try {
+    const res = await fetch("/api/profile");
+    if (res.ok) {
+      const data = await res.json();
+      const profile = data.data ?? data;
+      // Merge API fields into the local user object.
+      user = {
+        ...user,
+        id : Number(profile.user_id),
+        username : profile.username ?? user.username ?? "",
+        email : profile.email ?? user.email ?? "",
+        isAdmin : profile.is_admin ?? user.isAdmin ?? false,
+        avatarUrl : profile.avatar_url ?? null,
+      };
+      Utils.setStorage("user", user);
+    }
+  } catch (e) {
+    console.warn("[settings] Profile fetch failed, using cached data:", e);
+  }
+
+  // ── Navbar avatar chip ─────────────────────────────────────────────────────
   const initialsEl = document.getElementById("userInitials");
-  if (initialsEl)
-    initialsEl.textContent = Utils.getInitials(user.name || user.email || "?");
+  const userAvatarEl = document.getElementById("userAvatarImg");
+
+  if (user.avatarUrl && userAvatarEl) {
+    userAvatarEl.src = user.avatarUrl;
+    userAvatarEl.style.display = "block";
+    if (initialsEl)
+      initialsEl.style.display = "none";
+  } else if (initialsEl) {
+    initialsEl.textContent =
+        Utils.getInitials(user.username || user.email || "?");
+    initialsEl.style.display = "";
+  }
 
   // ── Platform info (Help tab) ───────────────────────────────────────────────
   const platformEl = document.getElementById("platformInfo");

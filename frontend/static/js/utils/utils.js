@@ -24,16 +24,20 @@ const Utils = {
     const now = new Date();
     const seconds = Math.floor((now - date) / 1000);
 
-    if (seconds < 60) return "Just now";
+    if (seconds < 60)
+      return "Just now";
 
     const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes}m`;
+    if (minutes < 60)
+      return `${minutes}m`;
 
     const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h`;
+    if (hours < 24)
+      return `${hours}h`;
 
     const days = Math.floor(hours / 24);
-    if (days < 7) return `${days}d`;
+    if (days < 7)
+      return `${days}d`;
 
     return date.toLocaleDateString();
   },
@@ -46,7 +50,7 @@ const Utils = {
    */
   debounce(func, delay) {
     let timeoutId;
-    return function (...args) {
+    return function(...args) {
       clearTimeout(timeoutId);
       timeoutId = setTimeout(() => func.apply(this, args), delay);
     };
@@ -69,22 +73,16 @@ const Utils = {
    * @returns {string} Initials (max 2 characters)
    */
   getInitials(name) {
-    if (!name) return "?";
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
+    if (!name)
+      return "?";
+    return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
   },
 
   /**
    * Check if user is online
    * @returns {boolean} Online status
    */
-  isOnline() {
-    return navigator.onLine;
-  },
+  isOnline() { return navigator.onLine; },
 
   /**
    * Generate unique ID
@@ -175,9 +173,7 @@ const Utils = {
    * @param {string} email - Email to validate
    * @returns {boolean} Whether the email is valid
    */
-  isValidEmail(email) {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-  },
+  isValidEmail(email) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email); },
 
   /**
    * Format file size to human readable format
@@ -185,9 +181,10 @@ const Utils = {
    * @returns {string} Formatted file size
    */
   formatFileSize(bytes) {
-    if (bytes === 0) return "0 Bytes";
+    if (bytes === 0)
+      return "0 Bytes";
     const k = 1024;
-    const sizes = ["Bytes", "KB", "MB", "GB"];
+    const sizes = [ "Bytes", "KB", "MB", "GB" ];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
   },
@@ -199,4 +196,3 @@ if (typeof module !== "undefined" && module.exports) {
 } else {
   window.Utils = Utils;
 }
-

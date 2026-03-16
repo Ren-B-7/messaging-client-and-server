@@ -35,11 +35,12 @@ const ChatSSE = (() => {
 
   /**
    * Open (or re-open) the SSE stream for `chatId`.
-   * Calling this while a connection is already open for the same chat is a no-op.
-   * Calling with a different chatId cleanly replaces the old connection.
+   * Calling this while a connection is already open for the same chat is a
+   * no-op. Calling with a different chatId cleanly replaces the old connection.
    */
   function connect(chatId) {
-    if (_source && _chatId === String(chatId)) return; // already connected
+    if (_source && _chatId === String(chatId))
+      return; // already connected
     disconnect();
 
     _chatId = String(chatId);
@@ -66,10 +67,11 @@ const ChatSSE = (() => {
   }
 
   function _open() {
-    if (!_chatId) return;
+    if (!_chatId)
+      return;
 
     const url = `/api/stream?chat_id=${encodeURIComponent(_chatId)}`;
-    _source = new EventSource(url, { withCredentials: true });
+    _source = new EventSource(url, {withCredentials : true});
 
     _source.addEventListener("connected", _onConnected);
     _source.addEventListener("history_start", _onHistoryStart);
@@ -96,37 +98,41 @@ const ChatSSE = (() => {
     _replayBuffer = [];
     const payload = _parse(e);
     console.info(
-      "[sse] History start — expecting",
-      payload?.count ?? "?",
-      "messages",
+        "[sse] History start — expecting",
+        payload?.count ?? "?",
+        "messages",
     );
   }
 
   function _onHistoryMessage(e) {
-    if (!_inHistory) return;
+    if (!_inHistory)
+      return;
     const msg = _parse(e);
-    if (msg) _replayBuffer.push(msg);
+    if (msg)
+      _replayBuffer.push(msg);
   }
 
   function _onHistoryEnd() {
     _inHistory = false;
 
-    if (!_chatId) return;
+    if (!_chatId)
+      return;
 
     const myId = ChatState.currentUser?.id ?? null;
 
     // Normalise history frames to the same shape ChatMessages uses
-    const messages = _replayBuffer.map((msg) => ({
-      id: msg.id,
-      text: msg.content,
-      content: msg.content,
-      timestamp: (msg.sent_at ?? 0) * 1000,
-      isSent: myId !== null && msg.sender_id === myId,
-      sender_id: msg.sender_id,
-      delivered_at: msg.delivered_at,
-      read_at: msg.read_at,
-      message_type: msg.message_type,
-    }));
+    const messages =
+        _replayBuffer.map((msg) => ({
+                            id : msg.id,
+                            text : msg.content,
+                            content : msg.content,
+                            timestamp : (msg.sent_at ?? 0) * 1000,
+                            isSent : myId !== null && msg.sender_id === myId,
+                            sender_id : msg.sender_id,
+                            delivered_at : msg.delivered_at,
+                            read_at : msg.read_at,
+                            message_type : msg.message_type,
+                          }));
 
     // Oldest-first order from the server — reverse so newest is at bottom
     messages.reverse();
@@ -134,7 +140,8 @@ const ChatSSE = (() => {
     ChatState.messages[_chatId] = messages;
     try {
       ChatState.save();
-    } catch (_) {}
+    } catch (_) {
+    }
 
     // Only render if we're still viewing this chat
     if (ChatState.currentConversation?.id === _chatId) {
@@ -147,30 +154,32 @@ const ChatSSE = (() => {
 
   function _onMessageSent(e) {
     const msg = _parse(e);
-    if (!msg || !_chatId) return;
+    if (!msg || !_chatId)
+      return;
 
     const myId = ChatState.currentUser?.id ?? null;
     const isSent = myId !== null && msg.sender_id === myId;
 
     // Deduplicate: if we sent this message optimistically we already have it
     const existing = ChatState.getMessages(_chatId);
-    if (existing.some((m) => m.id === msg.id)) return;
+    if (existing.some((m) => m.id === msg.id))
+      return;
 
     const normalized = {
-      id: msg.id,
-      text: msg.content,
-      content: msg.content,
-      timestamp: (msg.sent_at ?? 0) * 1000,
+      id : msg.id,
+      text : msg.content,
+      content : msg.content,
+      timestamp : (msg.sent_at ?? 0) * 1000,
       isSent,
-      sender_id: msg.sender_id,
-      message_type: msg.message_type,
+      sender_id : msg.sender_id,
+      message_type : msg.message_type,
     };
 
     ChatState.addMessage(_chatId, normalized);
 
     // Update conversation preview in the sidebar
     const conv =
-      ChatState.findConversation(_chatId) ?? ChatState.findGroup(_chatId);
+        ChatState.findConversation(_chatId) ?? ChatState.findGroup(_chatId);
     if (conv) {
       conv.lastMessage = msg.content;
       conv.timestamp = Date.now();
@@ -182,7 +191,8 @@ const ChatSSE = (() => {
 
     try {
       ChatState.save();
-    } catch (_) {}
+    } catch (_) {
+    }
 
     if (ChatState.currentConversation?.id === _chatId) {
       ChatMessages.renderOne(normalized); // append single bubble, no DOM wipe
@@ -193,7 +203,8 @@ const ChatSSE = (() => {
 
   function _onMessageRead(e) {
     const payload = _parse(e);
-    if (!payload || !_chatId) return;
+    if (!payload || !_chatId)
+      return;
 
     // Mark the message as read in our local copy
     const msgs = ChatState.getMessages(_chatId);
@@ -202,14 +213,15 @@ const ChatSSE = (() => {
       msg.read_at = payload.read_at;
       try {
         ChatState.save();
-      } catch (_) {}
+      } catch (_) {
+      }
     }
 
     if (ChatState.currentConversation?.id === _chatId) {
       ChatMessages.renderReadReceipts(
-        _chatId,
-        payload.message_id,
-        payload.reader_id,
+          _chatId,
+          payload.message_id,
+          payload.reader_id,
       );
     }
   }
@@ -219,11 +231,14 @@ const ChatSSE = (() => {
 
   function _onTyping(e) {
     const payload = _parse(e);
-    if (!payload) return;
+    if (!payload)
+      return;
 
-    const { chat_id, user_id, is_typing } = payload;
-    if (String(chat_id) !== _chatId) return;
-    if (user_id === ChatState.currentUser?.id) return; // ignore own echo
+    const {chat_id, user_id, is_typing} = payload;
+    if (String(chat_id) !== _chatId)
+      return;
+    if (user_id === ChatState.currentUser?.id)
+      return; // ignore own echo
 
     const key = `${chat_id}:${user_id}`;
 
@@ -267,7 +282,8 @@ const ChatSSE = (() => {
   // ── Reconnect with exponential back-off ───────────────────────────────────
 
   function _scheduleRetry() {
-    if (_retryTimer || !_chatId) return;
+    if (_retryTimer || !_chatId)
+      return;
     if (_retryCount >= MAX_RETRIES) {
       console.error("[sse] Max retries reached for chat", _chatId);
       _setStatus("failed");
@@ -303,13 +319,15 @@ const ChatSSE = (() => {
    * @param {boolean} isTyping
    */
   function sendTyping(isTyping) {
-    if (!_chatId || _lastTyping === isTyping) return;
+    if (!_chatId || _lastTyping === isTyping)
+      return;
     _lastTyping = isTyping;
 
     fetch("/api/typing", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: parseInt(_chatId), is_typing: isTyping }),
+      method : "POST",
+      headers : {"Content-Type" : "application/json"},
+      body :
+          JSON.stringify({chat_id : parseInt(_chatId), is_typing : isTyping}),
     }).catch((e) => console.warn("[sse] Typing POST failed:", e));
   }
 
@@ -323,34 +341,34 @@ const ChatSSE = (() => {
       dot.dataset.status = status;
     }
 
-    if (!textEl) return;
+    if (!textEl)
+      return;
 
     const isDm = ChatState.currentConversationType === "dm";
 
     if (!isDm) {
       // Groups: always show member count — SSE status never touches this
       const conv = ChatState.currentConversation;
-      textEl.textContent = conv?.memberCount
-        ? `${conv.memberCount} members`
-        : "Group";
+      textEl.textContent =
+          conv?.memberCount ? `${conv.memberCount} members` : "Group";
       return;
     }
 
     // DM: show SSE connection state as the status text + colour
     switch (status) {
-      case "connected":
-        textEl.textContent = "Connected";
-        textEl.style.color = "var(--success, #22c55e)";
-        break;
-      case "reconnecting":
-        textEl.textContent = "Connecting…";
-        textEl.style.color = "var(--warning, #f59e0b)";
-        break;
-      case "disconnected":
-      case "failed":
-        textEl.textContent = "Disconnected";
-        textEl.style.color = "var(--danger, #ef4444)";
-        break;
+    case "connected":
+      textEl.textContent = "Connected";
+      textEl.style.color = "var(--success, #22c55e)";
+      break;
+    case "reconnecting":
+      textEl.textContent = "Connecting…";
+      textEl.style.color = "var(--warning, #f59e0b)";
+      break;
+    case "disconnected":
+    case "failed":
+      textEl.textContent = "Disconnected";
+      textEl.style.color = "var(--danger, #ef4444)";
+      break;
     }
   }
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -364,5 +382,5 @@ const ChatSSE = (() => {
 
   // ── Public API ────────────────────────────────────────────────────────────
 
-  return { connect, disconnect, sendTyping };
+  return {connect, disconnect, sendTyping};
 })();

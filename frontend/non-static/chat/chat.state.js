@@ -6,33 +6,31 @@
  */
 
 const ChatState = {
-  currentUser:             null,   // { id, username } — fetched from /api/profile on init
-  currentConversation:     null,
-  currentConversationType: 'dm',   // 'dm' | 'groups'
-  conversations:           [],     // direct message threads
-  groups:                  [],     // group chats
-  messages:                {},
+  currentUser : null, // { id, username } — fetched from /api/profile on init
+  currentConversation : null,
+  currentConversationType : 'dm', // 'dm' | 'groups'
+  conversations : [],             // direct message threads
+  groups : [],                    // group chats
+  messages : {},
 
   /** Load all persisted state from localStorage. */
   load() {
     this.conversations = Utils.getStorage('conversations') || [];
-    this.groups        = Utils.getStorage('groups')        || [];
-    this.messages      = Utils.getStorage('messages')      || {};
+    this.groups = Utils.getStorage('groups') || [];
+    this.messages = Utils.getStorage('messages') || {};
   },
 
   /** Persist all state to localStorage. */
   save() {
     Utils.setStorage('conversations', this.conversations);
-    Utils.setStorage('groups',        this.groups);
-    Utils.setStorage('messages',      this.messages);
+    Utils.setStorage('groups', this.groups);
+    Utils.setStorage('messages', this.messages);
   },
 
   // ── Conversations ─────────────────────────────────────────────────────────
 
   /** @returns {object|undefined} */
-  findConversation(id) {
-    return this.conversations.find(c => c.id === id);
-  },
+  findConversation(id) { return this.conversations.find(c => c.id === id); },
 
   /** Prepend a new DM conversation and initialise its message list. */
   addConversation(conversation) {
@@ -43,9 +41,7 @@ const ChatState = {
   // ── Groups ────────────────────────────────────────────────────────────────
 
   /** @returns {object|undefined} */
-  findGroup(id) {
-    return this.groups.find(g => g.id === id);
-  },
+  findGroup(id) { return this.groups.find(g => g.id === id); },
 
   /** Prepend a new group and initialise its message list. */
   addGroup(group) {
@@ -57,12 +53,11 @@ const ChatState = {
 
   /** Append a message to any conversation or group by id. */
   addMessage(conversationId, message) {
-    if (!this.messages[conversationId]) this.messages[conversationId] = [];
+    if (!this.messages[conversationId])
+      this.messages[conversationId] = [];
     this.messages[conversationId].push(message);
   },
 
   /** Return all messages for a conversation or group (or empty array). */
-  getMessages(id) {
-    return this.messages[id] || [];
-  },
+  getMessages(id) { return this.messages[id] || []; },
 };

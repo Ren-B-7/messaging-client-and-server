@@ -8,13 +8,9 @@
 const AdminActions = {
   // ── Modal helpers ──────────────────────────────────────────────────────────
 
-  openModal(id) {
-    document.getElementById(id)?.classList.add("open");
-  },
+  openModal(id) { document.getElementById(id)?.classList.add("open"); },
 
-  closeModal(id) {
-    document.getElementById(id)?.classList.remove("open");
-  },
+  closeModal(id) { document.getElementById(id)?.classList.remove("open"); },
 
   openBanModal() {
     document.getElementById("ban-user-id").value = "";
@@ -40,7 +36,8 @@ const AdminActions = {
   checkDeleteConfirm() {
     const val = document.getElementById("delete-confirm-text")?.value || "";
     const btn = document.getElementById("delete-submit-btn");
-    if (btn) btn.disabled = val !== "DELETE";
+    if (btn)
+      btn.disabled = val !== "DELETE";
   },
 
   // ── Quick-action (table row buttons) ──────────────────────────────────────
@@ -75,23 +72,24 @@ const AdminActions = {
 
     try {
       const res = await this._post("/admin/api/users/ban", {
-        user_id: Number(userId),
-        reason: reason || "No reason provided",
+        user_id : Number(userId),
+        reason : reason || "No reason provided",
       });
 
       if (res.status === "success") {
         AdminUI.toast(`User #${userId} has been banned`, "success");
         AdminUI.logAction(
-          "warn",
-          `Banned user <strong>#${userId}</strong>${reason ? ` — ${reason}` : ""}`,
+            "warn",
+            `Banned user <strong>#${userId}</strong>${
+                reason ? ` — ${reason}` : ""}`,
         );
         this.closeModal("ban-modal");
         AdminUsers.reload();
       } else {
         AdminUI.toast(res.message || "Ban failed", "error");
         AdminUI.logAction(
-          "error",
-          `Ban failed for #${userId}: ${res.message || "unknown"}`,
+            "error",
+            `Ban failed for #${userId}: ${res.message || "unknown"}`,
         );
       }
     } catch (e) {
@@ -117,22 +115,22 @@ const AdminActions = {
 
     try {
       const res = await this._post("/admin/api/users/unban", {
-        user_id: Number(userId),
+        user_id : Number(userId),
       });
 
       if (res.status === "success") {
         AdminUI.toast(`User #${userId} has been unbanned`, "success");
         AdminUI.logAction(
-          "success",
-          `Unbanned user <strong>#${userId}</strong>`,
+            "success",
+            `Unbanned user <strong>#${userId}</strong>`,
         );
         this.closeModal("unban-modal");
         AdminUsers.reload();
       } else {
         AdminUI.toast(res.message || "Unban failed", "error");
         AdminUI.logAction(
-          "error",
-          `Unban failed for #${userId}: ${res.message || "unknown"}`,
+            "error",
+            `Unban failed for #${userId}: ${res.message || "unknown"}`,
         );
       }
     } catch (e) {
@@ -158,7 +156,7 @@ const AdminActions = {
 
     try {
       const res = await this._delete(
-        `/admin/api/users/${encodeURIComponent(userId)}`,
+          `/admin/api/users/${encodeURIComponent(userId)}`,
       );
 
       if (res.status === "success") {
@@ -169,8 +167,8 @@ const AdminActions = {
       } else {
         AdminUI.toast(res.message || "Delete failed", "error");
         AdminUI.logAction(
-          "error",
-          `Delete failed for #${userId}: ${res.message || "unknown"}`,
+            "error",
+            `Delete failed for #${userId}: ${res.message || "unknown"}`,
         );
       }
     } catch (e) {
@@ -187,14 +185,14 @@ const AdminActions = {
   async submitPromote(userId) {
     try {
       const res = await this._post("/admin/api/users/promote", {
-        user_id: Number(userId),
+        user_id : Number(userId),
       });
 
       if (res.status === "success") {
         AdminUI.toast(`User #${userId} promoted to admin`, "success");
         AdminUI.logAction(
-          "info",
-          `Promoted user <strong>#${userId}</strong> to admin`,
+            "info",
+            `Promoted user <strong>#${userId}</strong> to admin`,
         );
         AdminUsers.reload();
       } else {
@@ -211,14 +209,14 @@ const AdminActions = {
   async submitDemote(userId) {
     try {
       const res = await this._post("/admin/api/users/demote", {
-        user_id: Number(userId),
+        user_id : Number(userId),
       });
 
       if (res.status === "success") {
         AdminUI.toast(`User #${userId} demoted`, "success");
         AdminUI.logAction(
-          "warn",
-          `Demoted user <strong>#${userId}</strong> from admin`,
+            "warn",
+            `Demoted user <strong>#${userId}</strong> from admin`,
         );
         AdminUsers.reload();
       } else {
@@ -235,10 +233,14 @@ const AdminActions = {
   refreshAll() {
     AdminUsers.loadStats();
     AdminUsers.loadMetrics();
-    if (AdminState.activeTab === "users") AdminUsers.reload();
-    if (AdminState.activeTab === "sessions") AdminUsers.loadSessions();
-    if (AdminState.activeTab === "server") AdminUsers.loadStats();
-    if (AdminState.activeTab === "metrics") AdminUsers.loadMetrics();
+    if (AdminState.activeTab === "users")
+      AdminUsers.reload();
+    if (AdminState.activeTab === "sessions")
+      AdminUsers.loadSessions();
+    if (AdminState.activeTab === "server")
+      AdminUsers.loadStats();
+    if (AdminState.activeTab === "metrics")
+      AdminUsers.loadMetrics();
     AdminUI.toast("Data refreshed", "info");
     AdminUI.logAction("info", "Manual refresh triggered");
   },
@@ -248,7 +250,8 @@ const AdminActions = {
   setupBackdropDismiss() {
     document.querySelectorAll(".modal-backdrop").forEach((el) => {
       el.addEventListener("click", (e) => {
-        if (e.target === el) el.classList.remove("open");
+        if (e.target === el)
+          el.classList.remove("open");
       });
     });
   },
@@ -256,9 +259,8 @@ const AdminActions = {
   setupKeyboard() {
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
-        document
-          .querySelectorAll(".modal-backdrop.open")
-          .forEach((el) => el.classList.remove("open"));
+        document.querySelectorAll(".modal-backdrop.open")
+            .forEach((el) => el.classList.remove("open"));
       }
     });
   },
@@ -267,17 +269,19 @@ const AdminActions = {
 
   async _post(url, body) {
     const res = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
+      method : "POST",
+      headers : {"content-type" : "application/json"},
+      body : JSON.stringify(body),
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok)
+      throw new Error(`HTTP ${res.status}`);
     return res.json();
   },
 
   async _delete(url) {
-    const res = await fetch(url, { method: "DELETE" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const res = await fetch(url, {method : "DELETE"});
+    if (!res.ok)
+      throw new Error(`HTTP ${res.status}`);
     return res.json();
   },
 };
