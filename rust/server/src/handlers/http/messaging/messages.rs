@@ -8,16 +8,16 @@ use hyper::{Request, Response, StatusCode};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use shared::types::groups::*;
-use shared::types::jwt::JwtClaims;
-use shared::types::message::*;
-use shared::types::sse::SseEvent;
-
 use crate::AppState;
 use crate::database::{groups, messages, register};
 use crate::handlers::http::utils::{
     deliver_error_json, deliver_serialized_json, deliver_success_json,
 };
+
+use shared::types::groups::*;
+use shared::types::jwt::JwtClaims;
+use shared::types::message::*;
+use shared::types::sse::SseEvent;
 
 // ---------------------------------------------------------------------------
 // Handlers
@@ -63,7 +63,6 @@ pub async fn handle_get_chats(
                     .map(|u| u.username)
                     .unwrap_or_else(|| format!("user_{}", other_id));
 
-                // Only set avatar_url when the other user actually has one.
                 let url = register::get_user_avatar(&state.db, other_id)
                     .await
                     .ok()
@@ -78,14 +77,25 @@ pub async fn handle_get_chats(
             (g.name.clone(), None)
         };
 
+        // ── Unread count ──────────────────────────────────────────────────────
+        let unread_count = messages::get_unread_count_for_chat(&state.db, g.id, user_id)
+            .await
+            .unwrap_or(0);
+
+        // ── Last message preview + timestamp ──────────────────────────────────
+        let (last_message, last_message_at) = last_message_preview(&state, g.id).await;
+
         chats_json.push(serde_json::json!({
-            "chat_id":     g.id,
-            "name":        display_name,
-            "description": g.description,
-            "chat_type":   g.chat_type,
-            "created_by":  g.created_by,
-            "created_at":  g.created_at,
-            "avatar_url":  avatar_url,
+            "chat_id":         g.id,
+            "name":            display_name,
+            "description":     g.description,
+            "chat_type":       g.chat_type,
+            "created_by":      g.created_by,
+            "created_at":      g.created_at,
+            "avatar_url":      avatar_url,
+            "unread_count":    unread_count,
+            "last_message":    last_message,
+            "last_message_at": last_message_at,
         }));
     }
 
@@ -108,6 +118,9 @@ pub async fn handle_create_chat(
     user_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing create chat request from user {}", user_id);
+
+    use crate::database::groups as db_groups;
+    use crate::database::register as db_register;
 
     let body = req
         .collect()
@@ -333,6 +346,8 @@ pub async fn handle_mark_read(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Marking message {} as read by user {}", message_id, user_id);
 
+    use crate::database::messages as db_messages;
+
     // Fetch the message first so we have chat_id + sender_id for the broadcast
     let msg = messages::get_message_by_id(&state.db, message_id)
         .await
@@ -364,6 +379,8 @@ pub async fn handle_typing(
     state: AppState,
     user_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    use crate::database::groups as db_groups;
+
     let body = req
         .collect()
         .await
@@ -443,6 +460,8 @@ async fn sse_broadcast_message_sent(
     message_type: &str,
     sent_at: i64,
 ) {
+    use crate::database::groups as db_groups;
+
     let members = match groups::get_group_members(&state.db, chat_id).await {
         Ok(m) => m,
         Err(e) => {
@@ -499,6 +518,8 @@ async fn sse_broadcast_message_read(
     chat_id: i64,
     sender_id: i64,
 ) {
+    use crate::database::groups as db_groups;
+
     let now = crate::database::utils::get_timestamp();
 
     let members = match groups::get_group_members(&state.db, chat_id).await {
@@ -598,6 +619,53 @@ async fn sse_broadcast_chat_created(
 // Private helpers
 // ---------------------------------------------------------------------------
 
+/// Fetch the most-recent message for a chat and return a (preview_text, sent_at)
+/// pair suitable for the sidebar last-message display.
+///
+/// * File messages decode to "📎 <filename>" so the preview is always readable.
+/// * Any decompression failure silently returns `None` rather than crashing the
+///   whole chat-list response.
+async fn last_message_preview(
+    state: &crate::AppState,
+    chat_id: i64,
+) -> (Option<String>, Option<i64>) {
+    use crate::database::messages as db_messages;
+
+    let messages = match messages::get_chat_messages(&state.db, chat_id, 1, 0).await {
+        Ok(m) => m,
+        Err(_) => return (None, None),
+    };
+
+    let msg = match messages.into_iter().next() {
+        Some(m) => m,
+        None => return (None, None),
+    };
+
+    let sent_at = msg.sent_at;
+
+    let preview = match crate::database::utils::decompress_data(&msg.content) {
+        Err(_) => return (None, Some(sent_at)),
+        Ok(bytes) => {
+            let text = String::from_utf8_lossy(&bytes);
+            if msg.message_type == "file" {
+                // Content is JSON: {"file_id":…,"filename":…,"mime_type":…,"size":…}
+                serde_json::from_str::<serde_json::Value>(&text)
+                    .ok()
+                    .and_then(|v| {
+                        v.get("filename")
+                            .and_then(|f| f.as_str())
+                            .map(|name| format!("📎 {}", name))
+                    })
+                    .unwrap_or_else(|| "📎 File".to_string())
+            } else {
+                text.to_string()
+            }
+        }
+    };
+
+    (Some(preview), Some(sent_at))
+}
+
 async fn parse_message_body(
     req: Request<hyper::body::Incoming>,
 ) -> std::result::Result<SendMessageData, MessageError> {
@@ -647,6 +715,9 @@ async fn persist_message(
     data: &SendMessageData,
     state: &AppState,
 ) -> std::result::Result<(i64, i64), MessageError> {
+    use crate::database::groups as db_groups;
+    use crate::database::messages as db_messages;
+
     let _chat = groups::get_group(&state.db, data.chat_id)
         .await
         .map_err(|_| MessageError::DatabaseError)?
@@ -706,6 +777,9 @@ async fn retrieve_messages(
     query: &GetMessagesQuery,
     state: &AppState,
 ) -> std::result::Result<Vec<MessageResponse>, MessageError> {
+    use crate::database::groups as db_groups;
+    use crate::database::messages as db_messages;
+
     let chat_id = query.chat_id.ok_or(MessageError::MissingChat)?;
 
     let _chat = groups::get_group(&state.db, chat_id)
