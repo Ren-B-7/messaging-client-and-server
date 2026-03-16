@@ -15,7 +15,7 @@ blocked_paths = [  # Paths that should return 403
     "/.env",
     "/config.toml"
 ]
-uploads_dir="~/Documents/messaging-client-and-server/uploads"
+uploads_dir="/uploads"
 
 # Authentication configuration
 [auth]

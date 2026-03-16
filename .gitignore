@@ -725,3 +725,5 @@ gradle-app.setting
 # End of https://www.toptal.com/developers/gitignore/api/rust,node,vue,vuejs,python,go,c,c++,compressedarchive,compressed,java,gradle,lua,venv,dotenv,virtualenv,ruby,web,webmethods
 
 *.db
+
+**/uploads/*
