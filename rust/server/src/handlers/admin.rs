@@ -14,11 +14,9 @@ use tower::Service;
 use tracing::{error, info};
 
 use crate::AppState;
-use crate::handlers::http::auth::handle_admin_login_api;
 use crate::handlers::http::routes::{Router, build_api_router_with_config};
 use crate::handlers::http::{
-    admin,
-    auth::handle_admin_login,
+    admin, auth,
     utils::{deliver_page::*, json_response::*},
 };
 
@@ -170,17 +168,17 @@ pub fn build_admin_router_with_config(
         })
         // ── Login ───────────────────────────────────────────────────────────
         .post("/admin/api/login", |req, state| async move {
-            handle_admin_login_api(req, state)
+            auth::handle_admin_login_api(req, state)
                 .await
                 .context("Login attempt failed")
         })
         .post("/api/login", |req, state| async move {
-            handle_admin_login(req, state)
+            auth::handle_admin_login(req, state)
                 .await
                 .context("Login attempt failed")
         })
         .post("/login", |req, state| async move {
-            handle_admin_login(req, state)
+            auth::handle_admin_login(req, state)
                 .await
                 .context("Login attempt failed")
         });
