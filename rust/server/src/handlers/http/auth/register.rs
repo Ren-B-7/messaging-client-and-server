@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use bytes::Bytes;
 use http_body_util::BodyExt;
 use http_body_util::combinators::BoxBody;
@@ -10,8 +10,8 @@ use crate::AppState;
 use crate::database::utils::{calculate_expiry, generate_uuid_token, hash_password};
 use crate::database::{login, register};
 use crate::handlers::http::utils::{
-    create_session_cookie, deliver_redirect_with_cookie, deliver_serialized_json, encode_jwt,
-    get_client_ip, get_user_agent, is_https,
+    create_session_cookie, deliver_redirect_with_cookie, deliver_serialized_json,
+    deliver_serialized_json_with_cookie, encode_jwt, get_client_ip, get_user_agent, is_https,
 };
 
 use shared::types::jwt::JwtClaims;
@@ -20,10 +20,49 @@ use shared::types::register::*;
 use shared::types::user::*;
 
 /// POST /api/register
+pub async fn handle_register_api(
+    req: Request<hyper::body::Incoming>,
+    state: AppState,
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    info!("Processing api registration request");
+
+    match register_internal(req, state).await {
+        Ok((jwt, user_id, secure_cookie)) => {
+            info!("API User registered successfully: ID {}", user_id);
+            let cookie = create_session_cookie("auth_id", &jwt, secure_cookie)?;
+
+            // Returns JSON success message with the cookie header
+            Ok(deliver_serialized_json_with_cookie(
+                &serde_json::json!({ "status": "success", "user_id": user_id }),
+                StatusCode::CREATED,
+                cookie,
+            )?)
+        }
+        Err(e) => deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST),
+    }
+}
+
+/// POST /register
 pub async fn handle_register(
     req: Request<hyper::body::Incoming>,
     state: AppState,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    info!("Processing web registration request");
+
+    match register_internal(req, state).await {
+        Ok((jwt, user_id, secure_cookie)) => {
+            info!("User registered successfully: ID {}", user_id);
+            let cookie = create_session_cookie("auth_id", &jwt, secure_cookie)?;
+            Ok(deliver_redirect_with_cookie("/chat", cookie)?)
+        }
+        Err(e) => deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST),
+    }
+}
+
+async fn register_internal(
+    req: Request<hyper::body::Incoming>,
+    state: AppState,
+) -> Result<(String, i64, bool), RegisterError> {
     info!("Processing registration request");
 
     let ip_address = get_client_ip(&req);
@@ -34,7 +73,7 @@ pub async fn handle_register(
         Ok(data) => data,
         Err(e) => {
             warn!("Register failed: {:?}", e.to_code());
-            return deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST);
+            Err(e)?
         }
     };
 
@@ -42,7 +81,7 @@ pub async fn handle_register(
         Ok(id) => id,
         Err(e) => {
             warn!("User creation failed: {:?}", e.to_code());
-            return deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST);
+            Err(e)?
         }
     };
 
@@ -70,10 +109,7 @@ pub async fn handle_register(
             "Failed to create session after registration: {}",
             e.to_code()
         );
-        return deliver_serialized_json(
-            &RegisterError::DatabaseError.to_response(),
-            StatusCode::INTERNAL_SERVER_ERROR,
-        );
+        Err(RegisterError::DatabaseError)?
     }
 
     let token_expiry_secs = state.config.read().await.auth.token_expiry_minutes * 60;
@@ -96,22 +132,11 @@ pub async fn handle_register(
         Ok(t) => t,
         Err(e) => {
             error!("JWT encoding failed after registration: {}", e);
-            return deliver_serialized_json(
-                &RegisterError::DatabaseError.to_response(),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            );
+            Err(RegisterError::DatabaseError)?
         }
     };
 
-    info!("User registered successfully: ID {}", user_id);
-
-    let instance_cookie = create_session_cookie("auth_id", &jwt, secure_cookie)
-        .context("Failed to create session cookie")?;
-
-    Ok(deliver_redirect_with_cookie(
-        "/chat",
-        Some(instance_cookie),
-    )?)
+    Ok((jwt, user_id, secure_cookie))
 }
 
 // ---------------------------------------------------------------------------

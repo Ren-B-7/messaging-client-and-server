@@ -381,17 +381,10 @@ async fn deliver_redirect_empty_body() {
 #[test]
 fn deliver_redirect_with_cookies() {
     let cookie = HeaderValue::from_static("session_id=abc123; Path=/");
-    let res = deliver_redirect_with_cookie("/new-location", Some(cookie)).unwrap();
+    let res = deliver_redirect_with_cookie("/new-location", cookie).unwrap();
     assert_eq!(res.status(), StatusCode::FOUND);
     assert_eq!(res.headers()["location"], "/new-location");
     assert!(res.headers().contains_key("set-cookie"));
-}
-
-#[test]
-fn deliver_redirect_with_none_cookie() {
-    let res = deliver_redirect_with_cookie("/new-location", None).unwrap();
-    assert_eq!(res.status(), StatusCode::FOUND);
-    assert!(!res.headers().contains_key("set-cookie"));
 }
 
 // ── deliver_text ──────────────────────────────────────────────────────────

@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use bytes::Bytes;
 use http_body_util::BodyExt;
 use http_body_util::combinators::BoxBody;
@@ -10,64 +10,81 @@ use crate::AppState;
 use crate::database::login;
 use crate::handlers::http::utils::{
     create_persistent_cookie, create_session_cookie, deliver_redirect_with_cookie,
-    deliver_serialized_json, encode_jwt, get_client_ip, get_user_agent, is_https,
+    deliver_serialized_json, deliver_serialized_json_with_cookie, encode_jwt, get_client_ip,
+    get_user_agent, is_https,
 };
 use shared::types::jwt::JwtClaims;
 use shared::types::login::*;
 
-/// POST /admin/api/login
+/// POST /api/login
+pub async fn handle_login_api(
+    req: Request<hyper::body::Incoming>,
+    state: AppState,
+) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    match login_internal(req, state).await {
+        Ok((user_id, cookie)) => deliver_serialized_json_with_cookie(
+            &serde_json::json!({ "status": "success", "user_id": user_id }),
+            StatusCode::OK,
+            cookie,
+        ),
+        Err(e) => deliver_serialized_json(&e.to_response(), StatusCode::UNAUTHORIZED),
+    }
+}
+/// POST /login
 pub async fn handle_login(
     req: Request<hyper::body::Incoming>,
     state: AppState,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    match login_internal(req, state).await {
+        Ok((_user_id, cookie)) => Ok(deliver_redirect_with_cookie("/admin", cookie)?),
+        Err(e) => deliver_serialized_json(&e.to_response(), StatusCode::UNAUTHORIZED),
+    }
+}
+
+/// POST /admin/api/login
+async fn login_internal(
+    req: Request<hyper::body::Incoming>,
+    state: AppState,
+) -> Result<(i64, hyper::header::HeaderValue), LoginError> {
     info!("Processing admin login request");
 
     let ip_address = get_client_ip(&req);
     let user_agent = get_user_agent(&req).unwrap_or_default();
     let secure_cookie = is_https(&req);
 
-    let login_data = match parse_body(req).await {
-        Ok(data) => data,
-        Err(e) => {
-            warn!("Admin login parsing failed: {:?}", e.to_code());
-            return deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST);
-        }
-    };
+    let login_data = parse_body(req).await.map_err(|e| {
+        warn!("Admin login parsing failed: {:?}", e);
+        LoginError::InternalError
+    })?;
 
-    if let Err(e) = validate_login(&login_data) {
-        warn!("Admin login validation failed: {:?}", e.to_code());
-        return deliver_serialized_json(&e.to_response(), StatusCode::BAD_REQUEST);
+    validate_login(&login_data).map_err(|e| {
+        info!("Admin login validation failed: {:?}", e.to_code());
+        LoginError::InvalidCredentials
+    })?;
+
+    let token_expiry_secs = state.config.read().await.auth.token_expiry_minutes * 60;
+
+    let (user_id, username, jwt) = attempt_login(&login_data, &state, ip_address, user_agent)
+        .await
+        .map_err(|e| {
+            warn!("Admin login failed for user: {:?}", e.to_code());
+            LoginError::InvalidCredentials
+        })?;
+
+    let cookie = if login_data.remember_me {
+        let max_age = std::time::Duration::from_secs(token_expiry_secs);
+        create_persistent_cookie("auth_id", &jwt, max_age, secure_cookie)
+    } else {
+        create_session_cookie("auth_id", &jwt, secure_cookie)
     }
+    .map_err(|_| LoginError::InternalError)?;
 
-    match attempt_login(&login_data, &state, ip_address, user_agent).await {
-        Ok((user_id, username, jwt)) => {
-            info!(
-                "Admin logged in successfully: {} (ID: {})",
-                username, user_id
-            );
+    info!(
+        "Admin logged in successfully: {} (ID: {})",
+        username, user_id
+    );
 
-            let token_expiry_secs = state.config.read().await.auth.token_expiry_minutes * 60;
-
-            // JWT is stored in the cookie so subsequent requests are authenticated.
-            let instance_cookie = if login_data.remember_me {
-                let max_age = std::time::Duration::from_secs(token_expiry_secs);
-                create_persistent_cookie("auth_id", &jwt, max_age, secure_cookie)
-                    .context("Failed to create persistent instance cookie")?
-            } else {
-                create_session_cookie("auth_id", &jwt, secure_cookie)
-                    .context("Failed to create session instance cookie")?
-            };
-
-            Ok(deliver_redirect_with_cookie(
-                "/admin",
-                Some(instance_cookie),
-            )?)
-        }
-        Err(e) => {
-            warn!("Admin login failed: {:?}", e.to_code());
-            deliver_serialized_json(&e.to_response(), StatusCode::UNAUTHORIZED)
-        }
-    }
+    Ok((user_id, cookie))
 }
 
 // ---------------------------------------------------------------------------

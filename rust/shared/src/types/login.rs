@@ -37,6 +37,7 @@ pub enum LoginResponse {
 // Login errors
 // ---------------------------------------------------------------------------
 
+#[derive(Debug, Clone, Serialize)]
 pub enum LoginError {
     InvalidCredentials,
     UserBanned,

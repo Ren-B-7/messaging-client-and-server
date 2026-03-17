@@ -167,7 +167,7 @@ pub fn build_user_router_with_config(
         })
         // ── Auth ────────────────────────────────────────────────────────────
         .post("/api/login", |req, state| async move {
-            auth::handle_login(req, state)
+            auth::handle_login_api(req, state)
                 .await
                 .context("Login attempt failed")
         })
@@ -177,7 +177,7 @@ pub fn build_user_router_with_config(
                 .context("Login attempt failed")
         })
         .post("/api/register", |req, state| async move {
-            auth::handle_register(req, state)
+            auth::handle_register_api(req, state)
                 .await
                 .context("Register failed")
         })

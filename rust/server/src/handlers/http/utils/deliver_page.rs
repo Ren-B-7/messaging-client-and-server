@@ -171,17 +171,16 @@ pub fn deliver_redirect(location: &str) -> Result<Response<BoxBody<Bytes, Infall
 /// Delivers a redirect response
 pub fn deliver_redirect_with_cookie(
     location: &str,
-    cookie: Option<HeaderValue>,
+    cookie: HeaderValue,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Delivering redirect to: {}", location);
 
     let empty_bytes: Bytes = Bytes::from("");
-    let mut builder = Response::builder()
+    let builder = Response::builder()
         .status(StatusCode::FOUND)
-        .header(header::LOCATION, location);
-    if let Some(c) = cookie {
-        builder = builder.header(header::SET_COOKIE, c);
-    }
+        .header(header::LOCATION, location)
+        .header(header::SET_COOKIE, cookie);
+
     let response = builder.body(full(empty_bytes)).map_err(|e: http::Error| {
         error!("Failed to build redirect response to {}: {}", location, e);
         anyhow!("Failed to build redirect response: {}", e)
