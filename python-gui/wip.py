@@ -1,2 +1,0 @@
-# wip
-print("Hello world")
