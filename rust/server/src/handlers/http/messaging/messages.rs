@@ -14,7 +14,7 @@ use shared::types::message::*;
 use shared::types::sse::SseEvent;
 
 use crate::AppState;
-use crate::database::{groups, messages, register};
+use crate::database::{groups, messages, utils};
 use crate::handlers::http::utils::{
     deliver_error_json, deliver_serialized_json, deliver_success_json,
 };
@@ -60,7 +60,7 @@ pub async fn handle_get_chats(
             if let Some(other_member) = other {
                 let other_id = other_member.user_id;
 
-                let name = register::get_user_by_id(&state.db, other_id)
+                let name = utils::get_user_by_id(&state.db, other_id)
                     .await
                     .ok()
                     .flatten()
@@ -68,7 +68,7 @@ pub async fn handle_get_chats(
                     .unwrap_or_else(|| format!("user_{}", other_id));
 
                 // Only set avatar_url when the other user actually has one.
-                let url = register::get_user_avatar(&state.db, other_id)
+                let url = utils::get_user_avatar(&state.db, other_id)
                     .await
                     .ok()
                     .flatten()
@@ -126,7 +126,7 @@ pub async fn handle_create_chat(
     let other_user_id: i64 = if let Some(uid) = params.get("user_id").and_then(|v| v.as_i64()) {
         uid
     } else if let Some(username) = params.get("username").and_then(|v| v.as_str()) {
-        match register::get_user_by_username(&state.db, username.to_string()).await? {
+        match utils::get_user_by_username(&state.db, username.to_string()).await? {
             Some(user) => user.id,
             None => {
                 return deliver_error_json(
@@ -153,7 +153,7 @@ pub async fn handle_create_chat(
     }
 
     // Resolve the other user's display name once — used in both branches below.
-    let other_username = register::get_user_by_id(&state.db, other_user_id)
+    let other_username = utils::get_user_by_id(&state.db, other_user_id)
         .await
         .ok()
         .flatten()
@@ -161,7 +161,7 @@ pub async fn handle_create_chat(
         .unwrap_or_else(|| format!("user_{}", other_user_id));
 
     // Resolve avatar URL for the other participant.
-    let other_avatar_url = register::get_user_avatar(&state.db, other_user_id)
+    let other_avatar_url = utils::get_user_avatar(&state.db, other_user_id)
         .await
         .ok()
         .flatten()

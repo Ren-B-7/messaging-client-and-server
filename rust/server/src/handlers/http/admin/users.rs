@@ -9,7 +9,7 @@ use hyper::{Request, Response, StatusCode};
 use tracing::info;
 
 use crate::AppState;
-use crate::database::{ban, register, utils::get_timestamp};
+use crate::database::{ban, register, utils};
 use crate::handlers::http::utils::json_response::*;
 
 /// GET /admin/api/users — list all users.
@@ -67,7 +67,7 @@ pub async fn handle_get_sessions(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Serving session list");
 
-    let now = get_timestamp();
+    let now = utils::get_timestamp();
 
     let sessions = state
         .db
@@ -260,7 +260,7 @@ pub async fn handle_promote_user(
         );
     }
 
-    let user = register::get_user_by_id(&state.db, user_id)
+    let user = utils::get_user_by_id(&state.db, user_id)
         .await
         .map_err(|e| anyhow::anyhow!("DB error: {}", e))?
         .ok_or_else(|| anyhow::anyhow!("User not found"))?;
@@ -310,7 +310,7 @@ pub async fn handle_demote_user(
         );
     }
 
-    let user = register::get_user_by_id(&state.db, user_id)
+    let user = utils::get_user_by_id(&state.db, user_id)
         .await
         .map_err(|e| anyhow::anyhow!("DB error: {}", e))?
         .ok_or_else(|| anyhow::anyhow!("User not found"))?;

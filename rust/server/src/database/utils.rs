@@ -1,5 +1,8 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use tokio_rusqlite::{Connection, OptionalExtension, Result, params, rusqlite};
+
+use shared::types::user::*;
 use uuid::Uuid;
 
 /// Get current Unix timestamp in seconds
@@ -100,4 +103,91 @@ pub fn is_strong_password(password: &str) -> bool {
 /// Calculate session expiry (current time + duration in seconds)
 pub fn calculate_expiry(duration_secs: i64) -> i64 {
     get_timestamp() + duration_secs
+}
+
+/// Get user by ID.
+pub async fn get_user_by_id(conn: &Connection, user_id: i64) -> Result<Option<User>> {
+    conn.call(move |conn: &mut rusqlite::Connection| {
+        let mut stmt = conn.prepare(
+            "SELECT id, username, email, created_at, is_banned FROM users WHERE id = ?1",
+        )?;
+        let user = stmt
+            .query_row(params![user_id], |row: &rusqlite::Row| {
+                Ok(User {
+                    id: row.get(0)?,
+                    username: row.get(1)?,
+                    email: row.get(2)?,
+                    created_at: row.get(3)?,
+                    is_banned: row.get::<_, i64>(4)? != 0,
+                })
+            })
+            .optional()?;
+        Ok(user)
+    })
+    .await
+}
+
+/// Get user by username.
+pub async fn get_user_by_username(conn: &Connection, username: String) -> Result<Option<User>> {
+    conn.call(move |conn: &mut rusqlite::Connection| {
+        let mut stmt = conn.prepare(
+            "SELECT id, username, email, created_at, is_banned FROM users WHERE username = ?1",
+        )?;
+        let user = stmt
+            .query_row(params![username], |row: &rusqlite::Row| {
+                Ok(User {
+                    id: row.get(0)?,
+                    username: row.get(1)?,
+                    email: row.get(2)?,
+                    created_at: row.get(3)?,
+                    is_banned: row.get::<_, i64>(4)? != 0,
+                })
+            })
+            .optional()?;
+        Ok(user)
+    })
+    .await
+}
+
+pub async fn get_user_avatar(conn: &Connection, user_id: i64) -> Result<Option<String>> {
+    conn.call(move |conn: &mut rusqlite::Connection| {
+        let mut stmt = conn.prepare("SELECT avatar_path FROM users WHERE id = ?1")?;
+        let path = stmt
+            .query_row(params![user_id], |row: &rusqlite::Row| row.get(0))
+            .optional()?;
+        Ok(path)
+    })
+    .await
+}
+
+/// Search users whose username starts with `prefix` (case-insensitive).
+/// Returns at most `limit` results.
+pub async fn search_users_by_username(
+    conn: &Connection,
+    prefix: &str,
+    limit: i64,
+) -> Result<Vec<User>> {
+    let pattern = format!("{}%", prefix.to_lowercase());
+    conn.call(move |conn: &mut rusqlite::Connection| {
+        let mut stmt = conn.prepare(
+            "SELECT id, username, email, created_at, is_banned
+             FROM users
+             WHERE lower(username) LIKE ?1
+             ORDER BY username ASC
+             LIMIT ?2",
+        )?;
+        let users = stmt
+            .query_map(params![pattern, limit], |row: &rusqlite::Row| {
+                Ok(User {
+                    id: row.get(0)?,
+                    username: row.get(1)?,
+                    email: row.get(2)?,
+                    created_at: row.get(3)?,
+                    is_banned: row.get::<_, i64>(4)? != 0,
+                })
+            })?
+            .collect::<std::result::Result<Vec<User>, rusqlite::Error>>()?;
+        Ok(users)
+    })
+    .await
 }

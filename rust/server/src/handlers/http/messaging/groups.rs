@@ -8,7 +8,7 @@ use std::convert::Infallible;
 use tracing::info;
 
 use crate::AppState;
-use crate::database::{groups, register};
+use crate::database::{groups, utils};
 use crate::handlers::http::utils::{deliver_error_json, deliver_success_json};
 use shared::types::groups::*;
 use shared::types::jwt::JwtClaims;
@@ -157,7 +157,7 @@ pub async fn handle_get_members(
     // Resolve usernames for each member
     let mut members_json: Vec<serde_json::Value> = Vec::with_capacity(members.len());
     for m in members {
-        let username = register::get_user_by_id(&state.db, m.user_id)
+        let username = utils::get_user_by_id(&state.db, m.user_id)
             .await
             .ok()
             .flatten()
@@ -209,7 +209,7 @@ pub async fn handle_add_member(
     let target_user_id: i64 = if let Some(uid) = params.get("user_id").and_then(|v| v.as_i64()) {
         uid
     } else if let Some(username) = params.get("username").and_then(|v| v.as_str()) {
-        match register::get_user_by_username(&state.db, username.to_string()).await? {
+        match utils::get_user_by_username(&state.db, username.to_string()).await? {
             Some(user) => user.id,
             None => {
                 return deliver_error_json(
@@ -423,7 +423,7 @@ pub async fn handle_search_users(
         );
     }
 
-    let users = register::search_users_by_username(&state.db, &q, 10)
+    let users = utils::search_users_by_username(&state.db, &q, 10)
         .await
         .context("Failed to search users")?;
 

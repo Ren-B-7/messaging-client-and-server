@@ -13,4 +13,4 @@ Modules:
 
 __version__ = "2.0"
 __author__ = "Chat Client Contributors"
-__all__ = ["config", "cache", "api", "theme", "app", "main"]
+__all__ = ["config", "cache", "api", "theme", "app", "main", "logger"]

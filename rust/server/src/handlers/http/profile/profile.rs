@@ -32,7 +32,7 @@ use crate::AppState;
 use crate::database::{login, password, register, utils};
 use crate::handlers::http::utils::{
     create_session_cookie, deliver_error_json, deliver_serialized_json,
-    deliver_serialized_json_with_cookie, is_https,
+    deliver_serialized_json_with_cookie, deliver_success_json, is_https,
 };
 
 // ===========================================================================
@@ -51,7 +51,7 @@ pub async fn handle_get_profile(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing get profile for user {}", claims.user_id);
 
-    let user = match register::get_user_by_id(&state.db, claims.user_id).await {
+    let user = match utils::get_user_by_id(&state.db, claims.user_id).await {
         Ok(Some(u)) => u,
         Ok(None) => {
             return deliver_error_json("NOT_FOUND", "User not found", StatusCode::NOT_FOUND);
@@ -60,29 +60,24 @@ pub async fn handle_get_profile(
     };
 
     // Resolve avatar URL — returns a usable path the browser can GET directly.
-    let avatar_url = register::get_user_avatar(&state.db, claims.user_id)
+    let avatar_url = utils::get_user_avatar(&state.db, claims.user_id)
         .await
         .ok()
         .flatten()
         .map(|_| format!("/api/avatar/{}", claims.user_id));
 
-    let profile_json = serde_json::json!({
-        "status": "success",
-        "data": {
+    deliver_success_json(
+        Some(serde_json::json!({
             "user_id":    user.id,
             "username":   user.username,
             "email":      user.email,
             "is_admin":   claims.is_admin,
             "created_at": user.created_at,
             "avatar_url": avatar_url,
-        }
-    });
-
-    Ok(Response::builder()
-        .status(StatusCode::OK)
-        .header("content-type", "application/json")
-        .body(Full::new(Bytes::from(profile_json.to_string())).boxed())
-        .context("Failed to build profile response")?)
+        })),
+        None,
+        StatusCode::OK,
+    )
 }
 
 // ===========================================================================
@@ -157,7 +152,7 @@ async fn update_user_profile(
             })?;
 
         if exists {
-            let current_user = register::get_user_by_id(&state.db, user_id)
+            let current_user = utils::get_user_by_id(&state.db, user_id)
                 .await
                 .map_err(|_| ProfileError::DatabaseError)?
                 .ok_or(ProfileError::UserNotFound)?;
@@ -564,7 +559,7 @@ pub async fn handle_upload_avatar(
         .with_context(|| format!("Failed to write avatar to {}", new_path))?;
 
     // ── Swap out old file (best-effort) ──────────────────────────────────────
-    if let Ok(Some(old_path)) = register::get_user_avatar(&state.db, user_id).await {
+    if let Ok(Some(old_path)) = utils::get_user_avatar(&state.db, user_id).await {
         if let Err(e) = tokio::fs::remove_file(&old_path).await {
             warn!("Could not remove old avatar {:?}: {}", old_path, e);
         }
@@ -605,7 +600,7 @@ pub async fn handle_get_avatar(
     target_user_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     // Look up stored path
-    let avatar_path = match register::get_user_avatar(&state.db, target_user_id).await {
+    let avatar_path = match utils::get_user_avatar(&state.db, target_user_id).await {
         Ok(Some(p)) => p,
         Ok(None) => {
             return deliver_error_json(
