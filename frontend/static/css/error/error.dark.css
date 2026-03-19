@@ -15,15 +15,15 @@
 
 /* Dark-specific shadow and glow adjustments */
 :root[data-theme="dark"] .__err_card__ {
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 8px 32px rgb(0 0 0 / 0.5);
 }
 
 :root[data-theme="dark"] .__err_btn_primary__:hover {
-  box-shadow: 0 4px 16px rgba(59, 143, 243, 0.35);
+  box-shadow: 0 4px 16px rgb(59 143 243 / 0.35);
 }
 
 :root[data-theme="dark"] .__err_icon__ {
-  filter: drop-shadow(0 4px 16px rgba(0, 0, 0, 0.4));
+  filter: drop-shadow(0 4px 16px rgb(0 0 0 / 0.4));
 }
 
 :root[data-theme="dark"] #loading {

@@ -12,7 +12,7 @@
 
 /* Dark mode specific adjustments */
 :root[data-theme="dark"] .navbar {
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
 }
 
 :root[data-theme="dark"] .conversation-item.active {
@@ -20,7 +20,7 @@
 }
 
 :root[data-theme="dark"] .message.sent .message-bubble {
-  box-shadow: 0 2px 8px rgba(59, 143, 243, 0.2);
+  box-shadow: 0 2px 8px rgb(59 143 243 / 0.2);
 }
 
 /* All other styles inherit from chat.light.css */

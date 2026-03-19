@@ -16,43 +16,43 @@
   --admin-stat-red: var(--danger);
   --admin-stat-green: var(--success);
   --admin-stat-blue: var(--info);
-  --admin-badge-amber-bg: rgba(245, 158, 11, 0.15);
+  --admin-badge-amber-bg: rgb(245 158 11 / 0.15);
   --admin-badge-amber-fg: #f59e0b;
-  --admin-badge-amber-border: rgba(245, 158, 11, 0.3);
-  --admin-badge-red-bg: rgba(248, 81, 73, 0.15);
+  --admin-badge-amber-border: rgb(245 158 11 / 0.3);
+  --admin-badge-red-bg: rgb(248 81 73 / 0.15);
   --admin-badge-red-fg: var(--danger);
-  --admin-badge-red-border: rgba(248, 81, 73, 0.3);
-  --admin-badge-green-bg: rgba(63, 185, 80, 0.15);
+  --admin-badge-red-border: rgb(248 81 73 / 0.3);
+  --admin-badge-green-bg: rgb(63 185 80 / 0.15);
   --admin-badge-green-fg: var(--success);
-  --admin-badge-green-border: rgba(63, 185, 80, 0.3);
+  --admin-badge-green-border: rgb(63 185 80 / 0.3);
   --admin-badge-muted-bg: var(--bg-tertiary);
   --admin-badge-muted-fg: var(--fg-tertiary);
   --admin-badge-muted-border: var(--border);
-  --admin-btn-amber-bg: rgba(245, 158, 11, 0.15);
+  --admin-btn-amber-bg: rgb(245 158 11 / 0.15);
   --admin-btn-amber-fg: #f59e0b;
-  --admin-btn-amber-border: rgba(245, 158, 11, 0.3);
-  --admin-btn-amber-hover: rgba(245, 158, 11, 0.25);
-  --admin-btn-red-bg: rgba(248, 81, 73, 0.15);
+  --admin-btn-amber-border: rgb(245 158 11 / 0.3);
+  --admin-btn-amber-hover: rgb(245 158 11 / 0.25);
+  --admin-btn-red-bg: rgb(248 81 73 / 0.15);
   --admin-btn-red-fg: var(--danger);
-  --admin-btn-red-border: rgba(248, 81, 73, 0.3);
-  --admin-btn-red-hover: rgba(248, 81, 73, 0.25);
-  --admin-btn-green-bg: rgba(63, 185, 80, 0.15);
+  --admin-btn-red-border: rgb(248 81 73 / 0.3);
+  --admin-btn-red-hover: rgb(248 81 73 / 0.25);
+  --admin-btn-green-bg: rgb(63 185 80 / 0.15);
   --admin-btn-green-fg: var(--success);
-  --admin-btn-green-border: rgba(63, 185, 80, 0.3);
-  --admin-btn-green-hover: rgba(63, 185, 80, 0.25);
+  --admin-btn-green-border: rgb(63 185 80 / 0.3);
+  --admin-btn-green-hover: rgb(63 185 80 / 0.25);
 }
 
 /* Dark mode specific adjustments */
 :root[data-theme="dark"] .topbar {
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.4);
 }
 
 :root[data-theme="dark"] .panel {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.35);
 }
 
 :root[data-theme="dark"] .stat-card {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.35);
 }
 
 :root[data-theme="dark"] .sidebar-item.active {
@@ -73,8 +73,8 @@
 /* ── Expired sessions ───────────────────────────────────────────────────────
  */
 :root[data-theme="dark"] tbody tr.is-expired {
-  background: rgba(248, 81, 73, 0.08);
+  background: rgb(248 81 73 / 0.08);
 }
 :root[data-theme="dark"] tbody tr.is-expired:hover {
-  background: rgba(248, 81, 73, 0.14);
+  background: rgb(248 81 73 / 0.14);
 }

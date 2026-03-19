@@ -11,7 +11,7 @@
 /* Dark mode specific adjustments */
 :root[data-theme="dark"] .settings-section {
   background: var(--bg-secondary);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.3);
 }
 
 :root[data-theme="dark"] .setting-option {
@@ -31,7 +31,7 @@
 }
 
 :root[data-theme="dark"] .danger-zone {
-  background: rgba(248, 81, 73, 0.1);
+  background: rgb(248 81 73 / 0.1);
   border-color: var(--danger);
 }
 
