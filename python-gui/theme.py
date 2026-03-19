@@ -18,16 +18,16 @@ class ThemeManager:
         self.theme = "light"
         self.colors = COLORS[self.theme]
         self.callbacks = []
-        
+
         logger.info("ThemeManager initialized")
         self.load_theme()
 
     def load_theme(self):
         """Load saved theme from config"""
         logger.debug("Loading theme preference from config file")
-        
+
         config_file = os.path.expanduser("~/.chat_client_config")
-        
+
         if os.path.exists(config_file):
             logger.debug(f"Config file found: {config_file}")
             try:
@@ -36,13 +36,12 @@ class ThemeManager:
                     self.theme = config.get("theme", "light")
                     self.colors = COLORS[self.theme]
                     logger.info(
-                        f"Theme loaded from config",
-                        extra_info=f"Theme: {self.theme}"
+                        f"Theme loaded from config", extra_info=f"Theme: {self.theme}"
                     )
             except Exception as e:
                 logger.warning(
                     "Failed to load theme from config",
-                    extra_info=f"Using default (light). Error: {str(e)}"
+                    extra_info=f"Using default (light). Error: {str(e)}",
                 )
                 self.theme = "light"
                 self.colors = COLORS[self.theme]
@@ -53,21 +52,21 @@ class ThemeManager:
     def save_theme(self):
         """Save theme preference"""
         logger.debug("Saving theme preference to config file")
-        
+
         config_file = os.path.expanduser("~/.chat_client_config")
         config = {"theme": self.theme}
-        
+
         try:
             with open(config_file, "w") as f:
                 json.dump(config, f)
             logger.info(
                 f"Theme saved to config",
-                extra_info=f"Theme: {self.theme}, File: {config_file}"
+                extra_info=f"Theme: {self.theme}, File: {config_file}",
             )
         except Exception as e:
             logger.warning(
                 "Failed to save theme to config",
-                extra_info=f"Theme: {self.theme}, Error: {str(e)}"
+                extra_info=f"Theme: {self.theme}, Error: {str(e)}",
             )
 
     def toggle(self):
@@ -75,12 +74,9 @@ class ThemeManager:
         old_theme = self.theme
         self.theme = "dark" if self.theme == "light" else "light"
         self.colors = COLORS[self.theme]
-        
-        logger.info(
-            "Theme toggled",
-            extra_info=f"{old_theme} → {self.theme}"
-        )
-        
+
+        logger.info("Theme toggled", extra_info=f"{old_theme} → {self.theme}")
+
         self.save_theme()
 
         # Notify callbacks
@@ -91,7 +87,7 @@ class ThemeManager:
             except Exception as e:
                 logger.warning(
                     "Theme callback failed",
-                    extra_info=f"Callback: {callback.__name__}, Error: {str(e)}"
+                    extra_info=f"Callback: {callback.__name__}, Error: {str(e)}",
                 )
 
     def subscribe(self, callback):
@@ -100,12 +96,11 @@ class ThemeManager:
             self.callbacks.append(callback)
             logger.debug(
                 "Theme change callback registered",
-                extra_info=f"Callback: {callback.__name__}, Total: {len(self.callbacks)}"
+                extra_info=f"Callback: {callback.__name__}, Total: {len(self.callbacks)}",
             )
         except Exception as e:
             logger.warning(
-                "Failed to register theme callback",
-                extra_info=f"Error: {str(e)}"
+                "Failed to register theme callback", extra_info=f"Error: {str(e)}"
             )
 
     def apply(self):
@@ -116,5 +111,5 @@ class ThemeManager:
         except Exception as e:
             logger.warning(
                 "Failed to apply theme to root window",
-                extra_info=f"Theme: {self.theme}, Error: {str(e)}"
+                extra_info=f"Theme: {self.theme}, Error: {str(e)}",
             )

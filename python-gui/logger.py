@@ -6,7 +6,7 @@ Usage:
     from logger import Logger, LOG_INFO, LOG_WARNING, LOG_EXCEPTION
 
     logger = Logger(dev_mode=True)  # or False for standard mode
-    
+
     logger.info("Login successful", func_name="login")
     logger.warning("Connection slow", func_name="connect")
     logger.exception("Connection failed", "Critical error", func_name="connect")
@@ -53,7 +53,7 @@ COLORS = {
 class Logger:
     """
     Comprehensive logging system for chat client
-    
+
     Modes:
         - DEV: Prints all logs (INFO, WARNING, EXCEPTION)
         - STANDARD: Prints only errors (WARNING, EXCEPTION)
@@ -62,7 +62,7 @@ class Logger:
     def __init__(self, dev_mode=False, log_file=None):
         """
         Initialize logger
-        
+
         Args:
             dev_mode (bool): If True, print all logs. If False, print only errors.
             log_file (str): Optional path to log file. If None, uses default.
@@ -139,7 +139,7 @@ class Logger:
     def info(self, message, extra_info="", func_name=None):
         """
         Log info message (only shown in DEV mode)
-        
+
         Args:
             message (str): Main message
             extra_info (str): Additional information
@@ -155,12 +155,14 @@ class Logger:
     def warning(self, message, extra_info="", func_name=None):
         """
         Log warning message (shown in both modes)
-        
+
         Args:
             message (str): Main message
             extra_info (str): Additional information
             func_name (str): Optional function name for context
         """
+        if not extra_info:
+            extra_info = ""
         formatted = self._format_message(LOG_WARNING, message, extra_info)
         self._print_with_color(LOG_WARNING, formatted)
         self._write_log_file(formatted)
@@ -168,13 +170,13 @@ class Logger:
     def exception(self, message, error_detail="", func_name=None, stop=False):
         """
         Log exception message (shown in both modes)
-        
+
         Args:
             message (str): Main message
             error_detail (str): Error details/traceback
             func_name (str): Optional function name for context
             stop (bool): If True, prints "SYSTEM CRITICAL - STOPPING" and returns True
-        
+
         Returns:
             bool: True if stop=True, False otherwise
         """
@@ -195,7 +197,7 @@ class Logger:
     def debug(self, message, extra_info="", func_name=None):
         """
         Log debug message (only shown in DEV mode)
-        
+
         Args:
             message (str): Main message
             extra_info (str): Additional information
@@ -211,7 +213,7 @@ class Logger:
     def log(self, level, message, extra_info=""):
         """
         Log message with specified level
-        
+
         Args:
             level (str): One of LOG_INFO, LOG_WARNING, LOG_EXCEPTION, LOG_DEBUG
             message (str): Main message
@@ -248,7 +250,7 @@ class Logger:
 def log_function(logger, level=LOG_INFO):
     """
     Decorator to automatically log function calls
-    
+
     Usage:
         @log_function(logger, level=LOG_DEBUG)
         def my_function(x, y):
@@ -262,9 +264,7 @@ def log_function(logger, level=LOG_INFO):
             args_str = ", ".join(
                 [str(arg)[:50] for arg in args[1:]]  # Skip 'self'
             )  # Limit arg length
-            kwargs_str = ", ".join(
-                [f"{k}={str(v)[:50]}" for k, v in kwargs.items()]
-            )
+            kwargs_str = ", ".join([f"{k}={str(v)[:50]}" for k, v in kwargs.items()])
 
             all_args = ", ".join([s for s in [args_str, kwargs_str] if s])
             msg = f"Calling {func_name}({all_args})"

@@ -15,33 +15,30 @@ class MessageCache:
         self.messages = defaultdict(list)  # chat_id -> [messages]
         self.limit = limit
         logger.info(
-            "MessageCache initialized",
-            extra_info=f"Max messages per chat: {limit}"
+            "MessageCache initialized", extra_info=f"Max messages per chat: {limit}"
         )
 
     def add_message(self, chat_id, message):
         """Add message to cache"""
         try:
             self.messages[chat_id].append(message)
-            
+
             # Keep only recent messages
             if len(self.messages[chat_id]) > self.limit:
                 removed_count = len(self.messages[chat_id]) - self.limit
                 self.messages[chat_id] = self.messages[chat_id][-self.limit :]
                 logger.debug(
                     f"Cache limit reached for chat {chat_id}",
-                    extra_info=f"Removed {removed_count} old messages"
+                    extra_info=f"Removed {removed_count} old messages",
                 )
-            
+
             logger.debug(
                 f"Message added to cache",
-                extra_info=f"Chat: {chat_id}, Total: {len(self.messages[chat_id])}"
+                extra_info=f"Chat: {chat_id}, Total: {len(self.messages[chat_id])}",
             )
         except Exception as e:
             logger.exception(
-                "Failed to add message to cache",
-                error_detail=str(e),
-                stop=False
+                "Failed to add message to cache", error_detail=str(e), stop=False
             )
 
     def get_messages(self, chat_id):
@@ -50,13 +47,13 @@ class MessageCache:
             messages = self.messages.get(chat_id, [])
             logger.debug(
                 f"Retrieved cached messages",
-                extra_info=f"Chat: {chat_id}, Count: {len(messages)}"
+                extra_info=f"Chat: {chat_id}, Count: {len(messages)}",
             )
             return messages
         except Exception as e:
             logger.warning(
                 "Failed to retrieve cached messages",
-                extra_info=f"Chat: {chat_id}, Error: {str(e)}"
+                extra_info=f"Chat: {chat_id}, Error: {str(e)}",
             )
             return []
 
@@ -68,14 +65,14 @@ class MessageCache:
                 del self.messages[chat_id]
                 logger.info(
                     f"Cleared chat cache",
-                    extra_info=f"Chat: {chat_id}, Cleared: {count} messages"
+                    extra_info=f"Chat: {chat_id}, Cleared: {count} messages",
                 )
             else:
                 logger.debug(f"Chat not in cache: {chat_id}")
         except Exception as e:
             logger.warning(
                 "Failed to clear chat cache",
-                extra_info=f"Chat: {chat_id}, Error: {str(e)}"
+                extra_info=f"Chat: {chat_id}, Error: {str(e)}",
             )
 
     def clear_all(self):
@@ -86,10 +83,7 @@ class MessageCache:
             self.messages.clear()
             logger.info(
                 "Cleared entire cache",
-                extra_info=f"Chats: {chat_count}, Messages: {count}"
+                extra_info=f"Chats: {chat_count}, Messages: {count}",
             )
         except Exception as e:
-            logger.warning(
-                "Failed to clear cache",
-                error_detail=str(e)
-            )
+            logger.warning("Failed to clear cache", error_detail=str(e))

@@ -40,7 +40,7 @@ def main():
 
     try:
         root = tk.Tk()
-        app  = ChatClientApp(root)
+        app = ChatClientApp(root)
 
         # ── Clean shutdown helper ─────────────────────────────────────────────
         _closing = threading.Event()
@@ -48,7 +48,7 @@ def main():
         def _on_close():
             """Orchestrate a clean shutdown from any calling context."""
             if _closing.is_set():
-                return          # guard against double-call
+                return  # guard against double-call
             _closing.set()
 
             logger.separator("APPLICATION SHUTDOWN")
