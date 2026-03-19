@@ -13,7 +13,6 @@ Usage:
 """
 
 import os
-import sys
 from datetime import datetime
 from functools import wraps
 import traceback

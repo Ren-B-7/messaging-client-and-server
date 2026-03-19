@@ -1,13 +1,6 @@
 """
-Chat API Client - OPTIMIZED
+Chat API Client
 HTTP client with automatic cookie jar management, reconnect logic, and ThreadPoolExecutor.
-
-OPTIMIZATION HIGHLIGHTS:
-  ✓ ThreadPoolExecutor with max_workers=4 for bounded concurrency
-  ✓ Replaces manual threading, reduces thread creation overhead
-  ✓ ~30-50% faster for concurrent operations
-  ✓ ~40% less memory usage
-  ✓ Automatic exception handling via futures
 """
 
 import urllib.request
@@ -38,10 +31,6 @@ class ChatAPIClient:
         self.last_error = None
         self._shutdown = threading.Event()
 
-        # ✅ OPTIMIZATION: ThreadPoolExecutor for bounded concurrency
-        # - max_workers=4: Network I/O is the bottleneck, not CPU
-        # - thread_name_prefix: For debugging in logs
-        # - Reuses threads instead of creating new ones each time
         self.executor = ThreadPoolExecutor(
             max_workers=4, thread_name_prefix="api-worker"
         )
@@ -524,9 +513,6 @@ class ChatAPIClient:
         logger.info("API client shutdown requested")
         self._shutdown.set()
 
-        # ✅ OPTIMIZATION: Shutdown thread pool gracefully
-        # - Wait up to 3 seconds for pending tasks to complete
-        # - This is called during app shutdown, so brief delay is acceptable
         try:
             logger.debug("Shutting down thread pool executor")
             self.executor.shutdown(wait=True, cancel_futures=True)

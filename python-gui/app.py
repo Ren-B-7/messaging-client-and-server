@@ -16,8 +16,6 @@ import subprocess
 import os
 import threading
 from collections import defaultdict
-from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor
 
 import config
 from api import ChatAPIClient
@@ -405,11 +403,6 @@ class ChatClientApp:
         except Exception as e:
             self.logger.exception("Failed to initialize API client", str(e), stop=True)
             raise
-
-        # ✅ OPTIMIZATION: GUI thread pool for background operations
-        # Optional: Create our own executor for GUI-side async tasks
-        # (The API executor in api.py handles network operations)
-        # Typically not needed, but useful if adding more background work
 
         # State
         self.current_user = None
