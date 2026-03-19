@@ -771,6 +771,9 @@ class ChatClientApp:
                 if self.is_admin:
                     self.tab_bar.set_enabled("Admin", True)
                 self.tab_bar.select("Chat")
+                # Fetch authoritative profile from GET /api/profile in background.
+                # The login response may omit fields (e.g. full_name, is_admin).
+                self._fetch_profile()
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to parse login response: {e}")
         else:
@@ -779,6 +782,32 @@ class ChatClientApp:
                 payload.get("message") if isinstance(payload, dict) else str(payload)
             ) or "Login failed"
             messagebox.showerror("Login Failed", msg)
+
+    def _fetch_profile(self):
+        """Background fetch of GET /api/profile — updates current_user with full data."""
+
+        def t():
+            try:
+                r = self.api.get_profile()
+                self.root.after(0, lambda: self._on_profile_loaded(r))
+            except Exception as e:
+                self.logger.warning("Profile fetch failed", str(e))
+
+        threading.Thread(target=t, daemon=True).start()
+
+    def _on_profile_loaded(self, response):
+        if not response.get("success"):
+            return
+        profile = self._unwrap(response)
+        if not isinstance(profile, dict):
+            return
+        self.current_user = profile
+        was_admin = self.is_admin
+        self.is_admin = profile.get("is_admin", False)
+        self.navbar.set_user(f"@{profile.get('username', '')}")
+        # Unlock Admin tab if the profile confirms admin rights.
+        if self.is_admin and not was_admin:
+            self.tab_bar.set_enabled("Admin", True)
 
     def handle_register(self, email, username, password, fullname):
         if not all([email, username, password, fullname]):
@@ -826,35 +855,95 @@ class ChatClientApp:
         sidebar.pack(side=tk.LEFT, fill=tk.Y)
         sidebar.pack_propagate(False)
 
-        # Sidebar header
-        sidebar_hdr = tk.Frame(sidebar, bg=c("bg_secondary"), height=SP[12])
-        sidebar_hdr.pack(fill=tk.X, padx=SP[4], pady=SP[4])
-        sidebar_hdr.pack_propagate(False)
+        # ── Sidebar tab bar (Messages | Groups) ───────────────────────────
+        self._sidebar_tab = tk.StringVar(value="messages")
 
-        make_label(
-            sidebar_hdr,
-            "Conversations",
-            self,
-            style="primary",
-            size="base",
-            bold=True,
-            bg=c("bg_secondary"),
-        ).pack(side=tk.LEFT, anchor="w")
+        tab_bar_frame = tk.Frame(sidebar, bg=c("bg_secondary"))
+        tab_bar_frame.pack(fill=tk.X)
 
-        btn_row = tk.Frame(sidebar_hdr, bg=c("bg_secondary"))
-        btn_row.pack(side=tk.RIGHT)
+        tab_bottom_border = tk.Frame(tab_bar_frame, bg=c("border"), height=1)
+        tab_bottom_border.pack(side=tk.BOTTOM, fill=tk.X)
 
-        make_btn(btn_row, "↺", self.load_chats, self, variant="ghost", size="sm").pack(
-            side=tk.LEFT, padx=(0, SP[1])
+        def _make_sidebar_tab(parent, label, key):
+            btn = tk.Button(
+                parent,
+                text=label,
+                relief=tk.FLAT,
+                bd=0,
+                highlightthickness=0,
+                font=(FONT_SANS, FS["sm"], "bold"),
+                bg=c("bg_secondary"),
+                fg=c("fg_secondary"),
+                activebackground=c("bg_secondary"),
+                padx=SP[4],
+                pady=SP[3],
+                cursor="hand2",
+            )
+            btn.pack(side=tk.LEFT)
+            return btn
+
+        self._tab_btn_messages = _make_sidebar_tab(
+            tab_bar_frame, "Messages", "messages"
         )
+        self._tab_btn_groups = _make_sidebar_tab(tab_bar_frame, "Groups", "groups")
+
+        # ── Scrollable list frames (one per tab) ──────────────────────────
+        lists_container = tk.Frame(sidebar, bg=c("bg_secondary"))
+        lists_container.pack(fill=tk.BOTH, expand=True)
+
+        # Each tab lives in its own wrapper so pack/pack_forget works cleanly
+        chats_wrapper = tk.Frame(lists_container, bg=c("bg_secondary"))
+        groups_wrapper = tk.Frame(lists_container, bg=c("bg_secondary"))
+
+        _, self.chats_frame = make_scrollable(chats_wrapper, c("bg_secondary"))
+        _, self.groups_frame = make_scrollable(groups_wrapper, c("bg_secondary"))
+
+        # Keep conv_frame pointing at the active tab's frame for _make_conv_item
+        self.conv_frame = self.chats_frame
+
+        def _select_sidebar_tab(key):
+            self._sidebar_tab.set(key)
+            if key == "messages":
+                self.conv_frame = self.chats_frame
+                self._tab_btn_messages.configure(fg=c("accent"))
+                self._tab_btn_groups.configure(fg=c("fg_secondary"))
+                groups_wrapper.pack_forget()
+                chats_wrapper.pack(fill=tk.BOTH, expand=True)
+            else:
+                self.conv_frame = self.groups_frame
+                self._tab_btn_groups.configure(fg=c("accent"))
+                self._tab_btn_messages.configure(fg=c("fg_secondary"))
+                chats_wrapper.pack_forget()
+                groups_wrapper.pack(fill=tk.BOTH, expand=True)
+
+        self._select_sidebar_tab = _select_sidebar_tab
+
+        self._tab_btn_messages.configure(
+            command=lambda: _select_sidebar_tab("messages")
+        )
+        self._tab_btn_groups.configure(command=lambda: _select_sidebar_tab("groups"))
+
+        # "+ New" button — opens DM or Group modal depending on active tab
         make_btn(
-            btn_row, "+ New", self.new_conversation, self, variant="primary", size="sm"
-        ).pack(side=tk.LEFT)
+            tab_bar_frame,
+            "+ New",
+            self.new_conversation,
+            self,
+            variant="primary",
+            size="sm",
+        ).pack(side=tk.RIGHT, padx=(0, SP[2]), pady=SP[2])
 
-        Separator(sidebar, c("border"))
+        make_btn(
+            tab_bar_frame,
+            "↺",
+            self.load_chats,
+            self,
+            variant="ghost",
+            size="sm",
+        ).pack(side=tk.RIGHT, pady=SP[2])
 
-        # Scrollable conv list
-        _, self.conv_frame = make_scrollable(sidebar, c("bg_secondary"))
+        # Start on Messages tab
+        _select_sidebar_tab("messages")
 
         # ── Right border ──────────────────────────────────────────────────
         tk.Frame(container, bg=c("border"), width=1).pack(side=tk.LEFT, fill=tk.Y)
@@ -1047,74 +1136,89 @@ class ChatClientApp:
     # ─────────────────────────────────────────────────────────────────────────
 
     def load_chats(self):
-        def t():
+        """Fetch /api/chats and /api/groups concurrently, then render sidebar."""
+        results = {}
+        lock = threading.Lock()
+
+        def _fetch(key, fn):
             try:
-                r = self.api.get_chats()
-                self.root.after(0, lambda: self._display_chats(r))
+                r = fn()
             except Exception as e:
-                self.logger.exception("Error loading chats", str(e), stop=False)
+                self.logger.exception(f"Error loading {key}", str(e), stop=False)
+                r = {"success": False, "data": ""}
+            with lock:
+                results[key] = r
+                if len(results) == 2:
+                    chats_r = results["chats"]
+                    groups_r = results["groups"]
+                    self.root.after(0, lambda: self._display_sidebar(chats_r, groups_r))
 
-        threading.Thread(target=t, daemon=True).start()
+        threading.Thread(
+            target=_fetch, args=("chats", self.api.get_chats), daemon=True
+        ).start()
+        threading.Thread(
+            target=_fetch, args=("groups", self.api.get_groups), daemon=True
+        ).start()
 
-    def _display_chats(self, response):
-        for w in self.conv_frame.winfo_children():
-            w.destroy()
+    def _display_sidebar(self, chats_response, groups_response):
         c = self.get_color
 
-        if not response.get("success"):
-            raw_err = response.get("data", "")
-            try:
-                err_obj = json.loads(raw_err)
-                msg = err_obj.get("message") or err_obj.get("error") or raw_err
-            except Exception:
-                msg = raw_err or "Failed to load"
-            make_label(
-                self.conv_frame,
-                f"⚠ {msg[:60]}",
-                self,
-                style="danger",
-                size="sm",
-                bg=c("bg_secondary"),
-            ).pack(padx=SP[4], pady=SP[4])
-            return
+        def _extract(response, *keys):
+            """Return None on HTTP error, list (possibly empty) on success."""
+            if not response.get("success"):
+                return None
+            payload = self._unwrap(response)
+            if isinstance(payload, list):
+                return payload
+            if isinstance(payload, dict):
+                for k in keys:
+                    v = payload.get(k)
+                    if v is not None:
+                        return v
+            return []
 
-        payload = self._unwrap(response)
+        def _populate(frame, items, empty_msg, error_msg):
+            for w in frame.winfo_children():
+                w.destroy()
+            if items is None:
+                make_label(
+                    frame,
+                    f"⚠ {error_msg}",
+                    self,
+                    style="danger",
+                    size="xs",
+                    bg=c("bg_secondary"),
+                ).pack(anchor=tk.W, padx=SP[4], pady=SP[3])
+            elif not items:
+                make_label(
+                    frame,
+                    empty_msg,
+                    self,
+                    style="tertiary",
+                    size="xs",
+                    bg=c("bg_secondary"),
+                ).pack(anchor=tk.W, padx=SP[4], pady=SP[3])
+            else:
+                for item in items:
+                    conv = self._normalise_chat(item)
+                    self._make_conv_item(conv, conv["name"], frame)
 
-        # payload may be a list directly, or a dict with a "chats"/"chats" key
-        if isinstance(payload, dict):
-            raw_list = (
-                payload.get("chats")
-                or payload.get("chats")
-                or payload.get("groups")
-                or []
-            )
-        elif isinstance(payload, list):
-            raw_list = payload
-        else:
-            raw_list = []
+        chats = _extract(chats_response, "chats", "conversations")
+        groups = _extract(groups_response, "groups")
 
-        chats = [self._normalise_chat(item) for item in raw_list]
+        _populate(
+            self.chats_frame, chats, "No direct messages yet", "Failed to load chats"
+        )
+        _populate(self.groups_frame, groups, "No groups yet", "Failed to load groups")
 
-        if not chats:
-            make_label(
-                self.conv_frame,
-                "No chats yet",
-                self,
-                style="tertiary",
-                size="sm",
-                bg=c("bg_secondary"),
-            ).pack(padx=SP[4], pady=SP[6])
-            return
-
-        for conv in chats:
-            self._make_conv_item(conv, conv["name"])
-
-    def _make_conv_item(self, conv, name):
+    def _make_conv_item(self, conv, name, parent=None):
         """Render a sidebar conversation item — mirrors .conversation-item."""
         c = self.get_color
         safe_name = name if name else "?"
+        if parent is None:
+            parent = self.conv_frame
 
-        item = tk.Frame(self.conv_frame, bg=c("bg_secondary"), cursor="hand2")
+        item = tk.Frame(parent, bg=c("bg_secondary"), cursor="hand2")
         item.pack(fill=tk.X)
 
         inner = tk.Frame(item, bg=c("bg_secondary"))
@@ -1147,7 +1251,7 @@ class ChatClientApp:
             bg=c("bg_secondary"),
         ).pack(anchor=tk.W)
 
-        Separator(self.conv_frame, c("border_light"))
+        Separator(parent, c("border_light"))
 
         def on_click(e=None, cv=conv):
             self.select_conversation(cv)
@@ -1309,8 +1413,12 @@ class ChatClientApp:
             messagebox.showerror("Error", msg)
 
     def new_conversation(self):
-        """Open the 'New Conversation' modal — lets user pick Direct Chat or Group."""
-        self._show_new_conv_modal()
+        """Open the appropriate modal based on the active sidebar tab."""
+        tab = getattr(self, "_sidebar_tab", None)
+        if tab and tab.get() == "groups":
+            self._show_new_group_modal()
+        else:
+            self._show_new_direct_modal()
 
     # ─────────────────────────────────────────────────────────────────────────
     #  New Conversation / New Group modals

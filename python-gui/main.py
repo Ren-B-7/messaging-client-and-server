@@ -17,6 +17,7 @@ A signal handler posted to the Tk event loop via root.after() ensures
 Ctrl-C in the terminal triggers the same clean-close path as clicking ×.
 """
 
+from time import sleep
 import tkinter as tk
 import os
 import sys
@@ -61,18 +62,20 @@ def main():
             except Exception as e:
                 logger.warning("Error during API shutdown", extra_info=str(e))
 
-            # 2. Wait briefly for daemon threads
-            deadline = SHUTDOWN_TIMEOUT
-            for t in threading.enumerate():
-                if t.daemon and t is not threading.main_thread():
-                    t.join(timeout=deadline)
-                    deadline = max(0, deadline - SHUTDOWN_TIMEOUT / 4)
+            threads = [
+                t
+                for t in threading.enumerate()
+                if not (t.daemon or t is threading.main_thread())
+            ]
+
+            for t in threads:
+                t.join(timeout=SHUTDOWN_TIMEOUT)
 
             # 3. Destroy the Tk window
             try:
                 root.destroy()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Error during API shutdown", extra_info=str(e))
 
             logger.info("Chat Client Advanced closed cleanly")
 
@@ -84,7 +87,15 @@ def main():
             sig_name = signal.Signals(sig).name
             logger.info(f"Signal received: {sig_name}")
             # Schedule _on_close on the Tk main thread (thread-safe).
-            root.after(0, _on_close)
+            try:
+                root.after(0, _on_close)
+            except RuntimeError:
+                _on_close()
+
+        def _poll_signals():
+            root.after(100, _poll_signals)
+
+        _poll_signals()
 
         for sig in (signal.SIGINT, signal.SIGTERM):
             try:

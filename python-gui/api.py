@@ -175,7 +175,7 @@ class ChatAPIClient:
             },
         )
 
-    def register(self, username, email, password):
+    def register(self, email, username, password, fullname=""):
         """POST /api/register"""
         logger.info("Attempting registration", extra_info=f"Username: {username}")
         return self._make_request(
@@ -185,6 +185,7 @@ class ChatAPIClient:
                 "username": username,
                 "email": email,
                 "password": password,
+                "full_name": fullname,
             },
         )
 
@@ -275,17 +276,13 @@ class ChatAPIClient:
         logger.debug("Loading group members", extra_info=f"Group: {group_id}")
         return self._make_request("GET", f"/api/groups/{group_id}/members")
 
-    def create_group(self, name, description=""):
+    def create_group(self, name, member_ids=None, description=""):
         """POST /api/groups  (hard auth)"""
         logger.info("Creating group", extra_info=f"Name: {name}")
-        return self._make_request(
-            "POST",
-            "/api/groups",
-            {
-                "name": name,
-                "description": description,
-            },
-        )
+        body = {"name": name, "description": description}
+        if member_ids:
+            body["member_ids"] = member_ids
+        return self._make_request("POST", "/api/groups", body)
 
     def update_group(self, group_id, **kwargs):
         """PATCH /api/groups/:id  (hard auth)"""
