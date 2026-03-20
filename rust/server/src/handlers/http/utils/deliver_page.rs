@@ -6,7 +6,7 @@ use http::HeaderValue;
 use http_body_util::{BodyExt, Empty, Full, combinators::BoxBody};
 use hyper::{Response, StatusCode, header};
 use std::convert::Infallible;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 use crate::handlers::http::utils::headers;
 use shared::types::cache::CacheStrategy;
@@ -27,16 +27,24 @@ pub fn expand_tilde<P: AsRef<Path>>(path: P) -> PathBuf {
     path_ref.to_path_buf()
 }
 
-/// Read an HTML file from disk and deliver it with security headers
+/// Read an HTML file from disk and deliver it with no-cache headers.
+///
+/// HTML pages are always served with `NoCache` because they contain auth
+/// state and must never be served stale from a proxy or browser cache.
 pub fn deliver_html_page<P: AsRef<Path>>(
     file_path: P,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    // Just delegate everything to the core function
-    deliver_page_with_status(file_path, StatusCode::OK, CacheStrategy::Explicit)
+    deliver_page_with_status(file_path, StatusCode::OK, CacheStrategy::NoCache)
 }
 
-/// Deliver a static page from a file path with caching headers
-/// This is the core function that handles all file-based deliveries
+/// Deliver a static page from a file path with the specified caching policy.
+///
+/// This is the core function that all file-based delivery helpers delegate to.
+/// Cache headers are applied according to [`CacheStrategy`]:
+///
+/// - [`CacheStrategy::LongTerm`]  → `public, max-age=31536000` (1 year)
+/// - [`CacheStrategy::ShortTerm`] → `public, max-age=3600` (1 hour)
+/// - [`CacheStrategy::NoCache`]   → `no-cache, no-store, must-revalidate`
 pub fn deliver_page_with_status<P: AsRef<Path>>(
     file_path: P,
     status: StatusCode,
@@ -54,35 +62,32 @@ pub fn deliver_page_with_status<P: AsRef<Path>>(
         .with_context(|| format!("Failed to read static file: {}", expanded_path.display()))?;
 
     let content_bytes: Bytes = Bytes::from(content);
-
-    // Determine MIME type based on file extension
     let mime_type: &str = get_mime_type(&expanded_path);
 
     debug!(
-        "Delivering static page with status: {}, size: {} bytes, mime: {}, cache: {}",
+        "Delivering static page — status: {}, size: {} bytes, mime: {}, cache: {}",
         status,
         content_bytes.len(),
         mime_type,
         cache
     );
 
-    // Build base response
     let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()
         .status(status)
         .header(header::CONTENT_TYPE, mime_type)
         .body(full(content_bytes))
         .map_err(|e| anyhow!("Failed to build response: {}", e))?;
 
-    // Apply specific caching logic
     let response_with_cache = match cache {
-        CacheStrategy::Yes => headers::add_cache_headers_with_max_age(response, None),
-        CacheStrategy::No => headers::add_cache_headers_with_max_age(response, Some(3600)),
-        CacheStrategy::Explicit => headers::add_no_cache_headers(response),
+        CacheStrategy::LongTerm => headers::add_cache_headers_with_max_age(response, None),
+        CacheStrategy::ShortTerm => headers::add_cache_headers_with_max_age(response, Some(3600)),
+        CacheStrategy::NoCache => headers::add_no_cache_headers(response),
     };
+
     Ok(response_with_cache)
 }
 
-/// Deliver a static page with ETag support for efficient caching
+/// Deliver a static page with an ETag for conditional-GET support.
 pub fn deliver_page_with_etag<P: AsRef<Path>>(
     file_path: P,
     status: StatusCode,
@@ -96,13 +101,14 @@ pub fn deliver_page_with_etag<P: AsRef<Path>>(
         expanded_path.display(),
         etag
     );
+
     let response = deliver_page_with_status(file_path, status, cache).unwrap();
     let response_with_etag = headers::add_etag_header(response, etag);
 
     Ok(response_with_etag)
 }
 
-/// Helper function to determine MIME type from file extension
+/// Determine the MIME type from the file extension.
 pub fn get_mime_type(path: &Path) -> &'static str {
     match path.extension().and_then(|s| s.to_str()) {
         // Web documents
@@ -146,79 +152,54 @@ pub fn get_mime_type(path: &Path) -> &'static str {
         Some("gz") => "application/gzip",
         Some("tar") => "application/x-tar",
 
-        // Default
         _ => "application/octet-stream",
     }
 }
 
-/// Delivers a redirect response
+/// Deliver a redirect response.
 pub fn deliver_redirect(location: &str) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Delivering redirect to: {}", location);
 
-    let empty_bytes: Bytes = Bytes::from("");
-    let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()
+    Response::builder()
         .status(StatusCode::FOUND)
         .header(header::LOCATION, location)
-        .body(full(empty_bytes))
-        .map_err(|e: http::Error| {
-            error!("Failed to build redirect response to {}: {}", location, e);
-            anyhow!("Failed to build redirect response: {}", e)
-        })?;
-
-    Ok(response)
+        .body(full(Bytes::from("")))
+        .map_err(|e| anyhow!("Failed to build redirect response to {}: {}", location, e))
 }
 
-/// Delivers a redirect response
+/// Deliver a redirect response with a cookie header.
 pub fn deliver_redirect_with_cookie(
     location: &str,
     cookie: HeaderValue,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Delivering redirect to: {}", location);
 
-    let empty_bytes: Bytes = Bytes::from("");
-    let builder = Response::builder()
+    Response::builder()
         .status(StatusCode::FOUND)
         .header(header::LOCATION, location)
-        .header(header::SET_COOKIE, cookie);
-
-    let response = builder.body(full(empty_bytes)).map_err(|e: http::Error| {
-        error!("Failed to build redirect response to {}: {}", location, e);
-        anyhow!("Failed to build redirect response: {}", e)
-    })?;
-
-    Ok(response)
+        .header(header::SET_COOKIE, cookie)
+        .body(full(Bytes::from("")))
+        .map_err(|e| anyhow!("Failed to build redirect response to {}: {}", location, e))
 }
 
-/// Delivers a plain text response
+/// Deliver a plain text response.
 pub fn deliver_text<T: Into<Bytes>>(text: T) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    let bytes_string: Bytes = text.into();
+    let bytes: Bytes = text.into();
+    debug!("Delivering text response, size: {} bytes", bytes.len());
 
-    debug!(
-        "Delivering text response, size: {} bytes",
-        bytes_string.len()
-    );
-
-    let response: Response<BoxBody<Bytes, Infallible>> = Response::builder()
+    Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
-        .body(full(bytes_string))
-        .map_err(|e: http::Error| {
-            error!("Failed to build text response: {}", e);
-            anyhow!("Failed to build text response: {}", e)
-        })?;
-
-    Ok(response)
+        .body(full(bytes))
+        .map_err(|e| anyhow!("Failed to build text response: {}", e))
 }
 
-/// Helper function to create an empty body
+/// Build an empty boxed body.
 pub fn empty() -> BoxBody<Bytes, Infallible> {
     Empty::<Bytes>::new().boxed()
 }
 
-/// Helper function to create a full body from various types
-/// Made public for use in error handling
+/// Build a full (single-chunk) boxed body from any `Into<Bytes>` value.
 pub fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, Infallible> {
-    let bytes: Bytes = chunk.into();
-    let full_body: Full<Bytes> = Full::new(bytes);
-    full_body.boxed()
+    Full::new(chunk.into()).boxed()
 }

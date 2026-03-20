@@ -46,6 +46,9 @@ use shared::config::LiveConfig;
 /// path.  Changing the secret invalidates every live session instantly —
 /// that is a deliberate operator action that requires a server restart, not
 /// something that should happen silently on SIGHUP.
+///
+/// `started_at` is captured once at construction and never changes.  It is
+/// used by the admin stats endpoint to compute accurate uptime.
 #[derive(Clone, Debug)]
 pub struct AppState {
     pub db: Arc<Connection>,
@@ -61,6 +64,11 @@ pub struct AppState {
     pub jwt_secret: Arc<String>,
     pub user_router: Arc<Router>,
     pub admin_router: Arc<Router>,
+    /// Unix timestamp (seconds) of when this `AppState` was first constructed.
+    /// Used by the admin stats endpoint to compute server uptime accurately.
+    /// Previously this was passed as a hard-coded `0` to `ServerStats::build`,
+    /// which caused uptime to always display the full Unix epoch duration.
+    pub started_at: i64,
 }
 
 impl AppState {
@@ -73,6 +81,15 @@ impl AppState {
     ) -> Self {
         let rate_limiter = RateLimiter::new(100, 200);
 
+        // Capture the process start time once.  All clones of AppState share
+        // this value (it's Copy), so the admin dashboard always shows the
+        // actual elapsed time since the server started — not time since the
+        // last connection handler was spawned.
+        let started_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
         Self {
             db: Arc::new(db),
             config,
@@ -84,6 +101,7 @@ impl AppState {
             jwt_secret: Arc::new(jwt_secret),
             user_router,
             admin_router,
+            started_at,
         }
     }
 }

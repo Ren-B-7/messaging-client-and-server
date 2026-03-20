@@ -218,15 +218,6 @@ pub async fn handle_sse_subscribe(
     state: AppState,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>, SseError> {
     // ── 1. Authenticate ────────────────────────────────────────────────────
-    //
-    // The cookie / Bearer value is a JWT, NOT a raw session_id UUID.
-    // decode_jwt_claims decodes the JWT from the request's Authorization
-    // header or auth_id cookie, then we extract the session_id UUID from the
-    // claims and validate it against the sessions table.
-    //
-    // Previously the code passed the raw JWT string to validate_session_id,
-    // which looks up `session_id` (a UUID) in the DB — so it always failed
-    // because no row has a session_id equal to the full JWT string.
     let claims = decode_jwt_claims(&req, &state.jwt_secret).map_err(|e| {
         warn!("SSE subscribe rejected: invalid or expired JWT — {}", e);
         SseError::ChannelSendFailed("Unauthorized".to_string())
@@ -275,7 +266,13 @@ pub async fn handle_sse_subscribe(
     );
 
     // ── 3. Fetch history ───────────────────────────────────────────────────
-    let history = match &chat_ctx {
+    //
+    // get_chat_messages returns rows ORDER BY sent_at DESC (newest first)
+    // so that callers using LIMIT get the most recent N messages.
+    // For SSE replay we need oldest-first, so we reverse the slice here.
+    // This is intentional: reversing after limiting is correct — we want
+    // "the 50 most recent messages, oldest first".
+    let mut history = match &chat_ctx {
         ChatContext::Chat { chat_id } => {
             messages::get_chat_messages(&state.db, *chat_id, limit, offset)
                 .await
@@ -285,6 +282,9 @@ pub async fn handle_sse_subscribe(
                 })?
         }
     };
+
+    // Reverse to chronological order (oldest message first).
+    history.reverse();
 
     // Decompress all messages up front — fail fast before opening the stream
     let mut history_frames: Vec<String> = Vec::with_capacity(history.len() + 2);

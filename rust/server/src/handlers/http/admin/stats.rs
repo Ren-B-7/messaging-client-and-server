@@ -66,10 +66,13 @@ pub async fn handle_server_config(
         .await
         .context("Failed to query database stats")?;
 
-    // Guard is dropped before the response is built.
+    // `state.started_at` is captured once at AppState::new() and never
+    // changes, so this gives real elapsed time since the server started.
+    // Previously this was passed as `0`, which caused uptime to display
+    // the number of seconds since the Unix epoch (i.e. ~55 years).
     let stats = {
         let cfg = state.config.read().await;
-        ServerStats::build(&cfg, db_info, 0)
+        ServerStats::build(&cfg, db_info, state.started_at)
     };
 
     deliver_serialized_json(&stats, StatusCode::OK)

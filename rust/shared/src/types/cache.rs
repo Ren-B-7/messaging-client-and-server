@@ -3,17 +3,21 @@ use std::fmt;
 
 #[derive(Deserialize, Debug, Clone, Copy)]
 pub enum CacheStrategy {
-    Yes,      // Default (1 year)
-    No,       // 1 hour cache
-    Explicit, // No cache at all
+    /// Cache for one year.  Use for fingerprinted / immutable assets.
+    LongTerm,
+    /// Cache for one hour.  Use for assets that are stable but may be updated.
+    ShortTerm,
+    /// Do not cache at all (`no-store`).  Use for HTML pages and any response
+    /// that varies per-user or per-session.
+    NoCache,
 }
 
 impl fmt::Display for CacheStrategy {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            CacheStrategy::Yes => write!(f, "Yes (1 year)"),
-            CacheStrategy::No => write!(f, "No (1 hour)"),
-            CacheStrategy::Explicit => write!(f, "Explicit (no-cache)"),
+            CacheStrategy::LongTerm => write!(f, "LongTerm (1 year)"),
+            CacheStrategy::ShortTerm => write!(f, "ShortTerm (1 hour)"),
+            CacheStrategy::NoCache => write!(f, "NoCache (no-store)"),
         }
     }
 }

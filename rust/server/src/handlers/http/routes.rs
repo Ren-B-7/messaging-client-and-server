@@ -421,7 +421,7 @@ impl Router {
             path if path.starts_with("/static/") => {
                 let file_path = format!("{}{}", web_dir, path);
                 Ok(Some(
-                    deliver_page_with_status(&file_path, StatusCode::OK, CacheStrategy::Yes)
+                    deliver_page_with_status(&file_path, StatusCode::OK, CacheStrategy::LongTerm)
                         .context("Failed to deliver static file")?,
                 ))
             }
@@ -438,7 +438,7 @@ impl Router {
                 info!("icons: {}", icons);
                 let file_path = format!("{}/{}{}", web_dir, icons, path);
                 Ok(Some(
-                    deliver_page_with_status(&file_path, StatusCode::OK, CacheStrategy::Yes)
+                    deliver_page_with_status(&file_path, StatusCode::OK, CacheStrategy::LongTerm)
                         .context("Failed to deliver browser icon")?,
                 ))
             }
@@ -446,7 +446,7 @@ impl Router {
             path if path.starts_with("/non-static/") => {
                 let file_path = format!("{}{}", web_dir, path);
                 Ok(Some(
-                    deliver_page_with_status(&file_path, StatusCode::OK, CacheStrategy::No)
+                    deliver_page_with_status(&file_path, StatusCode::OK, CacheStrategy::ShortTerm)
                         .context("Failed to deliver non-static file")?,
                 ))
             }

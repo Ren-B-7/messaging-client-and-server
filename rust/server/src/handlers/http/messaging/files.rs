@@ -16,14 +16,14 @@ use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full};
 use hyper::{Request, Response, StatusCode, header};
 use multer::Multipart;
+use tokio_rusqlite::rusqlite;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::database::{files, groups, messages};
+use crate::database::{groups, utils};
 use crate::handlers::http::utils::{deliver_error_json, deliver_serialized_json};
 use shared::types::jwt::JwtClaims;
-use shared::types::message::NewMessage;
 use shared::types::sse::SseEvent;
 
 // ---------------------------------------------------------------------------
@@ -49,6 +49,19 @@ pub const DEFAULT_PAGE_SIZE: i64 = 50;
 ///   - `chat_id`  — destination chat (required)
 ///   - `filename` — original filename override (optional; falls back to the
 ///                  `filename` from the `Content-Disposition` header)
+///
+/// # Atomicity
+///
+/// The `files` row and the companion `messages` row are inserted inside a
+/// single SQLite transaction.  Previously these were separate inserts with a
+/// back-fill step, which left an orphaned `files` row (and bytes on disk) if
+/// the message insert failed.  Now both inserts succeed or fail together.
+///
+/// Note: the disk write still happens before the transaction.  If the process
+/// crashes between the disk write and the transaction commit, unreferenced
+/// bytes may accumulate under `uploads_dir`.  A periodic scrub of files not
+/// referenced in the `files` table is the correct mitigation for that edge
+/// case, but is not yet implemented.
 pub async fn handle_upload_file(
     req: Request<hyper::body::Incoming>,
     state: AppState,
@@ -68,7 +81,6 @@ pub async fn handle_upload_file(
 
     // ── 2. Stream the multipart body ─────────────────────────────────────────
     let body_stream = req.into_body().into_data_stream();
-
     let mut multipart = Multipart::new(body_stream, boundary);
 
     let mut file_bytes: Option<Vec<u8>> = None;
@@ -113,7 +125,6 @@ pub async fn handle_upload_file(
                 chat_id = text.trim().parse::<i64>().ok();
             }
             "filename" => {
-                // Client-supplied name overrides the Content-Disposition header.
                 let text = field
                     .text()
                     .await
@@ -159,7 +170,6 @@ pub async fn handle_upload_file(
     };
 
     let filename = sanitize_filename(original_filename.as_deref().unwrap_or("unnamed"));
-
     let mime_type = mime_type.unwrap_or_else(|| "application/octet-stream".to_string());
 
     // ── 4. Authorization — must be a chat member ─────────────────────────────
@@ -176,8 +186,8 @@ pub async fn handle_upload_file(
     }
 
     // ── 5. Write bytes to disk ───────────────────────────────────────────────
-    let storage_dir = &state.config.read().await.paths.uploads_dir;
-    let storage_path = build_storage_path(storage_dir, &filename);
+    let storage_dir = state.config.read().await.paths.uploads_dir.clone();
+    let storage_path = build_storage_path(&storage_dir, &filename);
 
     tokio::fs::create_dir_all(&storage_dir)
         .await
@@ -188,54 +198,77 @@ pub async fn handle_upload_file(
         .with_context(|| format!("Failed to write file to {:?}", storage_path))?;
 
     let file_size = file_bytes.len() as i64;
+    let storage_path_str = storage_path.to_string_lossy().to_string();
 
-    // ── 6. Insert file record ────────────────────────────────────────────────
-    let file_id = files::store_file_record(
-        &state.db,
-        files::NewFileRecord {
-            uploader_id: user_id,
-            chat_id,
-            filename: filename.clone(),
-            mime_type: mime_type.clone(),
-            size: file_size,
-            storage_path: storage_path.to_string_lossy().to_string(),
-            message_id: None, // filled in below
-        },
-    )
-    .await
-    .context("Failed to store file record")?;
-
-    // ── 7. Create companion message ──────────────────────────────────────────
-    // The message content is a small JSON blob so the UI can render a download
-    // card without extra queries.
-    let msg_content = serde_json::json!({
-        "file_id":   file_id,
+    // ── 6. Build compressed message content ──────────────────────────────────
+    //
+    // Note: `file_id` is not yet known at this point — it is assigned by
+    // SQLite's auto-increment during the transaction below.  The message
+    // content therefore carries filename/mime/size metadata only.  Clients
+    // that need the `file_id` can use the `file_id` field in the HTTP
+    // response or the `file_shared` SSE event, both of which include it.
+    let msg_content_json = serde_json::json!({
         "filename":  filename,
         "mime_type": mime_type,
         "size":      file_size,
     })
     .to_string();
 
-    let compressed = crate::database::utils::compress_data(msg_content.as_bytes())
+    let compressed = utils::compress_data(msg_content_json.as_bytes())
         .context("Failed to compress message content")?;
 
-    let message_id = messages::send_message(
-        &state.db,
-        NewMessage {
-            sender_id: user_id,
-            chat_id,
-            content: compressed,
-            is_encrypted: true,
-            message_type: "file".to_string(),
-        },
-    )
-    .await
-    .context("Failed to create file message")?;
+    let sent_at = utils::get_timestamp();
 
-    // Back-fill the message_id on the files row.
-    files::set_file_message_id(&state.db, file_id, message_id)
+    // ── 7. Atomic DB transaction: insert message + file together ─────────────
+    //
+    // Previously these were two separate async DB calls with a back-fill step:
+    //   store_file_record(message_id: None)  →  file_id
+    //   send_message(...)                    →  message_id
+    //   set_file_message_id(file_id, ...)    (back-fill)
+    //
+    // If `send_message` failed, the `files` row was orphaned (no message_id,
+    // unreachable via the API).  Combining both INSERTs in a single
+    // `conn.transaction()` ensures they succeed or fail atomically.
+    let filename_c = filename.clone();
+    let mime_type_c = mime_type.clone();
+
+    let (file_id, message_id) = state
+        .db
+        .call(move |conn| {
+            let tx = conn.transaction()?;
+
+            // Insert the companion message first.
+            tx.execute(
+                "INSERT INTO messages (sender_id, chat_id, content, sent_at, is_encrypted, message_type)
+                 VALUES (?1, ?2, ?3, ?4, 1, 'file')",
+                rusqlite::params![user_id, chat_id, compressed, sent_at],
+            )?;
+            let message_id = tx.last_insert_rowid();
+
+            // Insert the file record referencing the message.
+            tx.execute(
+                "INSERT INTO files
+                     (uploader_id, chat_id, filename, mime_type, size,
+                      storage_path, uploaded_at, message_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                rusqlite::params![
+                    user_id,
+                    chat_id,
+                    filename_c,
+                    mime_type_c,
+                    file_size,
+                    storage_path_str,
+                    sent_at,
+                    message_id,
+                ],
+            )?;
+            let file_id = tx.last_insert_rowid();
+
+            tx.commit()?;
+            Ok::<_, rusqlite::Error>((file_id, message_id))
+        })
         .await
-        .context("Failed to link message to file")?;
+        .context("Failed to complete file upload transaction")?;
 
     info!(
         "File {} uploaded by user {} to chat {} (message {})",
@@ -277,6 +310,8 @@ pub async fn handle_download_file(
     claims: JwtClaims,
     file_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    use crate::database::files;
+
     let user_id = claims.user_id;
     info!("File download: file={} user={}", file_id, user_id);
 
@@ -302,8 +337,6 @@ pub async fn handle_download_file(
     }
 
     // ── 3. Check for inline vs attachment preference ──────────────────────────
-    // If the client sends ?inline=1 we set Content-Disposition: inline so the
-    // browser renders the file (useful for images). Otherwise attachment.
     let inline = req
         .uri()
         .query()
@@ -350,6 +383,8 @@ pub async fn handle_get_chat_files(
     state: AppState,
     claims: JwtClaims,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    use crate::database::files;
+
     let user_id = claims.user_id;
 
     let params: std::collections::HashMap<String, String> =
@@ -379,7 +414,6 @@ pub async fn handle_get_chat_files(
         .and_then(|s| s.parse::<i64>().ok())
         .unwrap_or(0);
 
-    // Auth — must be a chat member.
     let is_member = groups::is_group_member(&state.db, chat_id, user_id)
         .await
         .context("DB error checking membership")?;
@@ -392,11 +426,11 @@ pub async fn handle_get_chat_files(
         );
     }
 
-    let files = files::get_files_for_chat(&state.db, chat_id, limit, offset)
+    let file_list = files::get_files_for_chat(&state.db, chat_id, limit, offset)
         .await
         .context("Failed to fetch files")?;
 
-    let files_json: Vec<serde_json::Value> = files
+    let files_json: Vec<serde_json::Value> = file_list
         .into_iter()
         .map(|f| {
             serde_json::json!({
@@ -437,6 +471,8 @@ pub async fn handle_delete_file(
     user_id: i64,
     file_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+    use crate::database::files;
+
     info!("Delete file {} requested by user {}", file_id, user_id);
 
     let rec = match files::get_file(&state.db, file_id).await? {
@@ -446,8 +482,6 @@ pub async fn handle_delete_file(
         }
     };
 
-    // Only the uploader may delete their own files.
-    // (Admin override is enforced at the admin-server layer, not here.)
     if rec.uploader_id != user_id {
         return deliver_error_json(
             "FORBIDDEN",
@@ -495,7 +529,7 @@ async fn sse_broadcast_file_shared(
     size: i64,
     message_id: i64,
 ) {
-    let now = crate::database::utils::get_timestamp();
+    let now = utils::get_timestamp();
 
     let members = match groups::get_group_members(&state.db, chat_id).await {
         Ok(m) => m,
@@ -548,10 +582,9 @@ pub fn build_storage_path(uploads_dir: &str, filename: &str) -> PathBuf {
     PathBuf::from(uploads_dir).join(stored_name)
 }
 
-/// Strip directory traversal, null bytes, and other hazardous characters from
-/// a filename supplied by the client.
+/// Strip directory traversal, null bytes, and other hazardous characters
+/// from a filename supplied by the client.
 pub fn sanitize_filename(name: &str) -> String {
-    // Take only the last path component (handles Windows \ separators too).
     let base = name
         .replace('\\', "/")
         .split('/')
@@ -560,8 +593,10 @@ pub fn sanitize_filename(name: &str) -> String {
         .unwrap_or("unnamed")
         .to_string();
 
-    // Remove null bytes and control characters.
     base.chars()
         .filter(|c| !c.is_control() && *c != '\0')
         .collect()
 }
+
+// needed for handle_get_chat_files
+use form_urlencoded;
