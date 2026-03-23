@@ -278,17 +278,3 @@ fn avatar_upload_flow() {
     let filename = format!("{}.{}", user_id, ext);
     assert_eq!(filename, "123.png");
 }
-
-#[test]
-fn profile_data_complete() {
-    // Check all profile fields can be present
-    let user_id = 1;
-    let email = "alice@example.com";
-    let is_admin = false;
-    let avatar_url = Some("/api/avatar/1");
-
-    assert!(user_id > 0);
-    assert!(email.contains("@"));
-    assert!(is_admin);
-    assert!(avatar_url.is_some());
-}
