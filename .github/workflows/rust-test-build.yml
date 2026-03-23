@@ -109,12 +109,10 @@ jobs:
               run: |
                   sudo apt-get update
                   sudo apt-get install -y python3-tk xvfb
-            - name: Install dependencies
-              run: python -m pip install --upgrade pip build
-            - name: Build package
+            - name: Install Python deps
               run: |
-                  # Copy README.md if setup.py/pyproject.toml references the root one
-                  cp ../README.md . 2>/dev/null || true
-                  python -m build
-            - name: Run headless GUI
-              run: xvfb-run python main.py # Fixed: remove erroneous -m flag
+                  pip install --upgrade pip
+                  # Install from requirements.txt if you have one, otherwise just direct deps:
+                  pip install -r requirements.txt  # or: pip install requests httpx etc.
+            - name: Run headless GUI smoke test
+              run: xvfb-run python main.py
