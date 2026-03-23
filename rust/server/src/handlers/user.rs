@@ -20,7 +20,7 @@ use crate::handlers::http::routes::{
     Router, build_api_router_with_config, forbidden, unauthorized,
 };
 use crate::handlers::http::{auth, utils::*};
-use crate::handlers::sse::sse;
+use crate::handlers::sse::sse_helper;
 
 /// User service implementation
 #[derive(Clone, Debug)]
@@ -295,7 +295,7 @@ pub fn build_user_router_with_config(
         //   3. Loads and replays chat history as history_message events
         //   4. Parks on the broadcast channel for live SSE events
         .get_light("/api/stream", |req, state, _claims| async move {
-            sse::handle_sse_subscribe(req, state)
+            sse_helper::handle_sse_subscribe(req, state)
                 .await
                 .map_err(|e| anyhow::anyhow!("SSE subscription failed: {:?}", e))
         });

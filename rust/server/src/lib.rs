@@ -16,7 +16,7 @@ pub use database::{create, login, password};
 pub use handlers::{
     admin::{AdminService, build_admin_router_with_config},
     http::routes::Router,
-    sse::sse::SseManager,
+    sse::sse_helper::SseManager,
     user::{UserService, build_user_router_with_config},
 };
 pub use tower_middle::{

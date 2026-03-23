@@ -277,11 +277,7 @@ pub async fn handle_logout(
         message: "Logged out successfully".to_string(),
     };
 
-    Ok(deliver_serialized_json_with_cookie(
-        &response_body,
-        StatusCode::OK,
-        clear_cookie,
-    )?)
+    deliver_serialized_json_with_cookie(&response_body, StatusCode::OK, clear_cookie)
 }
 
 /// POST /api/settings/logout-all — revoke every session for this user.
@@ -304,11 +300,7 @@ pub async fn handle_logout_all(
     let response_body = SettingsResponse::Success {
         message: "Logged out of all sessions successfully".to_string(),
     };
-    Ok(deliver_serialized_json_with_cookie(
-        &response_body,
-        StatusCode::OK,
-        clear_cookie,
-    )?)
+    deliver_serialized_json_with_cookie(&response_body, StatusCode::OK, clear_cookie)
 }
 
 async fn parse_password_form(
@@ -431,11 +423,7 @@ pub async fn handle_delete_profile(
         message: "Account deleted successfully".to_string(),
     };
 
-    Ok(deliver_serialized_json_with_cookie(
-        &response_body,
-        StatusCode::OK,
-        clear_cookie,
-    )?)
+    deliver_serialized_json_with_cookie(&response_body, StatusCode::OK, clear_cookie)
 }
 
 // ===========================================================================
@@ -559,10 +547,10 @@ pub async fn handle_upload_avatar(
         .with_context(|| format!("Failed to write avatar to {}", new_path))?;
 
     // ── Swap out old file (best-effort) ──────────────────────────────────────
-    if let Ok(Some(old_path)) = utils::get_user_avatar(&state.db, user_id).await {
-        if let Err(e) = tokio::fs::remove_file(&old_path).await {
-            warn!("Could not remove old avatar {:?}: {}", old_path, e);
-        }
+    if let Ok(Some(old_path)) = utils::get_user_avatar(&state.db, user_id).await
+        && let Err(e) = tokio::fs::remove_file(&old_path).await
+    {
+        warn!("Could not remove old avatar {:?}: {}", old_path, e);
     }
 
     // ── Persist new path ─────────────────────────────────────────────────────
@@ -638,12 +626,12 @@ pub async fn handle_get_avatar(
         _ => "application/octet-stream",
     };
 
-    Ok(Response::builder()
+    Response::builder()
         .status(StatusCode::OK)
         .header(hyper::header::CONTENT_TYPE, mime)
         // Cache for 5 minutes — short enough to show a fresh upload quickly,
         // long enough to avoid hammering the disk on every re-render.
         .header(hyper::header::CACHE_CONTROL, "public, max-age=300")
         .body(Full::new(Bytes::from(bytes)).boxed())
-        .context("Failed to build avatar response")?)
+        .context("Failed to build avatar response")
 }

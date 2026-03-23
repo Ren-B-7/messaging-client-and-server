@@ -100,7 +100,6 @@ pub async fn update_username(conn: &Connection, user_id: i64, new_username: Stri
 // ---------------------------------------------------------------------------
 
 /// Return the on-disk path of a user's avatar, or `None` if none has been set.
-
 /// Write the on-disk path of a newly uploaded avatar for `user_id`.
 pub async fn set_user_avatar(conn: &Connection, user_id: i64, path: String) -> Result<()> {
     conn.call(move |conn: &mut rusqlite::Connection| {

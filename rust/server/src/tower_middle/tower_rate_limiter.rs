@@ -74,20 +74,20 @@ where
         let mut inner = self.inner.clone();
 
         Box::pin(async move {
-            if let Some(ip) = client_ip {
-                if !limiter.check(ip).await {
-                    tracing::warn!("Connection from {} rate limited", ip);
+            if let Some(ip) = client_ip
+                && !limiter.check(ip).await
+            {
+                tracing::warn!("Connection from {} rate limited", ip);
 
-                    return Ok(Response::builder()
-                        .status(StatusCode::TOO_MANY_REQUESTS)
-                        .header("content-type", "application/json")
-                        .header("retry-after", "1")
-                        .body(json_error_body(
-                            "RATE_LIMITED",
-                            "Too many requests — please slow down",
-                        ))
-                        .unwrap());
-                }
+                return Ok(Response::builder()
+                    .status(StatusCode::TOO_MANY_REQUESTS)
+                    .header("content-type", "application/json")
+                    .header("retry-after", "1")
+                    .body(json_error_body(
+                        "RATE_LIMITED",
+                        "Too many requests — please slow down",
+                    ))
+                    .unwrap());
             }
 
             inner.call(req).await

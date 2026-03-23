@@ -113,6 +113,12 @@ impl std::fmt::Debug for Router {
     }
 }
 
+impl Default for Router {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Router {
     pub fn new() -> Self {
         Self {
@@ -355,10 +361,10 @@ impl Router {
         }
 
         // No registered route matched — try static file fallback for GET.
-        if method == Method::GET {
-            if let Some(static_response) = self.try_serve_static(&path, &state).await? {
-                return Ok(static_response);
-            }
+        if method == Method::GET
+            && let Some(static_response) = self.try_serve_static(&path, &state).await?
+        {
+            return Ok(static_response);
         }
 
         not_found(&req)
@@ -520,8 +526,8 @@ fn prefers_html(req: &Request<hyper::body::Incoming>) -> bool {
                     Some((m, p)) => (m.trim(), p.trim()),
                     None => (part, ""),
                 };
-                let q: f32 = if params.starts_with("q=") {
-                    params[2..].parse().unwrap_or(1.0)
+                let q: f32 = if let Some(stripped) = params.strip_prefix("q=") {
+                    stripped.parse().unwrap_or(1.0)
                 } else {
                     1.0
                 };

@@ -286,16 +286,16 @@ pub async fn handle_patch_config(
         serde_json::from_slice(&body_bytes).context("Invalid JSON in config patch body")?;
 
     // ── Validate before touching the lock ────────────────────────────────────
-    if let Some(auth) = &patch.auth {
-        if let Some(secret) = &auth.jwt_secret {
-            if !secret.is_empty() && secret.len() < 32 {
-                return deliver_error_json(
-                    "500",
-                    "jwt_secret must be at least 32 characters",
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                );
-            }
-        }
+    if let Some(auth) = &patch.auth
+        && let Some(secret) = &auth.jwt_secret
+        && !secret.is_empty()
+        && secret.len() < 32
+    {
+        return deliver_error_json(
+            "500",
+            "jwt_secret must be at least 32 characters",
+            StatusCode::UNPROCESSABLE_ENTITY,
+        );
     }
 
     // ── Clone → patch → hot-reload ───────────────────────────────────────────
@@ -344,10 +344,10 @@ fn apply_patch(mut cfg: AppConfig, patch: ConfigPatch) -> AppConfig {
         // Only replace the secret when the caller supplies a non-empty string.
         // An empty string means "leave unchanged" — the UI never sends a value
         // for the password field unless the admin explicitly types a new one.
-        if let Some(v) = ap.jwt_secret {
-            if !v.is_empty() {
-                cfg.auth.jwt_secret = Some(v);
-            }
+        if let Some(v) = ap.jwt_secret
+            && !v.is_empty()
+        {
+            cfg.auth.jwt_secret = Some(v);
         }
     }
 

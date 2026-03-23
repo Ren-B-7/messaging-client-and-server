@@ -175,10 +175,10 @@ fn validate_registration(data: &RegisterData) -> std::result::Result<(), Registe
         return Err(RegisterError::PasswordMismatch);
     }
 
-    if let Some(ref email) = data.email {
-        if !is_valid_email(email) {
-            return Err(RegisterError::InvalidEmail);
-        }
+    if let Some(ref email) = data.email
+        && !is_valid_email(email)
+    {
+        return Err(RegisterError::InvalidEmail);
     }
 
     Ok(())

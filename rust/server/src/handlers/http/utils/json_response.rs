@@ -24,11 +24,11 @@ pub fn deliver_serialized_json<T: Serialize>(
         "Delivering serialized JSON response, size: {} bytes",
         json.len()
     );
-    Ok(Response::builder()
+    Response::builder()
         .status(status)
         .header(header::CONTENT_TYPE, "application/json")
         .body(Full::new(Bytes::from(json)).boxed())
-        .map_err(|e| anyhow!("Failed to build JSON response: {}", e))?)
+        .map_err(|e| anyhow!("Failed to build JSON response: {}", e))
 }
 
 pub fn deliver_serialized_json_with_cookie<T: Serialize>(
@@ -42,12 +42,12 @@ pub fn deliver_serialized_json_with_cookie<T: Serialize>(
         "Delivering serialized JSON response, size: {} bytes",
         json.len()
     );
-    Ok(Response::builder()
+    Response::builder()
         .status(status)
         .header(header::CONTENT_TYPE, "application/json")
         .header(header::SET_COOKIE, cookie)
         .body(Full::new(Bytes::from(json)).boxed())
-        .map_err(|e| anyhow!("Failed to build JSON response: {}", e))?)
+        .map_err(|e| anyhow!("Failed to build JSON response: {}", e))
 }
 
 /// Delivers a JSON error response with the specified error code, message, and status.
@@ -71,16 +71,14 @@ pub fn deliver_error_json(
 
     let json_string = error_json.to_string();
 
-    let response = Response::builder()
+    Response::builder()
         .status(status)
         .header(header::CONTENT_TYPE, "application/json")
         .body(Full::new(Bytes::from(json_string)).boxed())
         .map_err(|e: http::Error| {
             error!("Failed to build error JSON response: {}", e);
             anyhow!("Failed to build error JSON response: {}", e)
-        })?;
-
-    Ok(response)
+        })
 }
 
 /// Delivers a success JSON response with optional data, message, and status code.

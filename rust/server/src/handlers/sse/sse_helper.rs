@@ -55,6 +55,11 @@ impl ChatContext {
 pub struct SseManager {
     pub channels: tokio::sync::RwLock<std::collections::HashMap<i64, broadcast::Sender<SseEvent>>>,
 }
+impl Default for SseManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl SseManager {
     pub fn new() -> Self {

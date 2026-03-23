@@ -48,7 +48,7 @@ pub const DEFAULT_PAGE_SIZE: i64 = 50;
 ///   - `file`     — the binary payload (required)
 ///   - `chat_id`  — destination chat (required)
 ///   - `filename` — original filename override (optional; falls back to the
-///                  `filename` from the `Content-Disposition` header)
+///     `filename` from the `Content-Disposition` header)
 ///
 /// # Atomicity
 ///
@@ -277,7 +277,7 @@ pub async fn handle_upload_file(
 
     // ── 8. SSE broadcast ─────────────────────────────────────────────────────
     sse_broadcast_file_shared(
-        &state, file_id, user_id, chat_id, &filename, &mime_type, file_size, message_id,
+        &state, file_id, user_id, chat_id, &filename, &mime_type, file_size,
     )
     .await;
 
@@ -560,7 +560,6 @@ async fn sse_broadcast_file_shared(
     filename: &str,
     mime_type: &str,
     size: i64,
-    message_id: i64,
 ) {
     let now = utils::get_timestamp();
 
@@ -587,7 +586,6 @@ async fn sse_broadcast_file_shared(
             "filename":    filename,
             "mime_type":   mime_type,
             "size":        size,
-            "message_id":  message_id,
             "uploaded_at": now,
         }),
         timestamp: now,
@@ -621,8 +619,7 @@ pub fn sanitize_filename(name: &str) -> String {
     let base = name
         .replace('\\', "/")
         .split('/')
-        .filter(|s| !s.is_empty() && *s != ".." && *s != ".")
-        .last()
+        .rfind(|s| !s.is_empty() && *s != ".." && *s != ".")
         .unwrap_or("unnamed")
         .to_string();
 

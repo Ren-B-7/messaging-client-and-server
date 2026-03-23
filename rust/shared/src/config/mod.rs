@@ -1,6 +1,6 @@
-pub mod config;
+pub mod config_loader;
 
-pub use self::config::load_config;
+pub use self::config_loader::load_config;
 
 use std::sync::Arc;
 use tokio::sync::RwLock;

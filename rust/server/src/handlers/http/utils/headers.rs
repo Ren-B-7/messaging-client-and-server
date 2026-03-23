@@ -158,9 +158,9 @@ pub fn accepts_content_type(req: &Request<hyper::body::Incoming>, content_type: 
 /// Extract a Bearer token from `Authorization: Bearer <token>`.
 pub fn get_bearer_token(req: &Request<hyper::body::Incoming>) -> Option<String> {
     get_header_value(req.headers(), "authorization").and_then(|auth| {
-        if auth.starts_with("Bearer ") {
+        if let Some(s) = auth.strip_prefix("Bearer ") {
             debug!("Bearer token extracted");
-            Some(auth[7..].to_string())
+            Some(s.to_string())
         } else {
             warn!("Invalid or missing Bearer token");
             None
@@ -256,22 +256,22 @@ pub async fn validate_jwt_secure(
     // can see them in Grafana/Loki, but the request is not blocked. The JWT
     // signature and DB session check still prevent replay from a device that
     // never authenticated.
-    if let Some(ref stored_ip) = session.ip_address {
-        if stored_ip != &current_ip {
-            let strict = state.config.read().await.auth.strict_ip_binding;
-            if strict {
-                warn!(
-                    "SECURITY: session IP mismatch — rejecting. user_id={}, original={}, current={}",
-                    claims.user_id, stored_ip, current_ip
-                );
-                return Err("Session IP mismatch — possible token theft".to_string());
-            } else {
-                warn!(
-                    "SECURITY: session IP mismatch (warn-only, strict_ip_binding=false). \
+    if let Some(ref stored_ip) = session.ip_address
+        && stored_ip != &current_ip
+    {
+        let strict = state.config.read().await.auth.strict_ip_binding;
+        if strict {
+            warn!(
+                "SECURITY: session IP mismatch — rejecting. user_id={}, original={}, current={}",
+                claims.user_id, stored_ip, current_ip
+            );
+            return Err("Session IP mismatch — possible token theft".to_string());
+        } else {
+            warn!(
+                "SECURITY: session IP mismatch (warn-only, strict_ip_binding=false). \
                      user_id={}, original={}, current={}",
-                    claims.user_id, stored_ip, current_ip
-                );
-            }
+                claims.user_id, stored_ip, current_ip
+            );
         }
     }
 

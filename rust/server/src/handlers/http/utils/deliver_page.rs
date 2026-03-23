@@ -16,12 +16,12 @@ pub fn expand_tilde<P: AsRef<Path>>(path: P) -> PathBuf {
     let path_ref: &Path = path.as_ref();
     let path_str: &str = path_ref.to_str().unwrap_or("");
 
-    if path_str.starts_with("~/") {
-        if let Some(home) = std::env::var_os("HOME") {
-            let mut home_path: PathBuf = PathBuf::from(home);
-            home_path.push(&path_str[2..]);
-            return home_path;
-        }
+    if let Some(s) = path_str.strip_prefix("~/")
+        && let Some(home) = std::env::var_os("HOME")
+    {
+        let mut home_path: PathBuf = PathBuf::from(home);
+        home_path.push(s);
+        return home_path;
     }
 
     path_ref.to_path_buf()

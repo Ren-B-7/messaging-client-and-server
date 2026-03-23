@@ -80,19 +80,19 @@ where
         let mut inner = self.inner.clone();
 
         Box::pin(async move {
-            if let Some(ip) = client_ip {
-                if !filter.is_allowed(ip).await {
-                    tracing::warn!("Connection from {} blocked by IP filter", ip);
+            if let Some(ip) = client_ip
+                && !filter.is_allowed(ip).await
+            {
+                tracing::warn!("Connection from {} blocked by IP filter", ip);
 
-                    return Ok(Response::builder()
-                        .status(StatusCode::FORBIDDEN)
-                        .header("content-type", "application/json")
-                        .body(json_error_body(
-                            "IP_BLOCKED",
-                            "Your IP address is not allowed",
-                        ))
-                        .unwrap());
-                }
+                return Ok(Response::builder()
+                    .status(StatusCode::FORBIDDEN)
+                    .header("content-type", "application/json")
+                    .body(json_error_body(
+                        "IP_BLOCKED",
+                        "Your IP address is not allowed",
+                    ))
+                    .unwrap());
             }
 
             inner.call(req).await

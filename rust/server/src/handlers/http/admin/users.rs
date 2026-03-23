@@ -200,7 +200,7 @@ pub async fn handle_delete_user(
     let user_id: i64 = path
         .trim_end_matches('/')
         .split('/')
-        .last()
+        .next_back()
         .filter(|s| *s != ":id")
         .and_then(|s| s.parse::<i64>().ok())
         .ok_or_else(|| anyhow::anyhow!("Invalid or missing user ID in path"))?;
