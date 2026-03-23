@@ -3,118 +3,118 @@ name: Full Project CI Pipeline
 on: [push, pull_request]
 
 jobs:
-    # --- PHASE 1: LINTING & FORMATTING (Runs in Parallel) ---
-    rust-lint-and-fmt:
+    # --- PHASE 1: LINTING & FORMATTING (All run in parallel) ---
+
+    rust-lint:
         runs-on: ubuntu-latest
         defaults:
             run:
                 working-directory: ./rust
         steps:
             - uses: actions/checkout@v4
-
-            - name: Install Rust Toolchain
-              uses: dtolnay/rust-toolchain@stable
+            - uses: dtolnay/rust-toolchain@stable
               with:
                   components: rustfmt, clippy
-
-            - name: Rust Cache
-              uses: Swatinem/rust-cache@v2
+            - uses: Swatinem/rust-cache@v2
               with:
                   workspaces: "rust -> target"
-
-            # 1. Check Format First (Fastest)
-            - name: Check Rust Format
+            - name: Check Format
               run: cargo fmt --check
-
-            # 2. Run Clippy (Linting)
             - name: Run Clippy
               run: cargo clippy --all-targets -- -D warnings
+            # cargo check removed — redundant with test/build jobs below
 
-            # 3. Final Check
-            - name: Run Cargo Check
-              run: cargo check
-
-    ruff-lint:
+    # Consolidated: ruff + black in one job (saves a checkout + python setup)
+    python-lint:
         runs-on: ubuntu-latest
-        steps:
-            - uses: actions/checkout@v4
-            - uses: astral-sh/ruff-action@v3
-              with: { src: "./python-gui" }
-
-    htmlhint:
-        runs-on: ubuntu-latest
-        defaults: { run: { working-directory: ./frontend } }
-        steps:
-            - uses: actions/checkout@v4
-            - run: npm install -g htmlhint
-            - run: htmlhint "**/*.html"
-
-    stylelint:
-        runs-on: ubuntu-latest
-        defaults: { run: { working-directory: ./frontend } }
-        steps:
-            - uses: actions/checkout@v4
-            - run: npm install -g stylelint stylelint-config-standard
-            - run: npx stylelint "**/*.css"
-
-    black-format-check:
-        runs-on: ubuntu-latest
-        defaults: { run: { working-directory: ./python-gui } }
         steps:
             - uses: actions/checkout@v4
             - uses: actions/setup-python@v5
-              with: { python-version: "3.14" }
-            - run: pip install black
-            - run: black --check .
+              with:
+                  python-version: "3.13"
+            - name: Ruff lint
+              uses: astral-sh/ruff-action@v3
+              with:
+                  src: "./python-gui"
+            - name: Black format check
+              working-directory: ./python-gui
+              run: |
+                  pip install black
+                  black --check .
 
-    prettier-format-check:
+    # Consolidated: htmlhint + stylelint + prettier in one job (saves 2 checkouts)
+    frontend-lint:
         runs-on: ubuntu-latest
-        defaults: { run: { working-directory: ./frontend } }
+        defaults:
+            run:
+                working-directory: ./frontend
         steps:
             - uses: actions/checkout@v4
-            - run: npm install -g prettier
-            - run: npx prettier --check "**/*.{html,css,js,json}"
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: "20"
+            - name: Install lint tools
+              run: npm install -g htmlhint stylelint stylelint-config-standard prettier
+            - name: HTMLHint
+              run: htmlhint "**/*.html"
+            - name: Stylelint
+              run: npx stylelint "**/*.css"
+            - name: Prettier
+              run: npx prettier --check "**/*.{html,css,js,json}"
 
-    # --- PHASE 2: RUST TESTING ---
+    # --- PHASE 2: RUST TEST & BUILD (parallel, both need rust-lint) ---
+
     cargo-test:
-        needs: [rust-lint-and-fmt]
+        needs: [rust-lint]
         runs-on: ubuntu-latest
-        defaults: { run: { working-directory: ./rust } }
+        defaults:
+            run:
+                working-directory: ./rust
         steps:
             - uses: actions/checkout@v4
-            - name: Rust Cache
-              uses: Swatinem/rust-cache@v2
+            - uses: dtolnay/rust-toolchain@stable
+            - uses: Swatinem/rust-cache@v2
               with:
                   workspaces: "rust -> target"
             - run: cargo test --verbose
 
-    # --- PHASE 3: RUST BUILD ---
     cargo-build:
-        needs: [rust-lint-and-fmt]
+        needs: [rust-lint]
         runs-on: ubuntu-latest
-        defaults: { run: { working-directory: ./rust } }
+        defaults:
+            run:
+                working-directory: ./rust
         steps:
             - uses: actions/checkout@v4
-            - name: Rust Cache
-              uses: Swatinem/rust-cache@v2
+            - uses: dtolnay/rust-toolchain@stable
+            - uses: Swatinem/rust-cache@v2
               with:
                   workspaces: "rust -> target"
             - run: cargo build --release --verbose
-    # --- PHASE 4: PYTHON GUI BUILD & RUN ---
+
+    # --- PHASE 3: PYTHON GUI BUILD & RUN ---
+
     python-build:
-        needs: [ruff-lint, black-format-check]
+        needs: [python-lint]
         runs-on: ubuntu-latest
-        defaults: { run: { working-directory: ./python-gui } }
+        defaults:
+            run:
+                working-directory: ./python-gui
         steps:
             - uses: actions/checkout@v4
             - uses: actions/setup-python@v5
-              with: { python-version: "3.14" }
-            - name: Install System Deps (Tkinter & Virtual Display)
+              with:
+                  python-version: "3.13"
+            - name: Install system deps
               run: |
                   sudo apt-get update
                   sudo apt-get install -y python3-tk xvfb
-            - name: Build & Run Headless GUI
+            - name: Install dependencies
+              run: python -m pip install --upgrade pip build
+            - name: Build package
               run: |
-                  python -m pip install --upgrade pip build
+                  # Copy README.md if setup.py/pyproject.toml references the root one
+                  cp ../README.md . 2>/dev/null || true
                   python -m build
-                  xvfb-run python -m main.py
+            - name: Run headless GUI
+              run: xvfb-run python main.py # Fixed: remove erroneous -m flag
