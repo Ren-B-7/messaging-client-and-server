@@ -1046,7 +1046,7 @@ class ChatClientApp:
         """
         try:
             outer = json.loads(response.get("data", "null"))
-        except json.JSONDecodeError, TypeError:
+        except (json.JSONDecodeError, TypeError):
             return None
 
         # Already the real payload (list / dict not wrapped in envelope)
@@ -1061,7 +1061,7 @@ class ChatClientApp:
                 if isinstance(inner, str):
                     try:
                         return json.loads(inner)
-                    except json.JSONDecodeError, TypeError:
+                    except (json.JSONDecodeError, TypeError):
                         return inner
                 return inner
             # Dict without "data" key — return as-is (e.g. login user object)
