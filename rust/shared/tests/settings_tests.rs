@@ -19,7 +19,7 @@ fn all_settings_error_codes_unique() {
 
 #[test]
 fn settings_error_to_response_is_error_status() {
-    let json = serde_json::to_value(&SettingsError::PasswordMismatch.to_response()).unwrap();
+    let json = serde_json::to_value(SettingsError::PasswordMismatch.to_response()).unwrap();
     assert_eq!(json["status"], "error");
     assert_eq!(json["code"], "PASSWORD_MISMATCH");
 }

@@ -1,5 +1,5 @@
 /// Tests for Server-Sent Events (SSE) functionality
-use server::handlers::sse::sse::SseManager;
+use server::handlers::sse::sse_helper::SseManager;
 use shared::types::sse::SseEvent;
 use std::collections::HashMap;
 
@@ -220,7 +220,7 @@ async fn test_get_channel_creates_channel() {
     let manager = SseManager::new();
     let user_id = 1;
 
-    let tx1 = manager.get_channel(user_id.clone()).await;
+    let tx1 = manager.get_channel(user_id).await;
     let tx2 = manager.get_channel(user_id).await;
 
     // Both calls must return handles to the same underlying channel.
@@ -234,11 +234,11 @@ async fn test_broadcast_to_user() {
     let manager = SseManager::new();
     let user_id = 1;
 
-    let tx = manager.get_channel(user_id.clone()).await;
+    let tx = manager.get_channel(user_id).await;
     let mut rx = tx.subscribe();
 
     let event = SseEvent {
-        user_id: user_id.clone(),
+        user_id,
         event_type: "test".to_string(),
         data: serde_json::json!({"content": "hello"}),
         timestamp: 1000,
@@ -259,11 +259,11 @@ async fn test_broadcast_to_users() {
     let user1 = 1;
     let user2 = 2;
 
-    let _tx1 = manager.get_channel(user1.clone()).await;
-    let _tx2 = manager.get_channel(user2.clone()).await;
+    let _tx1 = manager.get_channel(user1).await;
+    let _tx2 = manager.get_channel(user2).await;
 
     let event = SseEvent {
-        user_id: user1.clone(),
+        user_id: user1,
         event_type: "test".to_string(),
         data: serde_json::json!({"msg": "test"}),
         timestamp: 2000,
@@ -279,8 +279,8 @@ async fn test_cleanup_removes_inactive() {
     let user1 = 1;
     let user2 = 2;
 
-    let _tx1 = manager.get_channel(user1.clone()).await;
-    let tx2 = manager.get_channel(user2.clone()).await;
+    let _tx1 = manager.get_channel(user1).await;
+    let tx2 = manager.get_channel(user2).await;
 
     let _rx2 = tx2.subscribe(); // Keep user2 active
 
@@ -313,18 +313,18 @@ async fn test_channel_event_ordering() {
     let manager = SseManager::new();
     let user_id = 1;
 
-    let tx = manager.get_channel(user_id.clone()).await;
+    let tx = manager.get_channel(user_id).await;
     let mut rx = tx.subscribe();
 
     let events = vec![
         SseEvent {
-            user_id: user_id.clone(),
+            user_id,
             event_type: "message".to_string(),
             data: serde_json::json!({"text": "hello"}),
             timestamp: 1000,
         },
         SseEvent {
-            user_id: user_id.clone(),
+            user_id,
             event_type: "typing".to_string(),
             data: serde_json::json!({"user": "bob"}),
             timestamp: 1001,
@@ -346,16 +346,15 @@ async fn test_concurrent_broadcasts() {
     let manager = std::sync::Arc::new(SseManager::new());
     let user_id = 1;
 
-    let tx = manager.get_channel(user_id.clone()).await;
+    let tx = manager.get_channel(user_id).await;
     let mut rx = tx.subscribe();
 
     let mut handles = vec![];
     for i in 0..5 {
         let m = manager.clone();
-        let uid = user_id.clone();
         handles.push(tokio::spawn(async move {
             m.broadcast_to_user(SseEvent {
-                user_id: uid,
+                user_id,
                 event_type: "concurrent".to_string(),
                 data: serde_json::json!({"index": i}),
                 timestamp: i as i64,
@@ -369,11 +368,10 @@ async fn test_concurrent_broadcasts() {
     }
 
     let mut count = 0;
-    loop {
-        match tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await {
-            Ok(Ok(_)) => count += 1,
-            _ => break,
-        }
+    while let Ok(Ok(_)) =
+        tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await
+    {
+        count += 1;
     }
     assert_eq!(count, 5);
 }
@@ -383,13 +381,13 @@ async fn test_multiple_subscribers_same_user() {
     let manager = SseManager::new();
     let user_id = 1;
 
-    let tx = manager.get_channel(user_id.clone()).await;
+    let tx = manager.get_channel(user_id).await;
     let mut rx1 = tx.subscribe();
     let mut rx2 = tx.subscribe();
     let mut rx3 = tx.subscribe();
 
     let event = SseEvent {
-        user_id: user_id.clone(),
+        user_id,
         event_type: "broadcast".to_string(),
         data: serde_json::json!({"msg": "hello all"}),
         timestamp: 1000,
@@ -412,9 +410,9 @@ async fn test_broadcast_to_users_with_mixed_subscribers() {
     let user2 = 2;
     let user3 = 3;
 
-    let tx1 = manager.get_channel(user1.clone()).await;
-    let _tx2 = manager.get_channel(user2.clone()).await;
-    let tx3 = manager.get_channel(user3.clone()).await;
+    let tx1 = manager.get_channel(user1).await;
+    let _tx2 = manager.get_channel(user2).await;
+    let tx3 = manager.get_channel(user3).await;
 
     let mut rx1 = tx1.subscribe();
     let mut rx3 = tx3.subscribe();
@@ -440,7 +438,7 @@ async fn test_event_data_integrity() {
     let manager = SseManager::new();
     let user_id = 1;
 
-    let tx = manager.get_channel(user_id.clone()).await;
+    let tx = manager.get_channel(user_id).await;
     let mut rx = tx.subscribe();
 
     let original_data = serde_json::json!({
@@ -451,7 +449,7 @@ async fn test_event_data_integrity() {
     });
 
     let event = SseEvent {
-        user_id: user_id.clone(),
+        user_id,
         event_type: "complex_event".to_string(),
         data: original_data.clone(),
         timestamp: 1000,

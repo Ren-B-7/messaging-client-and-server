@@ -19,7 +19,7 @@ fn user_id_from_path_last_segment() {
     let user_id: Option<i64> = path
         .trim_end_matches('/')
         .split('/')
-        .last()
+        .next_back()
         .filter(|s| *s != ":id")
         .and_then(|s| s.parse().ok());
     assert_eq!(user_id, Some(42));

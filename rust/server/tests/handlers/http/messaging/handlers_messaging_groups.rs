@@ -141,7 +141,7 @@ fn role_case_sensitive() {
 fn role_empty_string_uses_default() {
     let mut params: HashMap<String, String> = HashMap::new();
     params.insert("role".to_string(), "".to_string());
-    let role = if params.get("role").map_or(true, |r| r.is_empty()) {
+    let role = if params.get("role").is_none_or(|r| r.is_empty()) {
         "member"
     } else {
         params.get("role").map(|r| r.as_str()).unwrap_or("member")
@@ -352,52 +352,7 @@ fn description_null_bytes_removed() {
     assert_eq!(cleaned, "helloworld");
 }
 
-#[test]
-fn empty_description() {
-    let desc = "";
-    assert!(desc.is_empty());
-}
-
 // ── Search query validation ───────────────────────────────────────────────
-
-#[test]
-fn search_query_empty() {
-    let q = "";
-    assert!(q.is_empty());
-}
-
-#[test]
-fn search_query_single_char() {
-    let q = "a";
-    assert!(!q.is_empty());
-    assert!(q.len() <= 50);
-}
-
-#[test]
-fn search_query_max_length() {
-    let q = "a".repeat(50);
-    assert_eq!(q.len(), 50);
-}
-
-#[test]
-fn search_query_exceeds_max() {
-    let q = "a".repeat(51);
-    assert!(q.len() > 50);
-}
-
-#[test]
-fn search_query_with_spaces() {
-    let q = "alice smith";
-    assert!(!q.is_empty());
-    assert!(q.len() <= 50);
-}
-
-#[test]
-fn search_query_with_special_chars() {
-    let q = "user@domain";
-    assert!(!q.is_empty());
-    assert!(q.len() <= 50);
-}
 
 #[test]
 fn search_query_trimmed() {

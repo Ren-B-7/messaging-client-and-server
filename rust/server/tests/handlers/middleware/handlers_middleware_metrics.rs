@@ -241,7 +241,7 @@ fn test_error_rate_all_errors() {
 #[test]
 fn test_latency_percentile_p50() {
     // P50 latency should be median
-    let latencies = vec![10, 20, 30, 40, 50]; // in ms
+    let latencies = [10, 20, 30, 40, 50]; // in ms
     let sorted = latencies;
     let index = (50.0 / 100.0) * sorted.len() as f64;
 
@@ -271,7 +271,7 @@ fn test_latency_percentile_p99() {
 #[test]
 fn test_average_latency_calculation() {
     // Average latency should be mean of all samples
-    let latencies = vec![
+    let latencies = [
         Duration::from_millis(10),
         Duration::from_millis(20),
         Duration::from_millis(30),
@@ -286,7 +286,7 @@ fn test_average_latency_calculation() {
 #[test]
 fn test_single_latency_sample() {
     // Single sample should be its own average and percentiles
-    let latencies = vec![Duration::from_millis(50)];
+    let latencies = [Duration::from_millis(50)];
 
     let sum: Duration = latencies.iter().sum();
     let avg = sum / latencies.len() as u32;

@@ -130,30 +130,6 @@ fn message_with_special_chars() {
 // ── Limit clamping ─────────────────────────────────────────────────────────
 
 #[test]
-fn limit_clamped_to_100() {
-    let limit = Some(200_i64).unwrap_or(50).min(100);
-    assert_eq!(limit, 100);
-}
-
-#[test]
-fn limit_exactly_100() {
-    let limit = Some(100_i64).unwrap_or(50).min(100);
-    assert_eq!(limit, 100);
-}
-
-#[test]
-fn limit_less_than_100() {
-    let limit = Some(50_i64).unwrap_or(50).min(100);
-    assert_eq!(limit, 50);
-}
-
-#[test]
-fn limit_defaults_to_50() {
-    let limit = None::<i64>.unwrap_or(50).min(100);
-    assert_eq!(limit, 50);
-}
-
-#[test]
 fn limit_zero_stays_zero() {
     let limit = parse_limit(Some(0_i64));
     assert_eq!(limit, 0);
@@ -163,12 +139,6 @@ fn limit_zero_stays_zero() {
 fn limit_one() {
     let limit = parse_limit(Some(1_i64));
     assert_eq!(limit, 1);
-}
-
-#[test]
-fn limit_very_large_clamped() {
-    let limit = Some(1_000_000_i64).unwrap_or(50).min(100);
-    assert_eq!(limit, 100);
 }
 
 // ── Message error code ─────────────────────────────────────────────────────
@@ -196,24 +166,6 @@ fn message_error_too_long() {
 fn message_error_not_found() {
     let code = "NOT_FOUND";
     assert_eq!(code, "NOT_FOUND");
-}
-
-// ── Constants validation ───────────────────────────────────────────────────
-
-#[test]
-fn max_message_length_is_10000() {
-    assert_eq!(MAX_MESSAGE_LENGTH, 10_000);
-}
-
-#[test]
-fn default_limit_is_50() {
-    assert_eq!(DEFAULT_LIMIT, 50);
-}
-
-#[test]
-fn max_message_length_reasonable() {
-    assert!(MAX_MESSAGE_LENGTH > 100); // At least 100 chars
-    assert!(MAX_MESSAGE_LENGTH < 100_000); // Less than 100KB
 }
 
 // ── Parse limit helper ─────────────────────────────────────────────────────

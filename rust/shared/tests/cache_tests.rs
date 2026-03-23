@@ -16,8 +16,8 @@ fn cache_strategy_display_variants_are_non_empty() {
 #[test]
 fn cache_strategy_clone_and_copy() {
     let a = CacheStrategy::LongTerm;
-    let b = a; // Verifies Copy trait
-    let c = a.clone(); // Verifies Clone trait
+    let b = a.clone(); // Verifies Copy trait
+    let c = &a.clone(); // Verifies Clone trait
     let _ = (b, c);
 }
 

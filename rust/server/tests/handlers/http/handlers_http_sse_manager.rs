@@ -9,8 +9,8 @@ use std::collections::HashMap;
 #[test]
 fn test_get_channel_creates_channel() {
     // get_channel should create a new broadcast channel for first call
-    let user_id = "test-user".to_string();
-    let user_id2 = "test-user".to_string();
+    let user_id = 100;
+    let user_id2 = 100;
 
     // Verify both references are to the same user
     assert_eq!(user_id, user_id2);
@@ -19,7 +19,7 @@ fn test_get_channel_creates_channel() {
 #[test]
 fn test_get_channel_returns_sender() {
     // get_channel should return a broadcast Sender
-    let user_id = "alice".to_string();
+    let _user_id = 1;
 
     // The sender can have multiple subscribers
     let can_subscribe = true;
@@ -29,8 +29,8 @@ fn test_get_channel_returns_sender() {
 #[test]
 fn test_different_users_different_channels() {
     // Different users should get different channels
-    let user1 = "alice".to_string();
-    let user2 = "bob".to_string();
+    let user1 = 2;
+    let user2 = 3;
 
     assert_ne!(user1, user2);
 }
@@ -38,8 +38,8 @@ fn test_different_users_different_channels() {
 #[test]
 fn test_same_user_same_channel() {
     // Multiple calls for same user should return same channel
-    let user_id = "alice".to_string();
-    let user_id2 = "alice".to_string();
+    let user_id = 4;
+    let user_id2 = 4;
 
     assert_eq!(user_id, user_id2);
 }
@@ -49,7 +49,7 @@ fn test_same_user_same_channel() {
 #[test]
 fn test_broadcast_to_user_with_channel() {
     // Broadcasting to user with active channel should succeed
-    let user_id = "alice".to_string();
+    let _user_id = 3;
 
     // If user has a channel, broadcast succeeds
     let has_channel = true;
@@ -59,7 +59,7 @@ fn test_broadcast_to_user_with_channel() {
 #[test]
 fn test_broadcast_to_user_no_channel() {
     // Broadcasting to user with no channel should return 0 subscribers
-    let user_id = "ghost".to_string();
+    let _user_id = 1;
 
     // No channel = 0 subscribers
     let subscriber_count = 0;
@@ -69,18 +69,14 @@ fn test_broadcast_to_user_no_channel() {
 #[test]
 fn test_broadcast_to_multiple_users() {
     // broadcast_to_users should send to all specified users
-    let users = vec![
-        "alice".to_string(),
-        "bob".to_string(),
-        "charlie".to_string(),
-    ];
+    let users = [1, 2, 3];
     assert_eq!(users.len(), 3);
 }
 
 #[test]
 fn test_broadcast_preserves_event_data() {
     // Broadcast should preserve the original event data
-    let user_id = "alice".to_string();
+    let _user_id = 2;
     let event_type = "message".to_string();
 
     assert_eq!(event_type, "message");
@@ -98,8 +94,8 @@ fn test_broadcast_multiple_subscribers_same_user() {
 #[test]
 fn test_cleanup_removes_inactive_channels() {
     // Cleanup should remove channels with no receivers
-    let active_user = "alice".to_string();
-    let inactive_user = "bob".to_string();
+    let active_user = 2;
+    let inactive_user = 3;
 
     assert_ne!(active_user, inactive_user);
 }
@@ -107,7 +103,7 @@ fn test_cleanup_removes_inactive_channels() {
 #[test]
 fn test_cleanup_keeps_active_channels() {
     // Cleanup should keep channels with active receivers
-    let user_with_subscriber = "alice".to_string();
+    let _user_with_subscriber = 4;
 
     // If user still has subscribers, channel should remain
     let has_subscriber = true;
@@ -129,7 +125,7 @@ fn test_cleanup_updates_channel_count() {
 #[test]
 fn test_concurrent_broadcasts_same_user() {
     // Multiple concurrent broadcasts to same user
-    let user_id = "alice".to_string();
+    let _user_id = 5;
     let broadcast_count = 5;
 
     assert_eq!(broadcast_count, 5);
@@ -138,7 +134,7 @@ fn test_concurrent_broadcasts_same_user() {
 #[test]
 fn test_concurrent_broadcasts_different_users() {
     // Multiple concurrent broadcasts to different users
-    let users = vec!["alice", "bob", "charlie"];
+    let users = [1, 2, 3];
     assert_eq!(users.len(), 3);
 }
 
@@ -147,7 +143,7 @@ fn test_concurrent_broadcasts_different_users() {
 #[test]
 fn test_complex_json_data_preserved() {
     // Complex JSON structures should be preserved
-    let json_keys = vec!["message", "user_id", "tags", "nested"];
+    let json_keys = ["message", "user_id", "tags", "nested"];
     assert_eq!(json_keys.len(), 4);
 }
 
@@ -163,11 +159,11 @@ fn test_event_type_preserved() {
 #[test]
 fn test_user_id_overwritten_in_broadcast() {
     // user_id should be set to recipient in broadcast_to_users
-    let original_user_id = "".to_string();
-    let recipient_user_id = "alice".to_string();
+    let _original_user_id = 1;
+    let recipient_user_id = 2;
 
     // After broadcast, should have recipient's user_id
-    assert_eq!(recipient_user_id, "alice");
+    assert_eq!(recipient_user_id, 2);
 }
 
 // ── Event ordering tests ─────────────────────────────────────────────
@@ -175,7 +171,7 @@ fn test_user_id_overwritten_in_broadcast() {
 #[test]
 fn test_events_received_in_order() {
     // Events should be received in the order broadcast
-    let events = vec![
+    let events = [
         ("message".to_string(), 1000i64),
         ("typing".to_string(), 1001i64),
         ("read".to_string(), 1002i64),
@@ -207,7 +203,7 @@ fn test_channel_send_failure_handled() {
 #[test]
 fn test_no_panic_on_missing_channel() {
     // Should not panic when channel doesn't exist
-    let user_id = "ghost".to_string();
+    let _user_id = 3;
 
     // Broadcasting to non-existent user shouldn't panic
     let should_not_panic = true;

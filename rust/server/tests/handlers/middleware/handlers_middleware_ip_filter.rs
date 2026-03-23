@@ -34,7 +34,7 @@ fn test_loopback_ipv6() {
 #[test]
 fn test_private_ipv4_ranges() {
     // Common private IPv4 ranges should parse
-    let ranges = vec!["10.0.0.0", "172.16.0.0", "192.168.0.0"];
+    let ranges = ["10.0.0.0", "172.16.0.0", "192.168.0.0"];
 
     for range in ranges {
         let ip = range.parse::<IpAddr>();
@@ -125,7 +125,7 @@ fn test_block_takes_precedence() {
 #[test]
 fn test_blocked_ips_are_checked_first() {
     // Blocked list should be checked first for performance
-    let check_order = vec!["blocked", "allowed"];
+    let check_order = ["blocked", "allowed"];
     assert_eq!(check_order[0], "blocked");
 }
 
@@ -156,7 +156,7 @@ fn test_network_excludes_outside_ips() {
 #[test]
 fn test_multiple_allowed_networks() {
     // Multiple networks can be in allow list
-    let networks = vec!["192.168.0.0/16", "10.0.0.0/8", "172.16.0.0/12"];
+    let networks = ["192.168.0.0/16", "10.0.0.0/8", "172.16.0.0/12"];
 
     assert_eq!(networks.len(), 3);
 }
@@ -164,7 +164,7 @@ fn test_multiple_allowed_networks() {
 #[test]
 fn test_multiple_blocked_networks() {
     // Multiple networks can be in block list
-    let networks = vec!["203.0.113.0/24", "192.0.2.0/24"];
+    let networks = ["203.0.113.0/24", "192.0.2.0/24"];
 
     assert_eq!(networks.len(), 2);
 }

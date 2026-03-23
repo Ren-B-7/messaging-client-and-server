@@ -115,50 +115,6 @@ fn parse_update_unknown_fields_ignored() {
     assert!(params.contains_key("unknown_field"));
 }
 
-// ── Username validation ────────────────────────────────────────────────────
-
-#[test]
-fn valid_username() {
-    let name = "alice";
-    assert!(!name.is_empty());
-}
-
-#[test]
-fn username_with_numbers() {
-    let name = "user123";
-    assert!(!name.is_empty());
-}
-
-#[test]
-fn username_with_underscores() {
-    let name = "alice_smith";
-    assert!(!name.is_empty());
-}
-
-#[test]
-fn username_with_hyphens() {
-    let name = "alice-smith";
-    assert!(!name.is_empty());
-}
-
-#[test]
-fn empty_username() {
-    let name = "";
-    assert!(name.is_empty());
-}
-
-#[test]
-fn username_only_spaces() {
-    let name = "   ";
-    assert!(name.trim().is_empty());
-}
-
-#[test]
-fn username_case_preserved() {
-    let name = "Alice";
-    assert_eq!(name, "Alice");
-}
-
 // ── Email validation ───────────────────────────────────────────────────────
 
 #[test]
@@ -192,73 +148,6 @@ fn invalid_email_no_domain() {
     let email = "user@";
     assert!(email.contains("@"));
     assert_eq!(email.split('@').count(), 2);
-}
-
-#[test]
-fn invalid_email_multiple_at_signs() {
-    let email = "user@@example.com";
-    assert_eq!(email.split('@').filter(|s| !s.is_empty()).count(), 2);
-}
-
-#[test]
-fn email_case_preserved() {
-    let email = "User@Example.COM";
-    assert!(email.contains("@"));
-}
-
-// ── Password validation ────────────────────────────────────────────────────
-
-#[test]
-fn password_mismatch_detected() {
-    let pass1 = "password123";
-    let pass2 = "password124";
-    assert_ne!(pass1, pass2);
-}
-
-#[test]
-fn passwords_match() {
-    let pass1 = "password123";
-    let pass2 = "password123";
-    assert_eq!(pass1, pass2);
-}
-
-#[test]
-fn same_password_detected() {
-    let current = "oldpassword";
-    let new = "oldpassword";
-    assert_eq!(current, new);
-}
-
-#[test]
-fn different_password_allowed() {
-    let current = "oldpassword";
-    let new = "newpassword123";
-    assert_ne!(current, new);
-}
-
-#[test]
-fn password_with_special_chars() {
-    let pass = "P@ssw0rd!#$%";
-    assert!(!pass.is_empty());
-    assert!(pass.len() > 8);
-}
-
-#[test]
-fn password_empty_not_strong() {
-    let pass = "";
-    assert!(pass.is_empty());
-}
-
-#[test]
-fn password_too_short() {
-    let pass = "short";
-    assert!(pass.len() < 8);
-}
-
-#[test]
-fn password_reasonable_length() {
-    let pass = "reasonablyStrongPassword123";
-    assert!(pass.len() >= 8);
 }
 
 // ── Avatar filename/extension handling ──────────────────────────────────
@@ -341,41 +230,6 @@ fn mime_type_invalid_not_image() {
     assert!(!mime.starts_with("image"));
 }
 
-// ── Constants validation ───────────────────────────────────────────────────
-
-#[test]
-fn max_avatar_bytes_is_5_mib() {
-    const MAX_AVATAR_BYTES: usize = 5 * 1024 * 1024;
-    assert_eq!(MAX_AVATAR_BYTES, 5 * 1024 * 1024);
-}
-
-#[test]
-fn avatar_cache_duration_5_minutes() {
-    let cache_control = "public, max-age=300";
-    assert!(cache_control.contains("300"));
-}
-
-// ── Session and cookie handling ────────────────────────────────────────────
-
-#[test]
-fn session_cookie_name() {
-    let name = "auth_id";
-    assert_eq!(name, "auth_id");
-}
-
-#[test]
-fn clear_cookie_empty_value() {
-    let value = "";
-    assert!(value.is_empty());
-}
-
-#[test]
-fn session_id_format() {
-    let session_id = "550e8400-e29b-41d4-a716-446655440000";
-    assert!(!session_id.is_empty());
-    assert!(session_id.contains("-"));
-}
-
 // ── Integration scenarios ──────────────────────────────────────────────────
 
 #[test]
@@ -429,16 +283,12 @@ fn avatar_upload_flow() {
 fn profile_data_complete() {
     // Check all profile fields can be present
     let user_id = 1;
-    let username = "alice";
     let email = "alice@example.com";
     let is_admin = false;
-    let created_at = "2024-01-15T10:30:00Z";
     let avatar_url = Some("/api/avatar/1");
 
     assert!(user_id > 0);
-    assert!(!username.is_empty());
     assert!(email.contains("@"));
-    assert_eq!(is_admin, false);
-    assert!(!created_at.is_empty());
+    assert!(is_admin);
     assert!(avatar_url.is_some());
 }

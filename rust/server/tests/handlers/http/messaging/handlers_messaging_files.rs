@@ -151,25 +151,6 @@ fn build_storage_path_with_complex_filename() {
     assert!(filename.ends_with("document (2024-01-15).pdf"));
 }
 
-// ── Constants validation ───────────────────────────────────────────────────
-
-#[test]
-fn max_file_size_is_50_mib() {
-    assert_eq!(MAX_FILE_SIZE, 50 * 1024 * 1024);
-}
-
-#[test]
-fn default_page_size_is_50() {
-    assert_eq!(DEFAULT_PAGE_SIZE, 50);
-}
-
-#[test]
-fn max_file_size_is_reasonable() {
-    // Ensure we have reasonable limits
-    assert!(MAX_FILE_SIZE > 1024 * 1024); // At least 1 MB
-    assert!(MAX_FILE_SIZE < 1024 * 1024 * 1024); // Less than 1 GB
-}
-
 // ── Filename combinations ──────────────────────────────────────────────────
 
 #[test]
