@@ -23,7 +23,7 @@ jobs:
         steps:
             - uses: actions/checkout@v4
             - uses: astral-sh/ruff-action@v3
-              with: { src: "./python" }
+              with: { src: "./python-gui" }
 
     htmlhint:
         runs-on: ubuntu-latest
@@ -43,7 +43,7 @@ jobs:
 
     black-format-check:
         runs-on: ubuntu-latest
-        defaults: { run: { working-directory: ./python } }
+        defaults: { run: { working-directory: ./python-gui } }
         steps:
             - uses: actions/checkout@v4
             - uses: actions/setup-python@v5
@@ -89,7 +89,7 @@ jobs:
     python-build:
         needs: [cargo-build]
         runs-on: ubuntu-latest
-        defaults: { run: { working-directory: ./python } }
+        defaults: { run: { working-directory: ./python-gui } }
         steps:
             - uses: actions/checkout@v4
             - uses: actions/setup-python@v5
