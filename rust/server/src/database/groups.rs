@@ -161,9 +161,8 @@ pub async fn get_group(conn: &Connection, chat_id: i64) -> Result<Option<Group>>
 
 pub async fn is_group_member(conn: &Connection, chat_id: i64, user_id: i64) -> Result<bool> {
     conn.call(move |conn: &mut rusqlite::Connection| {
-        let mut stmt = conn.prepare(
-            "SELECT COUNT(*) FROM group_members WHERE chat_id = ?1 AND user_id = ?2",
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT COUNT(*) FROM group_members WHERE chat_id = ?1 AND user_id = ?2")?;
         let count: i64 = stmt.query_row(params![chat_id, user_id], |row| row.get(0))?;
         Ok(count > 0)
     })
@@ -256,10 +255,7 @@ pub async fn delete_group(conn: &Connection, chat_id: i64) -> Result<()> {
         tx.execute("DELETE FROM files WHERE chat_id = ?1", params![chat_id])?;
 
         // 2. Messages in this chat.
-        tx.execute(
-            "DELETE FROM messages WHERE chat_id = ?1",
-            params![chat_id],
-        )?;
+        tx.execute("DELETE FROM messages WHERE chat_id = ?1", params![chat_id])?;
 
         // 3. Group membership rows.
         tx.execute(
@@ -317,12 +313,12 @@ pub async fn get_user_groups_by_activity(conn: &Connection, user_id: i64) -> Res
         let groups = stmt
             .query_map(params![user_id], |row: &rusqlite::Row| {
                 Ok(Group {
-                    id:          row.get(0)?,
-                    name:        row.get(1)?,
-                    created_by:  row.get(2)?,
-                    created_at:  row.get(3)?,
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    created_by: row.get(2)?,
+                    created_at: row.get(3)?,
                     description: row.get(4)?,
-                    chat_type:   row.get(5)?,
+                    chat_type: row.get(5)?,
                 })
             })?
             .collect::<std::result::Result<Vec<Group>, rusqlite::Error>>()?;

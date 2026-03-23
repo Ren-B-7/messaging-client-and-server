@@ -1,12 +1,12 @@
 use std::{sync::Arc, time::Duration};
 
-use tracing::info;
-use tokio_rusqlite::Connection;
 use hyper::{
     Method,
     header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderValue},
 };
+use tokio_rusqlite::Connection;
 use tower_http::cors::CorsLayer;
+use tracing::info;
 
 pub mod database;
 pub mod handlers;

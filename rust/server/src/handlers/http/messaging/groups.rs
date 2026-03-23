@@ -108,7 +108,11 @@ pub async fn handle_create_group(
 
     let description: Option<String> = params.get("description").and_then(|v| v.as_str()).map(|s| {
         let s = s.replace('\0', "");
-        if s.len() > 500 { s.chars().take(500).collect() } else { s }
+        if s.len() > 500 {
+            s.chars().take(500).collect()
+        } else {
+            s
+        }
     });
 
     let chat_id = groups::create_group(
@@ -210,31 +214,34 @@ pub async fn handle_add_member(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Adding member to group {}", chat_id);
 
-    let body = req.collect().await.context("Failed to read request body")?.to_bytes();
+    let body = req
+        .collect()
+        .await
+        .context("Failed to read request body")?
+        .to_bytes();
     let params: serde_json::Value =
         serde_json::from_slice(&body).context("Failed to parse JSON request body")?;
 
-    let target_user_id: i64 =
-        if let Some(uid) = params.get("user_id").and_then(|v| v.as_i64()) {
-            uid
-        } else if let Some(username) = params.get("username").and_then(|v| v.as_str()) {
-            match utils::get_user_by_username(&state.db, username.to_string()).await? {
-                Some(user) => user.id,
-                None => {
-                    return deliver_error_json(
-                        "NOT_FOUND",
-                        &format!("User '{}' not found", username),
-                        StatusCode::NOT_FOUND,
-                    );
-                }
+    let target_user_id: i64 = if let Some(uid) = params.get("user_id").and_then(|v| v.as_i64()) {
+        uid
+    } else if let Some(username) = params.get("username").and_then(|v| v.as_str()) {
+        match utils::get_user_by_username(&state.db, username.to_string()).await? {
+            Some(user) => user.id,
+            None => {
+                return deliver_error_json(
+                    "NOT_FOUND",
+                    &format!("User '{}' not found", username),
+                    StatusCode::NOT_FOUND,
+                );
             }
-        } else {
-            return deliver_error_json(
-                "INVALID_INPUT",
-                "Request must include either 'username' or 'user_id'",
-                StatusCode::BAD_REQUEST,
-            );
-        };
+        }
+    } else {
+        return deliver_error_json(
+            "INVALID_INPUT",
+            "Request must include either 'username' or 'user_id'",
+            StatusCode::BAD_REQUEST,
+        );
+    };
 
     if groups::is_group_member(&state.db, chat_id, target_user_id)
         .await
@@ -247,7 +254,11 @@ pub async fn handle_add_member(
         );
     }
 
-    let role = match params.get("role").and_then(|v| v.as_str()).unwrap_or("member") {
+    let role = match params
+        .get("role")
+        .and_then(|v| v.as_str())
+        .unwrap_or("member")
+    {
         "admin" => "admin",
         _ => "member",
     }
@@ -276,11 +287,22 @@ pub async fn handle_rename_group(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("User {} renaming group {}", user_id, chat_id);
 
-    if !groups::is_group_member(&state.db, chat_id, user_id).await.unwrap_or(false) {
-        return deliver_error_json("FORBIDDEN", "You are not a member of this group", StatusCode::FORBIDDEN);
+    if !groups::is_group_member(&state.db, chat_id, user_id)
+        .await
+        .unwrap_or(false)
+    {
+        return deliver_error_json(
+            "FORBIDDEN",
+            "You are not a member of this group",
+            StatusCode::FORBIDDEN,
+        );
     }
 
-    let body = req.collect().await.context("Failed to read request body")?.to_bytes();
+    let body = req
+        .collect()
+        .await
+        .context("Failed to read request body")?
+        .to_bytes();
     let params: serde_json::Value =
         serde_json::from_slice(&body).context("Failed to parse JSON request body")?;
 
@@ -293,17 +315,28 @@ pub async fn handle_rename_group(
         .to_string();
 
     if new_name.is_empty() {
-        return deliver_error_json("INVALID_INPUT", "Group name cannot be empty", StatusCode::BAD_REQUEST);
+        return deliver_error_json(
+            "INVALID_INPUT",
+            "Group name cannot be empty",
+            StatusCode::BAD_REQUEST,
+        );
     }
     if new_name.len() > 100 {
-        return deliver_error_json("INVALID_INPUT", "Group name cannot exceed 100 characters", StatusCode::BAD_REQUEST);
+        return deliver_error_json(
+            "INVALID_INPUT",
+            "Group name cannot exceed 100 characters",
+            StatusCode::BAD_REQUEST,
+        );
     }
 
     groups::update_group_name(&state.db, chat_id, new_name.clone())
         .await
         .context("Failed to rename group")?;
 
-    info!("Group {} renamed to '{}' by user {}", chat_id, new_name, user_id);
+    info!(
+        "Group {} renamed to '{}' by user {}",
+        chat_id, new_name, user_id
+    );
 
     deliver_success_json(
         Some(serde_json::json!({ "chat_id": chat_id, "name": new_name })),
@@ -383,7 +416,11 @@ pub async fn handle_search_users(
         );
     }
     if q.len() > 50 {
-        return deliver_error_json("INVALID_INPUT", "Search query too long", StatusCode::BAD_REQUEST);
+        return deliver_error_json(
+            "INVALID_INPUT",
+            "Search query too long",
+            StatusCode::BAD_REQUEST,
+        );
     }
 
     let users = utils::search_users_by_username(&state.db, &q, 10)
@@ -415,7 +452,11 @@ pub async fn handle_remove_member(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Removing member from group {}", chat_id);
 
-    let body = req.collect().await.context("Failed to read request body")?.to_bytes();
+    let body = req
+        .collect()
+        .await
+        .context("Failed to read request body")?
+        .to_bytes();
     let params: serde_json::Value =
         serde_json::from_slice(&body).context("Failed to parse JSON request body")?;
 

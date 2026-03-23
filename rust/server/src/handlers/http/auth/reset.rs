@@ -67,8 +67,7 @@ pub async fn handle_reset_request(
     info!("Password reset requested for username: {}", username);
 
     // Look up the user — but do not reveal whether they exist.
-    let user = match crate::database::utils::get_user_by_username(&state.db, username.clone())
-        .await
+    let user = match crate::database::utils::get_user_by_username(&state.db, username.clone()).await
     {
         Ok(Some(u)) => u,
         Ok(None) => {
@@ -142,8 +141,8 @@ pub async fn handle_reset_confirm(
         .map_err(|e| anyhow::anyhow!("Failed to read body: {}", e))?
         .to_bytes();
 
-    let params: serde_json::Value = serde_json::from_slice(&body)
-        .map_err(|_| anyhow::anyhow!("Invalid JSON"))?;
+    let params: serde_json::Value =
+        serde_json::from_slice(&body).map_err(|_| anyhow::anyhow!("Invalid JSON"))?;
 
     let token = match params.get("token").and_then(|v| v.as_str()) {
         Some(t) if !t.is_empty() => t.to_string(),

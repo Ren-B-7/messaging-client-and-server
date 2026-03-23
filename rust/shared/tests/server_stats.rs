@@ -1,5 +1,5 @@
 use shared::types::{server_config::*, server_stats::*};
-use std::{collections::HashSet};
+use std::collections::HashSet;
 
 fn test_config() -> AppConfig {
     AppConfig {
