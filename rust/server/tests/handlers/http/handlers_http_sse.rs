@@ -100,7 +100,7 @@ fn offset_defaults_to_zero() {
 #[test]
 fn history_reverse_produces_oldest_first_order() {
     // Simulate what get_chat_messages returns: DESC order (newest first)
-    let mut messages = vec![
+    let mut messages = [
         ("msg_newest", 1003i64),
         ("msg_middle", 1002i64),
         ("msg_oldest", 1001i64),
@@ -122,7 +122,7 @@ fn history_reverse_empty_slice_is_a_no_op() {
 
 #[test]
 fn history_reverse_single_element_unchanged() {
-    let mut messages = vec!["only_message"];
+    let mut messages = ["only_message"];
     messages.reverse();
     assert_eq!(messages[0], "only_message");
 }

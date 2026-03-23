@@ -129,7 +129,7 @@ pub fn delete_cookie(name: &str) -> Result<HeaderValue> {
 // ---------------------------------------------------------------------------
 
 /// Extract the client IP from `X-Forwarded-For` → `X-Real-IP` → `None`.
-pub fn get_client_ip(req: &Request<hyper::body::Incoming>) -> Option<String> {
+pub fn get_client_ip<B>(req: &Request<B>) -> Option<String> {
     if let Some(forwarded) = get_header_value(req.headers(), "x-forwarded-for") {
         return forwarded.split(',').next().map(|s| s.trim().to_string());
     }
@@ -156,8 +156,8 @@ pub fn accepts_content_type(req: &Request<hyper::body::Incoming>, content_type: 
 // ---------------------------------------------------------------------------
 
 /// Extract a Bearer token from `Authorization: Bearer <token>`.
-pub fn get_bearer_token(req: &Request<hyper::body::Incoming>) -> Option<String> {
-    get_header_value(req.headers(), "authorization").and_then(|auth| {
+pub fn get_bearer_token(headers: &HeaderMap) -> Option<String> {
+    get_header_value(headers, "authorization").and_then(|auth| {
         if let Some(s) = auth.strip_prefix("Bearer ") {
             debug!("Bearer token extracted");
             Some(s.to_string())
@@ -171,7 +171,7 @@ pub fn get_bearer_token(req: &Request<hyper::body::Incoming>) -> Option<String> 
 /// Extract a raw token string from the `Authorization: Bearer` header first,
 /// then fall back to the `auth_id` cookie.
 pub fn extract_session_token(req: &Request<hyper::body::Incoming>) -> Option<String> {
-    if let Some(token) = get_bearer_token(req) {
+    if let Some(token) = get_bearer_token(req.headers()) {
         debug!("Using session token from Bearer header");
         return Some(token);
     }

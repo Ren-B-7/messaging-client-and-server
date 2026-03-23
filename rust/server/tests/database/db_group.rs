@@ -4,7 +4,7 @@ use shared::types::groups::NewGroup;
 use shared::types::message::NewMessage;
 use tokio_rusqlite::{params, rusqlite::Error};
 
-async fn insert_user(conn: &tokio_rusqlite::Connection, user_id: i64, username: &str) {
+async fn _insert_user(conn: &tokio_rusqlite::Connection, user_id: i64, username: &str) {
     let username = username.to_string();
     conn.call(move |c| {
         c.execute(
@@ -307,7 +307,7 @@ async fn find_existing_dm_finds_shared_direct_chat() {
 async fn groups_ordered_by_most_recent_message() {
     let conn = setup_test_db().await;
 
-    let chat1 = groups::create_group(
+    let _chat1 = groups::create_group(
         &conn,
         NewGroup {
             name: "Older".into(),

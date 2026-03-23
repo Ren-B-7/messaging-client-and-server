@@ -8,6 +8,7 @@ fn test_config() -> AppConfig {
             port_client: Some(1337),
             port_admin: Some(1338),
             max_connections: 500,
+            timeout: 10,
         },
         paths: PathsConfig {
             icons: "/icons".into(),

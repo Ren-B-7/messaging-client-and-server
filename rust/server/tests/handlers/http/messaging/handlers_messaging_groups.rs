@@ -1,9 +1,3 @@
-// The previous test file tested only Rust stdlib operations (str::trim,
-// i64::parse, HashMap::get) with no connection to the groups handler.
-// These tests exercise the actual validation rules enforced by the handler.
-
-use std::collections::HashMap;
-
 // ── Group name validation (mirrors handle_create_group / handle_rename_group) ──
 
 #[test]
@@ -169,21 +163,6 @@ fn search_query_trimmed_before_use() {
     let raw = "  alice  ";
     let trimmed = raw.trim();
     assert_eq!(trimmed, "alice");
-}
-
-#[test]
-fn empty_search_query_returns_early() {
-    let q = "";
-    assert!(
-        q.is_empty(),
-        "empty query must short-circuit to empty results"
-    );
-}
-
-#[test]
-fn whitespace_search_trims_to_empty() {
-    let q = "   ".trim();
-    assert!(q.is_empty());
 }
 
 #[test]
