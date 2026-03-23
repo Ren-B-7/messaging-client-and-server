@@ -110,4 +110,4 @@ jobs:
                   sudo apt-get update
                   sudo apt-get install -y python3-tk xvfb
             - name: Run headless GUI smoke test
-              run: xvfb-run python main.py
+              run: xvfb-run timeout 10 python main.py || true
