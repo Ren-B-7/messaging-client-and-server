@@ -77,7 +77,7 @@ jobs:
 
     # --- PHASE 2: RUST TESTING ---
     cargo-test:
-        needs: [bacon-and-fmt]
+        needs: [rust-lint-and-fmt]
         runs-on: ubuntu-latest
         defaults: { run: { working-directory: ./rust } }
         steps:
@@ -90,7 +90,7 @@ jobs:
 
     # --- PHASE 3: RUST BUILD ---
     cargo-build:
-        needs: [cargo-test]
+        needs: [rust-lint-and-fmt]
         runs-on: ubuntu-latest
         defaults: { run: { working-directory: ./rust } }
         steps:
