@@ -1,4 +1,3 @@
-use tracing::info;
 /// Returns true only when the request arrived over a secure (HTTPS) connection.
 ///
 /// Checks, in order:
@@ -31,8 +30,8 @@ pub fn is_https(req: &hyper::Request<impl hyper::body::Body>) -> bool {
         return true;
     }
 
-    // 3. URI scheme (only present when using an absolute-form request URI)
-    info!("{:?}", req.uri().to_string());
+    // 3. URI scheme (only present when using an absolute-form request URI,
+    //    which is rare for HTTP/1.1 but correct to check).
     req.uri()
         .scheme()
         .map(|s| s.as_str() == "https")

@@ -465,6 +465,20 @@ pub async fn handle_get_chat_files(
 
 /// Delete a file.  Only the uploader (or an admin) may delete their files.
 /// Removes both the DB record and the bytes on disk.
+/// Delete a file and its companion message atomically.
+///
+/// Only the uploader may delete their own files.
+///
+/// # Companion message cleanup
+///
+/// Previously the handler deleted only the `files` DB row and bytes on disk,
+/// leaving the companion `messages` row (with `message_type = 'file'`) intact.
+/// Clients would render a broken file card in the chat with no backing bytes.
+///
+/// Now the `files` row and the companion `messages` row are deleted in a
+/// single transaction — the DB rows are the authoritative access gate, so
+/// deleting them first ensures the file is inaccessible even if disk removal
+/// fails afterwards.
 pub async fn handle_delete_file(
     _req: Request<hyper::body::Incoming>,
     state: AppState,
@@ -490,8 +504,30 @@ pub async fn handle_delete_file(
         );
     }
 
-    // Remove DB record first so a crash between DB and disk doesn't leak access.
-    let deleted = files::delete_file_record(&state.db, file_id)
+    let companion_message_id = rec.message_id;
+    let storage_path = rec.storage_path.clone();
+
+    // Delete the files row and the companion message atomically.
+    let deleted = state
+        .db
+        .call(move |conn| {
+            let tx = conn.transaction()?;
+
+            let count = tx.execute(
+                "DELETE FROM files WHERE id = ?1",
+                rusqlite::params![file_id],
+            )?;
+
+            if let Some(msg_id) = companion_message_id {
+                tx.execute(
+                    "DELETE FROM messages WHERE id = ?1",
+                    rusqlite::params![msg_id],
+                )?;
+            }
+
+            tx.commit()?;
+            Ok::<_, rusqlite::Error>(count > 0)
+        })
         .await
         .context("Failed to delete file record")?;
 
@@ -500,13 +536,10 @@ pub async fn handle_delete_file(
     }
 
     // Best-effort disk removal — log but don't fail the request if it errors.
-    if let Err(e) = tokio::fs::remove_file(&rec.storage_path).await {
-        warn!(
-            "Could not remove file {:?} from disk: {}",
-            rec.storage_path, e
-        );
+    if let Err(e) = tokio::fs::remove_file(&storage_path).await {
+        warn!("Could not remove file {:?} from disk: {}", storage_path, e);
     } else {
-        info!("Deleted file {:?} from disk", rec.storage_path);
+        info!("Deleted file {:?} from disk", storage_path);
     }
 
     deliver_serialized_json(
@@ -542,10 +575,10 @@ async fn sse_broadcast_file_shared(
         }
     };
 
-    let recipients: Vec<String> = members.iter().map(|m| m.user_id.to_string()).collect();
+    let recipients: Vec<i64> = members.iter().map(|m| m.user_id).collect();
 
     let event = SseEvent {
-        user_id: String::new(),
+        user_id: 0,
         event_type: "file_shared".to_string(),
         data: serde_json::json!({
             "file_id":     file_id,

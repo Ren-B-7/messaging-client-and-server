@@ -1,17 +1,20 @@
+use bytes::Bytes;
+use http_body_util::{BodyExt, Full, combinators::BoxBody};
+use hyper::{Request, Response, StatusCode};
+use std::convert::Infallible;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
-
-use hyper::{Request, Response, StatusCode};
 use tokio::time;
 use tower::{Layer, Service};
 use tracing::warn;
 
-/// Tower layer for request timeouts
+/// Tower layer for request timeouts.
 ///
-/// If the inner service does not respond within the configured
-/// duration, a 408 Request Timeout response is returned.
+/// If the inner service does not respond within the configured duration, a
+/// 408 Request Timeout response is returned with a JSON body instead of the
+/// previous empty body produced by `ResBody::default()`.
 #[derive(Clone)]
 pub struct TimeoutLayer {
     duration: Duration,
@@ -34,19 +37,29 @@ impl<S> Layer<S> for TimeoutLayer {
     }
 }
 
-/// The actual timeout service
+/// The actual timeout service.
 #[derive(Clone)]
 pub struct TimeoutService<S> {
     inner: S,
     duration: Duration,
 }
 
-impl<S, ReqBody, ResBody> Service<Request<ReqBody>> for TimeoutService<S>
+fn json_error_body(code: &'static str, message: &'static str) -> BoxBody<Bytes, Infallible> {
+    let json = format!(
+        r#"{{"status":"error","code":"{}","message":"{}"}}"#,
+        code, message
+    );
+    Full::new(Bytes::from(json)).boxed()
+}
+
+impl<S, ReqBody> Service<Request<ReqBody>> for TimeoutService<S>
 where
-    S: Service<Request<ReqBody>, Response = Response<ResBody>> + Clone + Send + 'static,
+    S: Service<Request<ReqBody>, Response = Response<BoxBody<Bytes, Infallible>>>
+        + Clone
+        + Send
+        + 'static,
     S::Future: Send + 'static,
     ReqBody: Send + 'static,
-    ResBody: Default + Send + 'static,
 {
     type Response = S::Response;
     type Error = S::Error;
@@ -66,13 +79,14 @@ where
                 Err(_) => {
                     warn!("Request timed out after {:?}", duration);
 
-                    let response = Response::builder()
+                    Ok(Response::builder()
                         .status(StatusCode::REQUEST_TIMEOUT)
                         .header("content-type", "application/json")
-                        .body(ResBody::default())
-                        .unwrap();
-
-                    Ok(response)
+                        .body(json_error_body(
+                            "REQUEST_TIMEOUT",
+                            "Request took too long — please try again",
+                        ))
+                        .unwrap())
                 }
             }
         })

@@ -1,13 +1,24 @@
 use serde::{Deserialize, Serialize};
 
+/// Request body for POST /api/register and POST /register.
+///
+/// # Removed field: `full_name`
+///
+/// The previous struct had `pub full_name: Option<String>` which was
+/// deserialized from the request body but never written to the database
+/// (the `users` table has no such column).  Clients submitting a name
+/// received a 200/201 success response while their data was silently
+/// discarded — a data integrity bug.
+///
+/// The field has been removed.  If full name support is added in the future,
+/// the `users` table schema and `register_user` DB function must be updated
+/// simultaneously so there is no window where the field is accepted but lost.
 #[derive(Debug, Clone, Deserialize)]
 pub struct RegisterData {
     pub username: String,
     pub password: String,
     pub confirm_password: String,
     pub email: Option<String>,
-    #[serde(default)]
-    pub full_name: Option<String>,
 }
 
 /// Registration response codes

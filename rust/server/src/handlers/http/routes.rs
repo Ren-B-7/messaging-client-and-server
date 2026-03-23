@@ -783,6 +783,35 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
                 .await
                 .context("Typing indicator failed")
         })
+        // DELETE /api/messages/:id — delete own message (sender only)
+        .delete_hard(
+            "/api/messages/:id",
+            |req, state, user_id, _claims| async move {
+                let message_id = req
+                    .uri()
+                    .path()
+                    .split('/')
+                    .nth(3)
+                    .and_then(|s| s.parse::<i64>().ok());
+                match message_id {
+                    Some(id) => messaging::handle_delete_message(req, state, user_id, id)
+                        .await
+                        .context("Message delete failed"),
+                    None => json_response::deliver_error_json(
+                        "BAD_REQUEST",
+                        "Invalid message id",
+                        StatusCode::BAD_REQUEST,
+                    )
+                    .context("Bad request"),
+                }
+            },
+        )
+        // GET /api/unread — unread message counts (optional ?chat_id=N)
+        .get_light("/api/unread", |req, state, claims| async move {
+            messaging::handle_get_unread(req, state, claims)
+                .await
+                .context("Unread count failed")
+        })
         // ── Chats / groups ───────────────────────────────────────────────────
         .post_hard("/api/chats", |req, state, user_id, _claims| async move {
             messaging::handle_create_chat(req, state, user_id)
@@ -935,4 +964,15 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
                     .context("Password change failed")
             },
         )
+        // ── Password reset ───────────────────────────────────────────────────
+        .post("/api/auth/reset-request", |req, state| async move {
+            crate::handlers::http::auth::reset::handle_reset_request(req, state)
+                .await
+                .context("Reset request failed")
+        })
+        .post("/api/auth/reset-confirm", |req, state| async move {
+            crate::handlers::http::auth::reset::handle_reset_confirm(req, state)
+                .await
+                .context("Reset confirm failed")
+        })
 }

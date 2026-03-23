@@ -1,4 +1,5 @@
 use anyhow::{Result, anyhow};
+use httpdate;
 use hyper::Request;
 use hyper::header::{HeaderMap, HeaderValue};
 use std::time::Duration;
@@ -169,9 +170,6 @@ pub fn get_bearer_token(req: &Request<hyper::body::Incoming>) -> Option<String> 
 
 /// Extract a raw token string from the `Authorization: Bearer` header first,
 /// then fall back to the `auth_id` cookie.
-///
-/// Returns the JWT string as-is without decoding it.  Call
-/// `decode_jwt_claims` or `validate_jwt_secure` to get the actual claims.
 pub fn extract_session_token(req: &Request<hyper::body::Incoming>) -> Option<String> {
     if let Some(token) = get_bearer_token(req) {
         debug!("Using session token from Bearer header");
@@ -193,8 +191,6 @@ pub fn extract_session_token(req: &Request<hyper::body::Incoming>) -> Option<Str
 ///
 /// **Fast path** — suitable for GET / read-only requests.  No database is
 /// touched; only the HMAC signature is checked along with the `exp` field.
-///
-/// Returns `Err(String)` with a human-readable reason on any failure.
 pub fn decode_jwt_claims(
     req: &Request<hyper::body::Incoming>,
     jwt_secret: &str,
@@ -223,16 +219,18 @@ pub fn decode_jwt_claims(
 /// **Secure path** — required for every POST / PUT / DELETE handler.
 ///
 /// Steps:
-///   1. Extract & decode the JWT (same as `decode_jwt_claims`).
+///   1. Extract & decode the JWT (HMAC verify + expiry).
 ///   2. Look up `session_id` in the DB → confirms the session hasn't been
 ///      revoked (logout / ban).
 ///   3. Compare `sessions.ip_address` against the current request IP.
-///      Mismatches are **rejected** to block stolen-token replay attacks.
+///      Behaviour is controlled by `AppConfig.auth.strict_ip_binding`:
+///      - `true`  → **reject** on mismatch (strongest protection, breaks mobile/VPN)
+///      - `false` → **warn** on mismatch (logs suspicious activity, never blocks)
 ///   4. Compare the JWT `user_agent` claim against the current `User-Agent`
-///      prefix.  Changes are **warned** but not blocked (browser updates).
+///      prefix.  Changes are warn-only (browser updates are common).
 ///
-/// Returns `(user_id, claims)` on success so callers don't need to re-decode
-/// the token. Returns `Err(String)` with the rejection reason on any failure.
+/// Returns `(user_id, claims)` on success. Returns `Err(String)` with the
+/// rejection reason on any failure.
 pub async fn validate_jwt_secure(
     req: &Request<hyper::body::Incoming>,
     state: &crate::AppState,
@@ -249,14 +247,31 @@ pub async fn validate_jwt_secure(
     let current_ip = get_client_ip(req).unwrap_or_else(|| "unknown".to_string());
     let current_ua = get_user_agent(req).unwrap_or_else(|| "unknown".to_string());
 
-    // Step 3 — IP binding check (CRITICAL — reject on mismatch).
+    // Step 3 — IP binding check.
+    //
+    // strict_ip_binding=true (default): hard reject on mismatch — strongest
+    // stolen-token defence, but breaks mobile users who switch networks.
+    //
+    // strict_ip_binding=false: warn-only — suspicious IPs are logged so you
+    // can see them in Grafana/Loki, but the request is not blocked. The JWT
+    // signature and DB session check still prevent replay from a device that
+    // never authenticated.
     if let Some(ref stored_ip) = session.ip_address {
         if stored_ip != &current_ip {
-            warn!(
-                "SECURITY: session IP mismatch. user_id={}, original={}, current={}",
-                claims.user_id, stored_ip, current_ip
-            );
-            return Err("Session IP mismatch — possible token theft".to_string());
+            let strict = state.config.read().await.auth.strict_ip_binding;
+            if strict {
+                warn!(
+                    "SECURITY: session IP mismatch — rejecting. user_id={}, original={}, current={}",
+                    claims.user_id, stored_ip, current_ip
+                );
+                return Err("Session IP mismatch — possible token theft".to_string());
+            } else {
+                warn!(
+                    "SECURITY: session IP mismatch (warn-only, strict_ip_binding=false). \
+                     user_id={}, original={}, current={}",
+                    claims.user_id, stored_ip, current_ip
+                );
+            }
         }
     }
 
@@ -280,9 +295,6 @@ pub async fn validate_jwt_secure(
 }
 
 /// Build a signed JWT string from the supplied claims.
-///
-/// `jwt_secret` must be at least 32 bytes; shorter keys are rejected by the
-/// `jsonwebtoken` crate.  Use `AppState.jwt_secret` in handlers.
 pub fn encode_jwt(claims: &JwtClaims, jwt_secret: &str) -> Result<String> {
     use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 
@@ -316,8 +328,6 @@ pub fn add_no_cache_headers<T>(mut res: hyper::Response<T>) -> hyper::Response<T
 }
 
 /// Set `Cache-Control: public, max-age=<seconds>`.
-///
-/// Pass `None` to use the default (1 year / 31 536 000 s).
 pub fn add_cache_headers_with_max_age<T>(
     mut res: hyper::Response<T>,
     max_age_seconds: Option<u64>,
@@ -377,25 +387,54 @@ pub fn add_last_modified_header<T>(
     res
 }
 
-/// Always returns `true` (always serve).  Proper HTTP-date parsing is a
-/// future enhancement.
+/// Check `If-Modified-Since` against a stored timestamp.
+///
+/// Returns `true` if the resource has been modified (i.e. should be served),
+/// `false` if the client's cached copy is still valid (i.e. send 304).
+///
+/// HTTP-date format: `Thu, 01 Jan 1970 00:00:00 GMT`
 pub fn check_if_modified_since(
-    _req: &Request<hyper::body::Incoming>,
-    _last_modified_timestamp: u64,
+    req: &Request<hyper::body::Incoming>,
+    last_modified_timestamp: u64,
 ) -> bool {
-    true
+    let Some(ims_header) = get_header_value(req.headers(), "if-modified-since") else {
+        // No header → always serve the resource.
+        return true;
+    };
+
+    // Parse the HTTP-date with httpdate.  If parsing fails, serve the resource
+    // (conservative — avoids accidentally sending stale 304 responses).
+    let Ok(ims_time) = httpdate::parse_http_date(&ims_header) else {
+        warn!("Failed to parse If-Modified-Since header: '{}'", ims_header);
+        return true;
+    };
+
+    let ims_secs = ims_time
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    // The resource has NOT been modified if its timestamp is ≤ the IMS time.
+    // Return false (304) in that case; true (serve) otherwise.
+    last_modified_timestamp > ims_secs
 }
 
-/// Extract basic auth credentials (base64 decoding not yet implemented).
+/// Extract basic auth credentials from `Authorization: Basic <base64>`.
 pub fn get_basic_auth(req: &Request<hyper::body::Incoming>) -> Option<(String, String)> {
-    get_header_value(req.headers(), "authorization").and_then(|auth| {
-        if auth.starts_with("Basic ") {
-            debug!("Basic auth credentials extracted");
-            // TODO: Implement base64 decoding
-            None
-        } else {
-            warn!("Invalid or missing Basic auth");
-            None
-        }
-    })
+    use base64::prelude::{BASE64_STANDARD, Engine as _};
+
+    let auth = get_header_value(req.headers(), "authorization")?;
+    if !auth.starts_with("Basic ") {
+        warn!("Invalid or missing Basic auth");
+        return None;
+    }
+
+    let decoded = BASE64_STANDARD.decode(&auth[6..]).ok()?;
+    let credentials = String::from_utf8(decoded).ok()?;
+    let mut parts = credentials.splitn(2, ':');
+    let username = parts.next()?.to_string();
+    let password = parts.next()?.to_string();
+
+    debug!("Basic auth credentials extracted");
+    Some((username, password))
 }

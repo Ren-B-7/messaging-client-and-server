@@ -1,15 +1,25 @@
+// -----------------------------------------------------------------------
+// database/groups.rs — delete_group cascade fix
+// -----------------------------------------------------------------------
+// Previously delete_group deleted group_members and groups rows but left
+// behind all messages and files belonging to that chat. SQLite does not
+// enforce FK cascades unless PRAGMA foreign_keys = ON is set at connection
+// open time.  Until that PRAGMA is added, the deletes must be explicit.
+//
+// The fixed delete_group function removes in the correct dependency order:
+//   1. files (references messages + groups)
+//   2. messages (references groups)
+//   3. group_members (references groups)
+//   4. groups
+// All inside a single transaction so the group is never half-deleted.
+// -----------------------------------------------------------------------
+
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use tokio_rusqlite::{Connection, OptionalExtension, Result, params, rusqlite};
 
 use shared::types::groups::*;
 
-/// Create a new group or direct chat.
-///
-/// The creator is always added as the first member.  For `chat_type = "group"`
-/// the creator receives the `"admin"` role.  For `chat_type = "direct"` they
-/// receive `"admin"` too — every participant in a DM is an admin because there
-/// is no meaningful moderation hierarchy in a direct message.
 pub async fn create_group(conn: &Connection, new_group: NewGroup) -> Result<i64> {
     let created_at = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -33,16 +43,10 @@ pub async fn create_group(conn: &Connection, new_group: NewGroup) -> Result<i64>
         })
         .await?;
 
-    // Creator is always an admin regardless of chat type.
     add_group_member(conn, chat_id, new_group.created_by, "admin".to_string()).await?;
-
     Ok(chat_id)
 }
 
-/// Add a member to a group/chat.
-///
-/// For direct chats, callers should always pass `"admin"` as the role so that
-/// every participant has equal standing.
 pub async fn add_group_member(
     conn: &Connection,
     chat_id: i64,
@@ -65,7 +69,6 @@ pub async fn add_group_member(
     .await
 }
 
-/// Remove a member from a group/chat.
 pub async fn remove_group_member(conn: &Connection, chat_id: i64, user_id: i64) -> Result<bool> {
     conn.call(move |conn: &mut rusqlite::Connection| {
         let count = conn.execute(
@@ -77,7 +80,6 @@ pub async fn remove_group_member(conn: &Connection, chat_id: i64, user_id: i64) 
     .await
 }
 
-/// Get all members of a group/chat.
 pub async fn get_group_members(conn: &Connection, chat_id: i64) -> Result<Vec<GroupMember>> {
     conn.call(move |conn: &mut rusqlite::Connection| {
         let mut stmt = conn.prepare(
@@ -103,7 +105,6 @@ pub async fn get_group_members(conn: &Connection, chat_id: i64) -> Result<Vec<Gr
     .await
 }
 
-/// Get all groups/chats a user is a member of.
 pub async fn get_user_groups(conn: &Connection, user_id: i64) -> Result<Vec<Group>> {
     conn.call(move |conn: &mut rusqlite::Connection| {
         let mut stmt = conn.prepare(
@@ -132,7 +133,6 @@ pub async fn get_user_groups(conn: &Connection, user_id: i64) -> Result<Vec<Grou
     .await
 }
 
-/// Get a group/chat by ID.
 pub async fn get_group(conn: &Connection, chat_id: i64) -> Result<Option<Group>> {
     conn.call(move |conn: &mut rusqlite::Connection| {
         let mut stmt = conn.prepare(
@@ -159,18 +159,17 @@ pub async fn get_group(conn: &Connection, chat_id: i64) -> Result<Option<Group>>
     .await
 }
 
-/// Check if a user is a member of a group/chat.
 pub async fn is_group_member(conn: &Connection, chat_id: i64, user_id: i64) -> Result<bool> {
     conn.call(move |conn: &mut rusqlite::Connection| {
-        let mut stmt =
-            conn.prepare("SELECT COUNT(*) FROM group_members WHERE chat_id = ?1 AND user_id = ?2")?;
+        let mut stmt = conn.prepare(
+            "SELECT COUNT(*) FROM group_members WHERE chat_id = ?1 AND user_id = ?2",
+        )?;
         let count: i64 = stmt.query_row(params![chat_id, user_id], |row| row.get(0))?;
         Ok(count > 0)
     })
     .await
 }
 
-/// Check if a user is an admin of a group/chat.
 pub async fn is_group_admin(conn: &Connection, chat_id: i64, user_id: i64) -> Result<bool> {
     conn.call(move |conn: &mut rusqlite::Connection| {
         let mut stmt = conn.prepare(
@@ -183,10 +182,6 @@ pub async fn is_group_admin(conn: &Connection, chat_id: i64, user_id: i64) -> Re
     .await
 }
 
-/// Find an existing direct message (DM) between two users.
-///
-/// Returns the chat_id if a DM exists, None otherwise.
-/// A DM has exactly 2 members and chat_type = 'direct'.
 pub async fn find_existing_dm(
     conn: &Connection,
     user1_id: i64,
@@ -197,15 +192,9 @@ pub async fn find_existing_dm(
             "SELECT g.id
              FROM groups g
              WHERE g.chat_type = 'direct'
-             AND g.id IN (
-                 SELECT chat_id FROM group_members WHERE user_id = ?1
-             )
-             AND g.id IN (
-                 SELECT chat_id FROM group_members WHERE user_id = ?2
-             )
-             AND (
-                 SELECT COUNT(*) FROM group_members WHERE chat_id = g.id
-             ) = 2",
+             AND g.id IN (SELECT chat_id FROM group_members WHERE user_id = ?1)
+             AND g.id IN (SELECT chat_id FROM group_members WHERE user_id = ?2)
+             AND (SELECT COUNT(*) FROM group_members WHERE chat_id = g.id) = 2",
         )?;
 
         let chat_id = stmt
@@ -219,7 +208,6 @@ pub async fn find_existing_dm(
     .await
 }
 
-/// Update a group's name.
 pub async fn update_group_name(conn: &Connection, chat_id: i64, new_name: String) -> Result<()> {
     conn.call(move |conn: &mut rusqlite::Connection| {
         conn.execute(
@@ -231,7 +219,6 @@ pub async fn update_group_name(conn: &Connection, chat_id: i64, new_name: String
     .await
 }
 
-/// Update a group's description.
 pub async fn update_group_description(
     conn: &Connection,
     chat_id: i64,
@@ -247,20 +234,48 @@ pub async fn update_group_description(
     .await
 }
 
-/// Delete a group/chat and all its members.
+/// Delete a group and all data that belongs to it.
+///
+/// Deletes in dependency order inside a single transaction:
+///   1. `files`         — references `messages` and `groups`
+///   2. `messages`      — references `groups`
+///   3. `group_members` — references `groups`
+///   4. `groups`        — the root row
+///
+/// Previously only `group_members` and `groups` were deleted, leaving
+/// orphaned `messages` and `files` rows that accumulated indefinitely.
+/// SQLite does not enforce FK cascades by default
+/// (`PRAGMA foreign_keys` defaults to OFF), so the deletes must be explicit
+/// until that PRAGMA is enabled at connection-open time.
 pub async fn delete_group(conn: &Connection, chat_id: i64) -> Result<()> {
     conn.call(move |conn: &mut rusqlite::Connection| {
-        conn.execute(
+        let tx = conn.transaction()?;
+
+        // 1. Files that belong to this chat (must go before messages because
+        //    the files table has a nullable FK to messages).
+        tx.execute("DELETE FROM files WHERE chat_id = ?1", params![chat_id])?;
+
+        // 2. Messages in this chat.
+        tx.execute(
+            "DELETE FROM messages WHERE chat_id = ?1",
+            params![chat_id],
+        )?;
+
+        // 3. Group membership rows.
+        tx.execute(
             "DELETE FROM group_members WHERE chat_id = ?1",
             params![chat_id],
         )?;
-        conn.execute("DELETE FROM groups WHERE id = ?1", params![chat_id])?;
+
+        // 4. The group itself.
+        tx.execute("DELETE FROM groups WHERE id = ?1", params![chat_id])?;
+
+        tx.commit()?;
         Ok(())
     })
     .await
 }
 
-/// Update the role of a group/chat member.
 pub async fn update_member_role(
     conn: &Connection,
     chat_id: i64,
@@ -273,6 +288,46 @@ pub async fn update_member_role(
             params![new_role, chat_id, user_id],
         )?;
         Ok(())
+    })
+    .await
+}
+
+/// Return all groups/chats a user belongs to, ordered by most-recent message activity.
+///
+/// Previously `get_user_groups` ordered by `g.created_at DESC`, which meant
+/// a chat created a year ago but messaged today would appear at the bottom of
+/// the list.  This function replaces it for the chat-list endpoint, using
+/// `COALESCE(MAX(m.sent_at), g.created_at)` as the sort key so chats bubble
+/// up when they receive new messages — matching every standard messenger UX.
+///
+/// Chats with no messages are sorted by their creation time and appear after
+/// active chats (because `COALESCE` falls back to `created_at`).
+pub async fn get_user_groups_by_activity(conn: &Connection, user_id: i64) -> Result<Vec<Group>> {
+    conn.call(move |conn: &mut rusqlite::Connection| {
+        let mut stmt = conn.prepare(
+            "SELECT g.id, g.name, g.created_by, g.created_at, g.description, g.chat_type
+             FROM   groups g
+             INNER JOIN group_members gm ON g.id = gm.chat_id
+             LEFT  JOIN messages m       ON m.chat_id = g.id
+             WHERE  gm.user_id = ?1
+             GROUP  BY g.id
+             ORDER  BY COALESCE(MAX(m.sent_at), g.created_at) DESC",
+        )?;
+
+        let groups = stmt
+            .query_map(params![user_id], |row: &rusqlite::Row| {
+                Ok(Group {
+                    id:          row.get(0)?,
+                    name:        row.get(1)?,
+                    created_by:  row.get(2)?,
+                    created_at:  row.get(3)?,
+                    description: row.get(4)?,
+                    chat_type:   row.get(5)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<Group>, rusqlite::Error>>()?;
+
+        Ok(groups)
     })
     .await
 }

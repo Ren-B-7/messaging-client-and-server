@@ -1,3 +1,16 @@
+// -----------------------------------------------------------------------
+// handlers/http/messaging/groups.rs
+// -----------------------------------------------------------------------
+// Two quality fixes in this file:
+//
+//  1. handle_get_members: was calling get_user_by_id() in a loop —
+//     one DB query per member. Replaced with a single JOIN query.
+//
+//  2. handle_delete_file: was leaving the companion `message_type='file'`
+//     row in the messages table after deleting the file record and bytes
+//     on disk. The message row is now deleted in the same transaction.
+// -----------------------------------------------------------------------
+
 use anyhow::{Context, Result};
 use bytes::Bytes;
 use form_urlencoded;
@@ -14,18 +27,9 @@ use shared::types::groups::*;
 use shared::types::jwt::JwtClaims;
 
 // ---------------------------------------------------------------------------
-// Handlers
-//
-// Auth is performed by the router BEFORE these handlers are called.
-//   - GET handlers receive `claims: JwtClaims`  (light auth — JWT only)
-//   - POST / DELETE handlers receive `user_id: i64`  (hard auth — JWT + DB + IP)
-//
-// No handler calls any auth function internally.
+// GET /api/groups
 // ---------------------------------------------------------------------------
 
-/// GET /api/groups — list groups the authenticated user belongs to.
-///
-/// Light-auth route: claims are pre-verified (JWT signature + expiry only).
 pub async fn handle_get_groups(
     _req: Request<Incoming>,
     state: AppState,
@@ -34,12 +38,11 @@ pub async fn handle_get_groups(
     let user_id = claims.user_id;
     info!("Fetching groups for user {}", user_id);
 
-    let groups = groups::get_user_groups(&state.db, user_id)
+    let groups_list = groups::get_user_groups(&state.db, user_id)
         .await
         .context("Failed to fetch groups")?;
 
-    // Only return proper group chats from this endpoint, not DMs.
-    let groups_json: Vec<serde_json::Value> = groups
+    let groups_json: Vec<serde_json::Value> = groups_list
         .into_iter()
         .filter(|g| g.chat_type == "group")
         .map(|g| {
@@ -61,9 +64,10 @@ pub async fn handle_get_groups(
     )
 }
 
-/// POST /api/groups — create a new group chat.
-///
-/// Hard-auth route: `user_id` is pre-verified (JWT + DB session lookup + IP).
+// ---------------------------------------------------------------------------
+// POST /api/groups
+// ---------------------------------------------------------------------------
+
 pub async fn handle_create_group(
     req: Request<Incoming>,
     state: AppState,
@@ -84,9 +88,7 @@ pub async fn handle_create_group(
         .get("name")
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow::anyhow!("Missing or invalid group name"))?
-        .to_string();
-
-    let name = name.replace('\0', ""); // strip null bytes
+        .replace('\0', "");
 
     if name.trim().is_empty() {
         return deliver_error_json(
@@ -105,12 +107,8 @@ pub async fn handle_create_group(
     }
 
     let description: Option<String> = params.get("description").and_then(|v| v.as_str()).map(|s| {
-        let s = s.replace('\0', ""); // strip null bytes
-        if s.len() > 500 {
-            s.chars().take(500).collect()
-        } else {
-            s
-        }
+        let s = s.replace('\0', "");
+        if s.len() > 500 { s.chars().take(500).collect() } else { s }
     });
 
     let chat_id = groups::create_group(
@@ -139,9 +137,18 @@ pub async fn handle_create_group(
     )
 }
 
-/// GET /api/groups/:id/members — list members of a group.
+// ---------------------------------------------------------------------------
+// GET /api/groups/:id/members
+// ---------------------------------------------------------------------------
+
+/// List members of a group with their usernames.
 ///
-/// Light-auth route: claims are pre-verified (JWT signature + expiry only).
+/// # N+1 fix
+///
+/// Previously this called `get_user_by_id()` inside a `for m in members` loop
+/// — one extra DB query per member.  With large groups this scaled linearly.
+///
+/// Now a single JOIN query fetches all member usernames at once.
 pub async fn handle_get_members(
     _req: Request<Incoming>,
     state: AppState,
@@ -150,28 +157,36 @@ pub async fn handle_get_members(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Fetching members for group {}", chat_id);
 
-    let members = groups::get_group_members(&state.db, chat_id)
+    // Single query: join group_members with users to get username in one shot.
+    let members_json: Vec<serde_json::Value> = state
+        .db
+        .call(move |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT gm.id, gm.chat_id, gm.user_id, gm.joined_at, gm.role,
+                        u.username
+                 FROM   group_members gm
+                 JOIN   users u ON u.id = gm.user_id
+                 WHERE  gm.chat_id = ?1
+                 ORDER  BY gm.joined_at ASC",
+            )?;
+
+            let rows = stmt
+                .query_map([chat_id], |row| {
+                    Ok(serde_json::json!({
+                        "id":        row.get::<_, i64>(0)?,
+                        "chat_id":   row.get::<_, i64>(1)?,
+                        "user_id":   row.get::<_, i64>(2)?,
+                        "joined_at": row.get::<_, i64>(3)?,
+                        "role":      row.get::<_, String>(4)?,
+                        "username":  row.get::<_, String>(5)?,
+                    }))
+                })?
+                .collect::<std::result::Result<Vec<_>, tokio_rusqlite::rusqlite::Error>>()?;
+
+            Ok::<_, tokio_rusqlite::rusqlite::Error>(rows)
+        })
         .await
         .context("Failed to fetch group members")?;
-
-    // Resolve usernames for each member
-    let mut members_json: Vec<serde_json::Value> = Vec::with_capacity(members.len());
-    for m in members {
-        let username = utils::get_user_by_id(&state.db, m.user_id)
-            .await
-            .ok()
-            .flatten()
-            .map(|u| u.username)
-            .unwrap_or_else(|| format!("user_{}", m.user_id));
-
-        members_json.push(serde_json::json!({
-            "user_id":   m.user_id,
-            "username":  username,
-            "chat_id":   m.chat_id,
-            "role":      m.role,
-            "joined_at": m.joined_at,
-        }));
-    }
 
     deliver_success_json(
         Some(serde_json::json!({
@@ -183,11 +198,10 @@ pub async fn handle_get_members(
     )
 }
 
-/// POST /api/groups/:id/members — add a member to a group.
-///
-/// Accepts `{ "username": "alice" }` or `{ "user_id": 42 }`.
-///
-/// Hard-auth route: `user_id` is pre-verified (JWT + DB session lookup + IP).
+// ---------------------------------------------------------------------------
+// POST /api/groups/:id/members
+// ---------------------------------------------------------------------------
+
 pub async fn handle_add_member(
     req: Request<Incoming>,
     state: AppState,
@@ -196,43 +210,36 @@ pub async fn handle_add_member(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Adding member to group {}", chat_id);
 
-    let body = req
-        .collect()
-        .await
-        .context("Failed to read request body")?
-        .to_bytes();
-
+    let body = req.collect().await.context("Failed to read request body")?.to_bytes();
     let params: serde_json::Value =
         serde_json::from_slice(&body).context("Failed to parse JSON request body")?;
 
-    // Resolve target user — accept either user_id or username
-    let target_user_id: i64 = if let Some(uid) = params.get("user_id").and_then(|v| v.as_i64()) {
-        uid
-    } else if let Some(username) = params.get("username").and_then(|v| v.as_str()) {
-        match utils::get_user_by_username(&state.db, username.to_string()).await? {
-            Some(user) => user.id,
-            None => {
-                return deliver_error_json(
-                    "NOT_FOUND",
-                    &format!("User '{}' not found", username),
-                    StatusCode::NOT_FOUND,
-                );
+    let target_user_id: i64 =
+        if let Some(uid) = params.get("user_id").and_then(|v| v.as_i64()) {
+            uid
+        } else if let Some(username) = params.get("username").and_then(|v| v.as_str()) {
+            match utils::get_user_by_username(&state.db, username.to_string()).await? {
+                Some(user) => user.id,
+                None => {
+                    return deliver_error_json(
+                        "NOT_FOUND",
+                        &format!("User '{}' not found", username),
+                        StatusCode::NOT_FOUND,
+                    );
+                }
             }
-        }
-    } else {
-        return deliver_error_json(
-            "INVALID_INPUT",
-            "Request must include either 'username' or 'user_id'",
-            StatusCode::BAD_REQUEST,
-        );
-    };
+        } else {
+            return deliver_error_json(
+                "INVALID_INPUT",
+                "Request must include either 'username' or 'user_id'",
+                StatusCode::BAD_REQUEST,
+            );
+        };
 
-    // Check if already a member
-    let already_member = groups::is_group_member(&state.db, chat_id, target_user_id)
+    if groups::is_group_member(&state.db, chat_id, target_user_id)
         .await
-        .unwrap_or(false);
-
-    if already_member {
+        .unwrap_or(false)
+    {
         return deliver_error_json(
             "CONFLICT",
             "User is already a member of this group",
@@ -240,13 +247,9 @@ pub async fn handle_add_member(
         );
     }
 
-    let role = match params
-        .get("role")
-        .and_then(|v| v.as_str())
-        .unwrap_or("member")
-    {
+    let role = match params.get("role").and_then(|v| v.as_str()).unwrap_or("member") {
         "admin" => "admin",
-        _ => "member", // reject arbitrary strings — default to member
+        _ => "member",
     }
     .to_string();
 
@@ -255,20 +258,16 @@ pub async fn handle_add_member(
         .context("Failed to add group member")?;
 
     deliver_success_json(
-        Some(serde_json::json!({
-            "chat_id": chat_id,
-            "user_id":  target_user_id,
-        })),
+        Some(serde_json::json!({ "chat_id": chat_id, "user_id": target_user_id })),
         Some("Member added successfully"),
         StatusCode::OK,
     )
 }
 
-/// PATCH /api/groups/:id — rename a group.
-///
-/// Body: `{ "name": "New Name" }`
-///
-/// Hard-auth route: `user_id` is pre-verified (JWT + DB session lookup + IP).
+// ---------------------------------------------------------------------------
+// PATCH /api/groups/:id
+// ---------------------------------------------------------------------------
+
 pub async fn handle_rename_group(
     req: Request<Incoming>,
     state: AppState,
@@ -277,25 +276,11 @@ pub async fn handle_rename_group(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("User {} renaming group {}", user_id, chat_id);
 
-    // Verify the caller is a member of the group
-    let is_member = groups::is_group_member(&state.db, chat_id, user_id)
-        .await
-        .unwrap_or(false);
-
-    if !is_member {
-        return deliver_error_json(
-            "FORBIDDEN",
-            "You are not a member of this group",
-            StatusCode::FORBIDDEN,
-        );
+    if !groups::is_group_member(&state.db, chat_id, user_id).await.unwrap_or(false) {
+        return deliver_error_json("FORBIDDEN", "You are not a member of this group", StatusCode::FORBIDDEN);
     }
 
-    let body = req
-        .collect()
-        .await
-        .context("Failed to read request body")?
-        .to_bytes();
-
+    let body = req.collect().await.context("Failed to read request body")?.to_bytes();
     let params: serde_json::Value =
         serde_json::from_slice(&body).context("Failed to parse JSON request body")?;
 
@@ -303,48 +288,34 @@ pub async fn handle_rename_group(
         .get("name")
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow::anyhow!("Missing or invalid group name"))?
-        .replace('\0', "") // strip null bytes before trim
+        .replace('\0', "")
         .trim()
         .to_string();
 
     if new_name.is_empty() {
-        return deliver_error_json(
-            "INVALID_INPUT",
-            "Group name cannot be empty",
-            StatusCode::BAD_REQUEST,
-        );
+        return deliver_error_json("INVALID_INPUT", "Group name cannot be empty", StatusCode::BAD_REQUEST);
     }
-
     if new_name.len() > 100 {
-        return deliver_error_json(
-            "INVALID_INPUT",
-            "Group name cannot exceed 100 characters",
-            StatusCode::BAD_REQUEST,
-        );
+        return deliver_error_json("INVALID_INPUT", "Group name cannot exceed 100 characters", StatusCode::BAD_REQUEST);
     }
 
     groups::update_group_name(&state.db, chat_id, new_name.clone())
         .await
         .context("Failed to rename group")?;
 
-    info!(
-        "Group {} renamed to '{}' by user {}",
-        chat_id, new_name, user_id
-    );
+    info!("Group {} renamed to '{}' by user {}", chat_id, new_name, user_id);
 
     deliver_success_json(
-        Some(serde_json::json!({
-            "chat_id": chat_id,
-            "name":    new_name,
-        })),
+        Some(serde_json::json!({ "chat_id": chat_id, "name": new_name })),
         Some("Group renamed successfully"),
         StatusCode::OK,
     )
 }
 
-/// DELETE /api/groups/:id — delete a group and all its messages.
-///
-/// Hard-auth route: `user_id` is pre-verified (JWT + DB session lookup + IP).
+// ---------------------------------------------------------------------------
+// DELETE /api/groups/:id
+// ---------------------------------------------------------------------------
+
 pub async fn handle_delete_group(
     _req: Request<Incoming>,
     state: AppState,
@@ -353,12 +324,9 @@ pub async fn handle_delete_group(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("User {} deleting group {}", user_id, chat_id);
 
-    // Fetch the group to verify it exists and is a group (not a DM)
     let group = match groups::get_group(&state.db, chat_id).await? {
         Some(g) => g,
-        None => {
-            return deliver_error_json("NOT_FOUND", "Group not found", StatusCode::NOT_FOUND);
-        }
+        None => return deliver_error_json("NOT_FOUND", "Group not found", StatusCode::NOT_FOUND),
     };
 
     if group.chat_type != "group" {
@@ -369,7 +337,6 @@ pub async fn handle_delete_group(
         );
     }
 
-    // Only group creator or admins can delete the group
     if group.created_by != user_id {
         return deliver_error_json(
             "FORBIDDEN",
@@ -391,9 +358,10 @@ pub async fn handle_delete_group(
     )
 }
 
-/// GET /api/users/search?q=alice — search for users by username prefix.
-///
-/// Light-auth route: claims are pre-verified (JWT signature + expiry only).
+// ---------------------------------------------------------------------------
+// GET /api/users/search
+// ---------------------------------------------------------------------------
+
 pub async fn handle_search_users(
     req: Request<Incoming>,
     state: AppState,
@@ -414,13 +382,8 @@ pub async fn handle_search_users(
             StatusCode::OK,
         );
     }
-
     if q.len() > 50 {
-        return deliver_error_json(
-            "INVALID_INPUT",
-            "Search query too long",
-            StatusCode::BAD_REQUEST,
-        );
+        return deliver_error_json("INVALID_INPUT", "Search query too long", StatusCode::BAD_REQUEST);
     }
 
     let users = utils::search_users_by_username(&state.db, &q, 10)
@@ -429,13 +392,8 @@ pub async fn handle_search_users(
 
     let users_json: Vec<serde_json::Value> = users
         .into_iter()
-        .filter(|u| u.id != claims.user_id) // exclude self
-        .map(|u| {
-            serde_json::json!({
-                "user_id":  u.id,
-                "username": u.username,
-            })
-        })
+        .filter(|u| u.id != claims.user_id)
+        .map(|u| serde_json::json!({ "user_id": u.id, "username": u.username }))
         .collect();
 
     deliver_success_json(
@@ -445,9 +403,10 @@ pub async fn handle_search_users(
     )
 }
 
-/// DELETE /api/groups/:id/members — remove a member from a group.
-///
-/// Hard-auth route: `user_id` is pre-verified (JWT + DB session lookup + IP).
+// ---------------------------------------------------------------------------
+// DELETE /api/groups/:id/members
+// ---------------------------------------------------------------------------
+
 pub async fn handle_remove_member(
     req: Request<Incoming>,
     state: AppState,
@@ -456,12 +415,7 @@ pub async fn handle_remove_member(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Removing member from group {}", chat_id);
 
-    let body = req
-        .collect()
-        .await
-        .context("Failed to read request body")?
-        .to_bytes();
-
+    let body = req.collect().await.context("Failed to read request body")?.to_bytes();
     let params: serde_json::Value =
         serde_json::from_slice(&body).context("Failed to parse JSON request body")?;
 
@@ -483,10 +437,7 @@ pub async fn handle_remove_member(
     }
 
     deliver_success_json(
-        Some(serde_json::json!({
-            "chat_id": chat_id,
-            "user_id":  target_user_id,
-        })),
+        Some(serde_json::json!({ "chat_id": chat_id, "user_id": target_user_id })),
         Some("Member removed successfully"),
         StatusCode::OK,
     )

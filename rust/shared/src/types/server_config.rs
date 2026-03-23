@@ -60,6 +60,34 @@ pub struct AuthConfig {
     /// a restart because rotating the secret immediately invalidates every
     /// active session.
     pub jwt_secret: Option<String>,
+    /// Whether to strictly reject requests whose IP does not match the IP
+    /// stored in the session row (`sessions.ip_address`).
+    ///
+    /// | Value | Behaviour |
+    /// |-------|-----------|
+    /// | `true` (default) | Mismatch → **403 Forbidden**.  Strongest protection against stolen tokens, but will break mobile users who switch between WiFi and cellular, corporate users behind rotating NAT, and VPN users. |
+    /// | `false` | Mismatch → **warn log only**.  The warning is still emitted so you can observe suspicious behaviour in logs without locking users out. |
+    ///
+    /// Set to `false` in environments where users frequently change IPs.
+    /// The JWT signature and session-ID DB check still protect against replay
+    /// attacks from a completely different device or network.
+    #[serde(default = "default_strict_ip_binding")]
+    pub strict_ip_binding: bool,
+    /// Allowed CORS origins for the production CORS layer.
+    ///
+    /// In debug builds the CORS layer is permissive regardless of this list.
+    /// In release builds, only origins listed here are allowed.
+    ///
+    /// Example:
+    /// ```toml
+    /// [auth]
+    /// cors_origins = ["https://app.example.com", "https://admin.example.com"]
+    /// ```
+    ///
+    /// Defaults to `["http://127.0.0.1:1337", "http://127.0.0.1:1338"]` so
+    /// the server works out of the box on localhost without configuration.
+    #[serde(default = "default_cors_origins")]
+    pub cors_origins: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -127,4 +155,18 @@ pub fn default_max_connections() -> usize {
 
 pub fn default_token_expiry() -> u64 {
     60
+}
+
+/// Default to strict IP binding — safest setting for new deployments.
+/// Operators running mobile-heavy user bases should set this to `false`.
+pub fn default_strict_ip_binding() -> bool {
+    true
+}
+
+/// Default CORS origins — localhost only, safe for development.
+pub fn default_cors_origins() -> Vec<String> {
+    vec![
+        "http://127.0.0.1:1337".to_string(),
+        "http://127.0.0.1:1338".to_string(),
+    ]
 }

@@ -1,14 +1,26 @@
 use std::fmt;
-
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
 // Login wire types
 // ---------------------------------------------------------------------------
 
+/// Deserialized request body for POST /api/login and POST /login.
+///
+/// # Field name
+///
+/// The field is named `username` because authentication is always performed
+/// against `users.username`.  Email login is not supported — the database
+/// does not have a unique index on `users.email` suitable for auth lookups,
+/// and the registration flow allows email to be omitted entirely.
+///
+/// The previous `#[serde(alias = "email")]` annotation was removed because it
+/// silently accepted `{"email": "alice"}` as if it were a username lookup,
+/// which would mislead clients into thinking email-based auth was supported.
+/// Any client sending `"email"` instead of `"username"` will now receive a
+/// 400/401 response, making the contract explicit.
 #[derive(Debug, Deserialize)]
 pub struct LoginData {
-    #[serde(alias = "email")]
     pub username: String,
     pub password: String,
     #[serde(default)]
@@ -79,7 +91,7 @@ impl LoginError {
 }
 
 // ---------------------------------------------------------------------------
-// Credential helper (used by handlers before hashing)
+// Credential helper
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
@@ -113,14 +125,6 @@ pub struct AdminAuth {
 }
 
 /// Data required to INSERT a new session row.
-///
-/// `session_id` is a UUID v4 generated at login time, embedded in the JWT
-/// claims.  Deleting this row from `sessions` revokes the JWT even before
-/// its `exp` is reached.
-///
-/// `user_agent` has been removed — it is captured once at login and stored
-/// inside the JWT claims only.  There is no longer any reason to persist it
-/// in the database.
 #[derive(Debug, Clone)]
 pub struct NewSession {
     pub user_id: i64,
@@ -136,12 +140,10 @@ pub struct NewSession {
 pub struct Session {
     pub id: i64,
     pub user_id: i64,
-    /// UUID revocation handle — matches `JwtClaims.session_id`.
     pub session_id: String,
     pub created_at: i64,
     pub expires_at: i64,
     pub last_activity: i64,
-    /// Stored at login; validated on every secure (mutating) request.
     pub ip_address: Option<String>,
 }
 

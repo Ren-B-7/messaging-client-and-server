@@ -65,11 +65,6 @@ pub async fn update_admin_last_login(conn: &Connection, admin_id: i64) -> Result
 }
 
 /// Persist a new session row.
-///
-/// `new_session.session_id` is the UUID embedded in the JWT claims.
-/// `ip_address` is stored so the secure-path validator can reject requests
-/// from a different IP (stolen-token protection).
-/// `user_agent` is intentionally NOT stored here — it lives in the JWT.
 pub async fn create_session(conn: &Connection, new_session: NewSession) -> Result<i64> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -98,11 +93,8 @@ pub async fn create_session(conn: &Connection, new_session: NewSession) -> Resul
 
 /// Look up a session by its UUID and return the full row if it hasn't expired.
 ///
-/// This is the **secure-path** DB call used by POST / PUT / DELETE handlers.
-/// It also bumps `last_activity` on every hit so idle-timeout logic works.
-///
-/// Returns `None` when the `session_id` doesn't exist or has expired —
-/// i.e. the user logged out or the JWT should be treated as revoked.
+/// Bumps `last_activity` on every hit so idle-timeout logic works.
+/// Returns `None` when the session doesn't exist or has expired.
 pub async fn validate_session_id(conn: &Connection, session_id: String) -> Result<Option<Session>> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -132,7 +124,6 @@ pub async fn validate_session_id(conn: &Connection, session_id: String) -> Resul
 
         match result {
             Some(session) if session.expires_at > now => {
-                // Touch last_activity on every valid secure-path hit.
                 conn.execute(
                     "UPDATE sessions SET last_activity = ?1 WHERE session_id = ?2",
                     params![now, session_id],
@@ -157,7 +148,7 @@ pub async fn delete_session_by_id(conn: &Connection, session_id: String) -> Resu
     .await
 }
 
-/// Delete all sessions for a user (logout from all devices).
+/// Delete all sessions for a user (logout from all devices / post-ban / post-password-change).
 pub async fn delete_all_user_sessions(conn: &Connection, user_id: i64) -> Result<()> {
     conn.call(move |conn: &mut rusqlite::Connection| {
         conn.execute("DELETE FROM sessions WHERE user_id = ?1", params![user_id])?;
@@ -166,7 +157,7 @@ pub async fn delete_all_user_sessions(conn: &Connection, user_id: i64) -> Result
     .await
 }
 
-/// Remove all expired sessions.  Intended to be called by a periodic cleanup task.
+/// Remove all expired sessions.  Called by the 60-second background task.
 pub async fn cleanup_expired_sessions(conn: &Connection) -> Result<usize> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -197,47 +188,17 @@ pub async fn update_last_login(conn: &Connection, user_id: i64) -> Result<()> {
     .await
 }
 
-/// Validate a session belonging to an admin account.
-///
-/// Used by the admin server's auth guard.  Returns the admin's `user_id`
-/// only when both the session is active AND the user has `is_admin = 1`.
-pub async fn validate_admin_session(conn: &Connection, session_id: String) -> Result<Option<i64>> {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64;
-
-    conn.call(move |conn: &mut rusqlite::Connection| {
-        let mut stmt = conn.prepare(
-            "SELECT s.user_id, s.expires_at
-             FROM   sessions s
-             INNER JOIN users u ON u.id = s.user_id
-             WHERE  s.session_id = ?1
-               AND  u.is_admin  = 1
-               AND  u.is_banned = 0",
-        )?;
-
-        let result = stmt
-            .query_row(params![session_id.clone()], |row: &rusqlite::Row| {
-                let user_id: i64 = row.get(0)?;
-                let expires_at: i64 = row.get(1)?;
-                Ok((user_id, expires_at))
-            })
-            .optional()?;
-
-        match result {
-            Some((user_id, expires_at)) if expires_at > now => {
-                conn.execute(
-                    "UPDATE sessions SET last_activity = ?1 WHERE session_id = ?2",
-                    params![now, session_id],
-                )?;
-                Ok(Some(user_id))
-            }
-            _ => Ok(None),
-        }
-    })
-    .await
-}
+// NOTE: validate_admin_session has been removed.
+//
+// It was dead code — never called from anywhere in the codebase.  The admin
+// server uses `validate_jwt_secure` (JWT + DB session + IP binding) plus a
+// `claims.is_admin` guard in each handler, which is the correct and
+// consistent approach.
+//
+// The function combined a session DB lookup with an is_admin check but did
+// not perform IP binding, making it strictly weaker than `validate_jwt_secure`.
+// Removing it eliminates the risk of it being accidentally used in a new
+// admin handler and bypassing the IP check.
 
 /// Get all active (non-expired) sessions for a given user.
 pub async fn get_user_sessions(conn: &Connection, user_id: i64) -> Result<Vec<Session>> {

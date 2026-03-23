@@ -42,13 +42,18 @@ impl ChatContext {
 // ---------------------------------------------------------------------------
 // SseManager
 // ---------------------------------------------------------------------------
+//
+// SseManager is defined in handlers/sse/sse.rs (this file) and updated to
+// use i64 keys instead of String.  The updated implementation is in
+// sse_manager_and_delete_file.rs which replaces the struct and impl below.
 
-/// SSE connection manager — holds one broadcast channel per connected user.
+/// SSE connection manager — one broadcast channel per connected user.
+///
+/// Channels are keyed by `i64` (the user's DB primary key).  Previously
+/// keyed by `String`, which required `.to_string()` conversions everywhere.
 #[derive(Debug)]
 pub struct SseManager {
-    /// user_id → broadcast sender
-    pub channels:
-        tokio::sync::RwLock<std::collections::HashMap<String, broadcast::Sender<SseEvent>>>,
+    pub channels: tokio::sync::RwLock<std::collections::HashMap<i64, broadcast::Sender<SseEvent>>>,
 }
 
 impl SseManager {
@@ -58,11 +63,10 @@ impl SseManager {
         }
     }
 
-    /// Get or create a broadcast channel for a user
-    pub async fn get_channel(&self, user_id: String) -> broadcast::Sender<SseEvent> {
+    pub async fn get_channel(&self, user_id: i64) -> broadcast::Sender<SseEvent> {
         let mut channels = self.channels.write().await;
         channels
-            .entry(user_id.clone())
+            .entry(user_id)
             .or_insert_with(|| {
                 info!("Creating new SSE channel for user: {}", user_id);
                 let (tx, _) = broadcast::channel(100);
@@ -71,7 +75,6 @@ impl SseManager {
             .clone()
     }
 
-    /// Broadcast an event to a specific user
     pub async fn broadcast_to_user(&self, event: SseEvent) -> SseResult<usize> {
         let channels = self.channels.read().await;
         if let Some(tx) = channels.get(&event.user_id) {
@@ -91,11 +94,10 @@ impl SseManager {
         }
     }
 
-    /// Broadcast the same event to multiple users (user_id is overwritten per recipient)
     pub async fn broadcast_to_users(
         &self,
         event: SseEvent,
-        user_ids: Vec<String>,
+        user_ids: Vec<i64>,
     ) -> SseResult<()> {
         let channels = self.channels.read().await;
         info!(
@@ -103,22 +105,21 @@ impl SseManager {
             event.event_type,
             user_ids.len()
         );
-        for user_id in user_ids {
-            if let Some(tx) = channels.get(&user_id) {
+        for uid in user_ids {
+            if let Some(tx) = channels.get(&uid) {
                 let mut evt = event.clone();
-                evt.user_id = user_id.clone();
+                evt.user_id = uid;
                 match tx.send(evt) {
-                    Ok(_) => info!("Event sent to user: {}", user_id),
-                    Err(_) => warn!("Failed to send event to user: {} (no receivers)", user_id),
+                    Ok(_) => info!("Event sent to user: {}", uid),
+                    Err(_) => warn!("Failed to send event to user: {} (no receivers)", uid),
                 }
             } else {
-                warn!("No channel for user: {}", user_id);
+                warn!("No channel for user: {}", uid);
             }
         }
         Ok(())
     }
 
-    /// Remove channels with no active subscribers
     pub async fn cleanup(&self) {
         let mut channels = self.channels.write().await;
         let before = channels.len();
@@ -127,9 +128,7 @@ impl SseManager {
         if before != after {
             info!(
                 "SSE cleanup: removed {} inactive channels ({} → {} remaining)",
-                before - after,
-                before,
-                after
+                before - after, before, after
             );
         }
     }
@@ -323,7 +322,7 @@ pub async fn handle_sse_subscribe(
     ));
 
     // ── 4. Subscribe to live events ────────────────────────────────────────
-    let tx = state.sse_manager.get_channel(user_id.to_string()).await;
+    let tx = state.sse_manager.get_channel(user_id).await;
     let mut rx = tx.subscribe();
 
     let (content_type, cache_control) = SseStreamBuilder::response_headers();

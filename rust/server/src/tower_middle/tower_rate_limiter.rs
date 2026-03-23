@@ -1,4 +1,7 @@
+use bytes::Bytes;
+use http_body_util::{BodyExt, Full, combinators::BoxBody};
 use hyper::{Request, Response, StatusCode};
+use std::convert::Infallible;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -7,9 +10,10 @@ use tower::{Layer, Service};
 
 use crate::tower_middle::security::RateLimiter;
 
-/// Tower layer for rate limiting
+/// Tower layer for per-IP rate limiting.
 ///
-/// This wraps any service and rate limits requests per IP address
+/// Rate-limited connections receive a proper JSON 429 response body instead
+/// of the previous empty body produced by `ResBody::default()`.
 #[derive(Clone)]
 pub struct RateLimiterLayer {
     limiter: RateLimiter,
@@ -32,19 +36,29 @@ impl<S> Layer<S> for RateLimiterLayer {
     }
 }
 
-/// The actual service that performs rate limiting
+/// The actual service that performs rate limiting.
 #[derive(Clone)]
 pub struct RateLimiterService<S> {
     inner: S,
     limiter: RateLimiter,
 }
 
-impl<S, ReqBody, ResBody> Service<Request<ReqBody>> for RateLimiterService<S>
+fn json_error_body(code: &'static str, message: &'static str) -> BoxBody<Bytes, Infallible> {
+    let json = format!(
+        r#"{{"status":"error","code":"{}","message":"{}"}}"#,
+        code, message
+    );
+    Full::new(Bytes::from(json)).boxed()
+}
+
+impl<S, ReqBody> Service<Request<ReqBody>> for RateLimiterService<S>
 where
-    S: Service<Request<ReqBody>, Response = Response<ResBody>> + Clone + Send + 'static,
+    S: Service<Request<ReqBody>, Response = Response<BoxBody<Bytes, Infallible>>>
+        + Clone
+        + Send
+        + 'static,
     S::Future: Send + 'static,
     ReqBody: Send + 'static,
-    ResBody: Default + Send + 'static,
 {
     type Response = S::Response;
     type Error = S::Error;
@@ -55,31 +69,27 @@ where
     }
 
     fn call(&mut self, req: Request<ReqBody>) -> Self::Future {
-        // Extract the client IP from extensions
         let client_ip = req.extensions().get::<SocketAddr>().map(|addr| addr.ip());
-
         let limiter = self.limiter.clone();
         let mut inner = self.inner.clone();
 
         Box::pin(async move {
-            // Check rate limit
             if let Some(ip) = client_ip {
                 if !limiter.check(ip).await {
                     tracing::warn!("Connection from {} rate limited", ip);
 
-                    // Return 429 Too Many Requests
-                    let response = Response::builder()
+                    return Ok(Response::builder()
                         .status(StatusCode::TOO_MANY_REQUESTS)
                         .header("content-type", "application/json")
-                        .header("retry-after", "1") // Retry after 1 second
-                        .body(ResBody::default())
-                        .unwrap();
-
-                    return Ok(response);
+                        .header("retry-after", "1")
+                        .body(json_error_body(
+                            "RATE_LIMITED",
+                            "Too many requests — please slow down",
+                        ))
+                        .unwrap());
                 }
             }
 
-            // Rate limit passed, forward to inner service
             inner.call(req).await
         })
     }

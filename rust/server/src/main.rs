@@ -4,6 +4,7 @@ use anyhow::Context;
 use tracing::{debug, error, info, warn};
 
 use tokio::net::TcpListener;
+use tokio::sync::Semaphore;
 
 use hyper::server::conn::http1;
 use hyper_util::{
@@ -16,10 +17,10 @@ use tower::load_shed::LoadShedLayer;
 use tower_http::compression::{CompressionLayer, CompressionLevel};
 
 use server::{
+    AppState, create_cors_layer,
     database::create,
     handlers::{admin::AdminService, user::UserService},
     tower_middle::tower_timeout_handler::TimeoutLayer,
-    AppState, create_cors_layer,
 };
 
 use shared::config;
@@ -39,29 +40,52 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let db = create::open_database("messaging.db").await?;
     let app_config = config::load_config(&config_path).context("Failed to load configuration")?;
 
-    // Resolve the JWT secret — env var takes priority over the config field.
-    // Presence and minimum length are already enforced by load_config's
-    // validate_config, so unwrap() is safe here.
     let jwt_secret = app_config.auth.resolved_jwt_secret().unwrap();
 
-    // Extract paths before app_config is moved into LiveConfig.
     let web_dir = app_config.paths.web_dir.clone();
     let icons = app_config.paths.icons.clone();
 
+    // ── max_connections: enforced via a shared semaphore ────────────────────
+    //
+    // Previously `max_connections` was validated in config but never used.
+    // We now create a `Semaphore` with that many permits.  Each accepted
+    // connection acquires one permit; when all permits are taken new
+    // connections block in `listener.accept()` until a slot frees up.
+    //
+    // The semaphore is shared between the user and admin servers so that the
+    // total across both listeners never exceeds `max_connections`.  If you
+    // want independent caps, create two separate semaphores.
+    let max_conn = app_config.server.max_connections;
+    info!(
+        "Connection limit: {} (shared across both servers)",
+        max_conn
+    );
+    let connection_semaphore = Arc::new(Semaphore::new(max_conn));
+
     let live_config = config::LiveConfig::new(app_config);
 
-    // Build each router exactly once at startup, then share via Arc.
-    // Neither router is ever rebuilt per-connection.
     let user_router = Arc::new(server::build_user_router_with_config(
         Some(web_dir.clone()),
         Some(icons.clone()),
     ));
-    let admin_router = Arc::new(server::build_admin_router_with_config(Some(web_dir), Some(icons)));
+    let admin_router = Arc::new(server::build_admin_router_with_config(
+        Some(web_dir),
+        Some(icons),
+    ));
 
     let state = AppState::new(live_config, db, jwt_secret, user_router, admin_router);
 
-    // Read the ports once at startup — these are fixed for the lifetime of the
-    // process (changing them requires a restart, not a hot-reload).
+    // ── Rate limiters ─────────────────────────────────────────────────────
+    //
+    // Previously both servers shared AppState.rate_limiter.  That meant heavy
+    // user traffic could exhaust the token-bucket budget and rate-limit the
+    // admin interface during incidents — exactly when the admin is most needed.
+    //
+    // Now the admin server gets its own dedicated rate limiter with a much
+    // more permissive budget (600 req/s, burst 1200).  The user server keeps
+    // the original AppState limiter (100 req/s, burst 200).
+    let admin_rate_limiter = server::RateLimiter::new(600, 1200);
+
     let (user_port, admin_port) = {
         let cfg = state.config.read().await;
         (
@@ -69,6 +93,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             cfg.server.port_admin.unwrap_or(1338),
         )
     };
+
+    let cors_origins = state.config.read().await.auth.cors_origins.clone();
 
     let connection_timeouts = vec![Duration::from_secs(5), Duration::from_secs(2)];
     let user_timeout = connection_timeouts.clone();
@@ -81,6 +107,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let admin_state = state.clone();
 
     let rate_limiter_cleanup = state.clone().rate_limiter;
+    let admin_rate_limiter_cleanup = admin_rate_limiter.clone();
     let db_cleanup = state.clone().db;
     let sse_manager_clone = state.clone().sse_manager;
     let metrics_clone = state.clone().metrics;
@@ -92,6 +119,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             interval.tick().await;
 
             rate_limiter_cleanup.cleanup().await;
+            admin_rate_limiter_cleanup.cleanup().await;
             info!("Rate limiter cleanup completed");
 
             match server::login::cleanup_expired_sessions(&db_cleanup).await {
@@ -122,9 +150,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     });
 
     // ── Background task: SIGHUP → hot-reload config ──────────────────────────
-    //
-    // Send `kill -HUP <pid>` to reload the config file without restarting.
-    // Ports and jwt_secret are NOT re-read after a reload.
     {
         let reload_handle = state.config.clone();
         let path_for_reload = config_path.clone();
@@ -156,9 +181,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 
     // ── Background task: SIGTERM → graceful shutdown ─────────────────────────
-    //
-    // Send `kill <pid>` or `systemctl stop` to shut down cleanly.
-    // In-flight connections are allowed to drain before the process exits.
     {
         tokio::spawn(async move {
             match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
@@ -172,7 +194,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         });
     }
 
+    let user_cors = create_cors_layer(&cors_origins);
+    let admin_cors = create_cors_layer(&cors_origins);
+
     // ── User server ──────────────────────────────────────────────────────────
+    let user_sem = Arc::clone(&connection_semaphore);
     let user_server = async move {
         let listener = TcpListener::bind(user_sock)
             .await
@@ -182,47 +208,49 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!("User server listening on http://{}", user_sock);
 
         loop {
+            // Acquire a connection permit before accepting.  This is what
+            // actually enforces max_connections.  If no permit is available
+            // the task yields until one frees up — no connection is dropped,
+            // it just waits.
+            let permit = Arc::clone(&user_sem)
+                .acquire_owned()
+                .await
+                .expect("semaphore closed");
+
             let (stream, addr) = listener.accept().await.unwrap();
 
-            // new() is plain fn — no .await, router is a cheap Arc clone.
             let user_tower_service = UserService::new(
                 user_state.clone(),
                 addr,
                 Arc::clone(&user_state.user_router),
             );
 
-            // Order matters: outer layers run last on request, first on response.
-            // TimeoutLayer is intentionally absent — the connection-level timeout
-            // below handles regular requests, and SSE connections must stay open
-            // indefinitely (they are driven to completion after the loop exits).
             let tower_service = ServiceBuilder::new()
+                .layer(CompressionLayer::new().quality(CompressionLevel::Default))
                 .layer(LoadShedLayer::new())
                 .layer(server::IpFilterLayer::new(user_state.ip_filter.clone()))
-                .layer(server::RateLimiterLayer::new(user_state.rate_limiter.clone()))
+                .layer(server::RateLimiterLayer::new(
+                    user_state.rate_limiter.clone(),
+                ))
                 .layer(server::MetricsLayer::new(user_state.metrics.clone()))
-                .layer(create_cors_layer())
-                .layer(CompressionLayer::new().quality(CompressionLevel::Default))
+                .layer(user_cors.clone())
                 .service(user_tower_service);
 
             let final_service = TowerToHyperService::new(tower_service);
-
             let io = TokioIo::new(stream);
             let timeout = user_timeout.clone();
 
             tokio::task::spawn(async move {
+                // `permit` is moved into this task and dropped when it ends,
+                // which releases the semaphore slot and allows the next accept.
+                let _permit = permit;
+
                 let conn = http1::Builder::new()
                     .timer(TokioTimer::new())
                     .header_read_timeout(Duration::from_secs(2))
                     .serve_connection(io, final_service);
                 tokio::pin!(conn);
 
-                // Drive the graceful-shutdown sequence for normal HTTP requests.
-                // If the connection completes within the timeout windows it was a
-                // regular request and we are done.
-                //
-                // If it survives all graceful_shutdown calls it is a long-lived
-                // SSE stream — fall through and await it to completion so the
-                // stream stays open as long as the client is connected.
                 let mut completed = false;
                 for (iter, sleep) in timeout.iter().enumerate() {
                     tokio::select! {
@@ -244,8 +272,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     }
                 }
 
-                // Connection outlived the timeout sequence -> it is a streaming
-                // response (SSE). Hold it open until the client disconnects.
                 if !completed {
                     info!("Holding long-lived connection open: {}", addr);
                     if let Err(e) = conn.await {
@@ -257,6 +283,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     };
 
     // ── Admin server ─────────────────────────────────────────────────────────
+    let admin_sem = Arc::clone(&connection_semaphore);
     let admin_server = async move {
         let listener = TcpListener::bind(admin_sock)
             .await
@@ -266,31 +293,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         info!("Admin server listening on http://{}", admin_sock);
 
         loop {
+            let permit = Arc::clone(&admin_sem)
+                .acquire_owned()
+                .await
+                .expect("semaphore closed");
+
             let (stream, addr) = listener.accept().await.unwrap();
 
-            // new() is plain fn — no .await, router is a cheap Arc clone.
             let admin_tower_service = AdminService::new(
                 admin_state.clone(),
                 addr,
                 Arc::clone(&admin_state.admin_router),
             );
 
+            // Admin server uses its own dedicated rate limiter so that user
+            // traffic cannot starve admin operations during incidents.
             let tower_service = ServiceBuilder::new()
+                .layer(CompressionLayer::new().quality(CompressionLevel::Default))
                 .layer(LoadShedLayer::new())
                 .layer(server::IpFilterLayer::new(admin_state.ip_filter.clone()))
-                .layer(server::RateLimiterLayer::new(admin_state.rate_limiter.clone()))
+                .layer(server::RateLimiterLayer::new(admin_rate_limiter.clone()))
                 .layer(TimeoutLayer::new(Duration::from_secs(10)))
                 .layer(server::MetricsLayer::new(admin_state.metrics.clone()))
-                .layer(create_cors_layer())
-                .layer(CompressionLayer::new().quality(CompressionLevel::Default))
+                .layer(admin_cors.clone())
                 .service(admin_tower_service);
 
             let final_service = TowerToHyperService::new(tower_service);
-
             let io = TokioIo::new(stream);
             let timeout = admin_timeout.clone();
 
             tokio::task::spawn(async move {
+                let _permit = permit;
+
                 let conn = http1::Builder::new()
                     .timer(TokioTimer::new())
                     .header_read_timeout(Duration::from_secs(2))

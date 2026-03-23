@@ -1,9 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use tracing::info;
-
 use tokio_rusqlite::Connection;
-
 use hyper::{
     Method,
     header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderValue},
@@ -14,18 +12,13 @@ pub mod database;
 pub mod handlers;
 pub mod tower_middle;
 
-// Re-export database modules
 pub use database::{create, login, password};
-
-// Re-export handlers
 pub use handlers::{
     admin::{AdminService, build_admin_router_with_config},
     http::routes::Router,
     sse::sse::SseManager,
     user::{UserService, build_user_router_with_config},
 };
-
-// Re-export tower middleware
 pub use tower_middle::{
     security::{IpFilter, Metrics, RateLimiter},
     tower_ip_filter::IpFilterLayer,
@@ -38,17 +31,11 @@ use shared::config::LiveConfig;
 
 /// Shared application state.
 ///
-/// `config` is a `LiveConfig` — a cheaply-cloneable `Arc<RwLock<AppConfig>>`
-/// wrapper. Every clone of `AppState` shares the **same** underlying config,
-/// so an admin-triggered reload or SIGHUP is visible everywhere immediately.
+/// `started_at` is captured once at construction and never changes — used by
+/// the admin stats endpoint to compute accurate server uptime.
 ///
-/// `jwt_secret` is intentionally **not** inside `LiveConfig` / the hot-reload
-/// path.  Changing the secret invalidates every live session instantly —
-/// that is a deliberate operator action that requires a server restart, not
-/// something that should happen silently on SIGHUP.
-///
-/// `started_at` is captured once at construction and never changes.  It is
-/// used by the admin stats endpoint to compute accurate uptime.
+/// `jwt_secret` is outside `LiveConfig` intentionally: rotating it on SIGHUP
+/// would invalidate every live session immediately, so it requires a restart.
 #[derive(Clone, Debug)]
 pub struct AppState {
     pub db: Arc<Connection>,
@@ -58,16 +45,9 @@ pub struct AppState {
     pub metrics: Metrics,
     pub timeout: Duration,
     pub sse_manager: Arc<SseManager>,
-    /// HMAC key used to sign and verify JWTs.  Shared via `Arc` so cloning
-    /// `AppState` is cheap.  Treat this like a password — load from env/config
-    /// and never log it.
     pub jwt_secret: Arc<String>,
     pub user_router: Arc<Router>,
     pub admin_router: Arc<Router>,
-    /// Unix timestamp (seconds) of when this `AppState` was first constructed.
-    /// Used by the admin stats endpoint to compute server uptime accurately.
-    /// Previously this was passed as a hard-coded `0` to `ServerStats::build`,
-    /// which caused uptime to always display the full Unix epoch duration.
     pub started_at: i64,
 }
 
@@ -79,12 +59,6 @@ impl AppState {
         user_router: Arc<Router>,
         admin_router: Arc<Router>,
     ) -> Self {
-        let rate_limiter = RateLimiter::new(100, 200);
-
-        // Capture the process start time once.  All clones of AppState share
-        // this value (it's Copy), so the admin dashboard always shows the
-        // actual elapsed time since the server started — not time since the
-        // last connection handler was spawned.
         let started_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -94,7 +68,7 @@ impl AppState {
             db: Arc::new(db),
             config,
             ip_filter: IpFilter::new(),
-            rate_limiter,
+            rate_limiter: RateLimiter::new(100, 200),
             metrics: Metrics::new(),
             timeout: Duration::new(10, 0),
             sse_manager: Arc::new(SseManager::new()),
@@ -106,28 +80,51 @@ impl AppState {
     }
 }
 
-/// Create CORS layer based on environment
-pub fn create_cors_layer() -> CorsLayer {
+/// Build a CORS layer from a list of allowed origins loaded from config.
+///
+/// Previously hardcoded to `http://127.0.0.1:1337/1338`, which broke every
+/// deployment behind a real domain. Now driven by `auth.cors_origins` in
+/// config.toml, with a sensible localhost default.
+///
+/// Debug builds are always permissive regardless of the list.
+pub fn create_cors_layer(allowed_origins: &[String]) -> CorsLayer {
     if cfg!(debug_assertions) {
         info!("Using permissive CORS (development mode)");
-        CorsLayer::permissive()
-    } else {
-        info!("Using restrictive CORS (production mode)");
-        CorsLayer::new()
-            .allow_origin([
-                "http://127.0.0.1:1337".parse::<HeaderValue>().unwrap(),
-                "http://127.0.0.1:1338".parse::<HeaderValue>().unwrap(),
-            ])
-            .allow_methods([
-                Method::GET,
-                Method::POST,
-                Method::PUT,
-                Method::DELETE,
-                Method::HEAD,
-                Method::OPTIONS,
-            ])
-            .allow_headers([AUTHORIZATION, CONTENT_TYPE, ACCEPT])
-            .allow_credentials(true)
-            .max_age(Duration::from_secs(3600))
+        return CorsLayer::permissive();
     }
+
+    info!(
+        "Using restrictive CORS (production mode) — {} origin(s)",
+        allowed_origins.len()
+    );
+
+    let origins: Vec<HeaderValue> = allowed_origins
+        .iter()
+        .filter_map(|o| {
+            o.parse::<HeaderValue>()
+                .map_err(|e| tracing::warn!("Ignoring invalid CORS origin '{}': {}", o, e))
+                .ok()
+        })
+        .collect();
+
+    if origins.is_empty() {
+        tracing::warn!(
+            "No valid CORS origins configured — all cross-origin requests will be blocked. \
+             Set auth.cors_origins in config.toml."
+        );
+    }
+
+    CorsLayer::new()
+        .allow_origin(origins)
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::DELETE,
+            Method::HEAD,
+            Method::OPTIONS,
+        ])
+        .allow_headers([AUTHORIZATION, CONTENT_TYPE, ACCEPT])
+        .allow_credentials(true)
+        .max_age(Duration::from_secs(3600))
 }
