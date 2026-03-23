@@ -42,6 +42,8 @@ const AdminUI = {
       AdminUsers.loadStats();
     if (name === "metrics")
       AdminUsers.loadMetrics();
+    if (name === "config")
+      AdminConfig.load();
     if (name === "log")
       this.renderFullLog();
   },

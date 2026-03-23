@@ -226,12 +226,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             );
 
             let tower_service = ServiceBuilder::new()
-                .layer(CompressionLayer::new().quality(CompressionLevel::Default))
                 .layer(LoadShedLayer::new())
+                .layer(CompressionLayer::new().quality(CompressionLevel::Default))
                 .layer(server::IpFilterLayer::new(user_state.ip_filter.clone()))
                 .layer(server::RateLimiterLayer::new(
                     user_state.rate_limiter.clone(),
                 ))
+                .layer(TimeoutLayer::new(Duration::from_secs(10)))
                 .layer(server::MetricsLayer::new(user_state.metrics.clone()))
                 .layer(user_cors.clone())
                 .service(user_tower_service);
@@ -309,8 +310,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             // Admin server uses its own dedicated rate limiter so that user
             // traffic cannot starve admin operations during incidents.
             let tower_service = ServiceBuilder::new()
-                .layer(CompressionLayer::new().quality(CompressionLevel::Default))
                 .layer(LoadShedLayer::new())
+                .layer(CompressionLayer::new().quality(CompressionLevel::Default))
                 .layer(server::IpFilterLayer::new(admin_state.ip_filter.clone()))
                 .layer(server::RateLimiterLayer::new(admin_rate_limiter.clone()))
                 .layer(TimeoutLayer::new(Duration::from_secs(10)))

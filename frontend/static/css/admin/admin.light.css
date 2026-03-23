@@ -1044,3 +1044,131 @@ tbody tr.is-expired td {
   gap: var(--space-2);
   color: var(--danger);
 }
+
+/* ── Dirty banner ─────────────────────────────────────────────────────────── */
+.config-dirty-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  margin-bottom: var(--space-5);
+  background: color-mix(in srgb, var(--color-amber) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-amber) 35%, transparent);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.config-dirty-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* ── Panel subtitle ───────────────────────────────────────────────────────── */
+.panel-subtitle {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  margin-left: var(--space-2);
+}
+
+/* ── Config panel fields ──────────────────────────────────────────────────── */
+.config-panel .config-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: var(--space-5) var(--space-6);
+  padding: var(--space-5);
+}
+
+.config-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  position: relative;
+}
+
+/* Dirty indicator — left accent bar */
+.config-field.is-dirty {
+  padding-left: var(--space-3);
+}
+.config-field.is-dirty::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--color-amber);
+}
+
+.config-field-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.config-field-label .form-label {
+  margin: 0;
+}
+
+.config-badge-danger {
+  font-size: var(--text-xs);
+  padding: 1px 6px;
+}
+
+.config-field-hint {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+}
+
+/* Hidden by default; shown via .is-dirty */
+.config-field-dirty-marker {
+  display: none;
+  font-size: var(--text-xs);
+  color: var(--color-amber);
+  font-weight: 600;
+}
+.config-field.is-dirty .config-field-dirty-marker {
+  display: block;
+}
+
+/* ── Textarea for array fields ────────────────────────────────────────────── */
+.config-textarea {
+  resize: vertical;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+/* ── Boolean toggle ───────────────────────────────────────────────────────── */
+.config-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  cursor: pointer;
+  user-select: none;
+}
+
+.config-checkbox {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.config-toggle-label {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+/* ── Footer actions ───────────────────────────────────────────────────────── */
+.config-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  margin-top: var(--space-2);
+  border-top: 1px solid var(--color-border);
+}

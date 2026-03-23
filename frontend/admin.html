@@ -80,6 +80,7 @@
     <link rel="preload" href="non-static/admin/admin.ui.js" as="script" />
     <link rel="preload" href="non-static/admin/admin.users.js" as="script" />
     <link rel="preload" href="non-static/admin/admin.actions.js" as="script" />
+    <link rel="preload" href="non-static/admin/admin.config.js" as="script" />
     <link rel="preload" href="non-static/admin/admin.init.js" as="script" />
     <link
       rel="preload"
@@ -96,6 +97,7 @@
     <script defer src="non-static/admin/admin.ui.js"></script>
     <script defer src="non-static/admin/admin.users.js"></script>
     <script defer src="non-static/admin/admin.actions.js"></script>
+    <script defer src="non-static/admin/admin.config.js"></script>
     <script defer src="non-static/admin/admin.init.js"></script>
   </head>
   <body>
@@ -115,6 +117,7 @@
         <button class="nav-btn" data-tab="sessions">Sessions</button>
         <button class="nav-btn" data-tab="server">Server</button>
         <button class="nav-btn" data-tab="metrics">Metrics</button>
+        <button class="nav-btn" data-tab="config">Config</button>
         <button class="nav-btn" data-tab="log">Activity Log</button>
       </nav>
 
@@ -169,6 +172,9 @@
         </button>
         <button class="sidebar-item" data-tab="metrics">
           <span class="item-icon">📊</span> Metrics
+        </button>
+        <button class="sidebar-item" data-tab="config">
+          <span class="item-icon">🛠</span> Config Editor
         </button>
         <button class="sidebar-item" data-tab="log">
           <span class="item-icon">⌛</span> Activity Log
@@ -459,6 +465,32 @@
             </div>
             <div class="info-grid" id="ratelimiter-info">
               <div class="info-row"><span class="info-key">Loading…</span></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ── Config Editor tab ── -->
+        <section class="tab-section" id="tab-config">
+          <div class="page-header">
+            <div>
+              <h1 class="page-title">Config Editor</h1>
+              <p class="page-subtitle">Live AppConfig — changes are applied immediately</p>
+            </div>
+            <div class="page-actions">
+              <button class="btn btn-secondary btn-sm" onclick="AdminConfig.load()">
+                ↺ Reload
+              </button>
+              <button class="btn btn-primary btn-sm" id="config-save-btn-header"
+                onclick="AdminConfig.saveAll()">
+                💾 Save Changes
+              </button>
+            </div>
+          </div>
+
+          <div id="config-container">
+            <div class="empty-state">
+              <span class="empty-icon">🛠</span>
+              Switch to this tab to load the configuration.
             </div>
           </div>
         </section>
