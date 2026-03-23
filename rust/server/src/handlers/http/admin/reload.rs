@@ -1,3 +1,6 @@
+// This is not entirely needed but i do it to know where it is used
+use libc;
+
 use std::convert::Infallible;
 
 use anyhow::Result;
@@ -5,7 +8,6 @@ use bytes::Bytes;
 use http_body_util::combinators::BoxBody;
 use hyper::body::Incoming as IncomingBody;
 use hyper::{Request, Response, StatusCode};
-use libc;
 use tracing::{error, info};
 
 use crate::handlers::http::utils::json_response::*;
