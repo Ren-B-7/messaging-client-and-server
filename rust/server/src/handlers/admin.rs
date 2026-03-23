@@ -247,6 +247,36 @@ pub fn build_admin_api_routes(router: Router) -> Router {
                 admin::handle_metrics(req, state, user_id).await
             },
         )
+        .get_hard(
+            "/admin/api/config",
+            |req, state, user_id, claims| async move {
+                if (!claims.is_admin) || (claims.user_id != user_id) {
+                    return deliver_error_json(
+                        "FORBIDDEN",
+                        "Insufficient privileges",
+                        StatusCode::FORBIDDEN,
+                    );
+                }
+                admin::handle_patch_config(req, state, user_id)
+                    .await
+                    .context("Update server config failed")
+            },
+        )
+        .post_hard(
+            "/admin/api/config",
+            |req, state, user_id, claims| async move {
+                if (!claims.is_admin) || (claims.user_id != user_id) {
+                    return deliver_error_json(
+                        "FORBIDDEN",
+                        "Insufficient privileges",
+                        StatusCode::FORBIDDEN,
+                    );
+                }
+                admin::handle_get_config(req, state, user_id)
+                    .await
+                    .context("Get server config failed")
+            },
+        )
         // ── User list ─────────────────────────────────────────────────────────
         .get_light("/admin/users", |req, state, claims| async move {
             if !claims.is_admin {
