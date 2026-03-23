@@ -3,95 +3,103 @@ name: Full Project CI Pipeline
 on: [push, pull_request]
 
 jobs:
-  # --- PHASE 1: LINTING & FORMATTING (Runs in Parallel) ---
-  bacon-and-fmt:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./rust
-    steps:
-      - uses: actions/checkout@v4
-      - name: Check Rust Format
-        run: cargo fmt --check
-      - name: Install Bacon
-        run: cargo install bacon
-      - name: Run Bacon Check
-        run: bacon --check
+    # --- PHASE 1: LINTING & FORMATTING (Runs in Parallel) ---
+    bacon-and-fmt:
+        runs-on: ubuntu-latest
+        defaults:
+            run:
+                working-directory: ./rust
+        steps:
+            - uses: actions/checkout@v4
+            - name: Check Rust Format
+              run: cargo fmt --check
+            - name: Install Bacon
+              run: cargo install bacon
+            - name: Run Bacon Check
+              run: bacon --check
 
-  ruff-lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/ruff-action@v3
-        with: { src: "./python" }
+    ruff-lint:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: astral-sh/ruff-action@v3
+              with: { src: "./python" }
 
-  htmlhint:
-    runs-on: ubuntu-latest
-    defaults: { run: { working-directory: ./frontend } }
-    steps:
-      - uses: actions/checkout@v4
-      - run: npm install -g htmlhint
-      - run: htmlhint "**/*.html"
+    htmlhint:
+        runs-on: ubuntu-latest
+        defaults: { run: { working-directory: ./frontend } }
+        steps:
+            - uses: actions/checkout@v4
+            - run: npm install -g htmlhint
+            - run: htmlhint "**/*.html"
 
-  stylelint:
-    runs-on: ubuntu-latest
-    defaults: { run: { working-directory: ./frontend } }
-    steps:
-      - uses: actions/checkout@v4
-      - run: npm install -g stylelint stylelint-config-standard
-      - run: npx stylelint "**/*.css"
+    stylelint:
+        runs-on: ubuntu-latest
+        defaults: { run: { working-directory: ./frontend } }
+        steps:
+            - uses: actions/checkout@v4
+            - run: npm install -g stylelint stylelint-config-standard
+            - run: npx stylelint "**/*.css"
 
-  black-format-check:
-    runs-on: ubuntu-latest
-    defaults: { run: { working-directory: ./python } }
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: '3.14' }
-      - run: pip install black
-      - run: black --check .
+    black-format-check:
+        runs-on: ubuntu-latest
+        defaults: { run: { working-directory: ./python } }
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-python@v5
+              with: { python-version: "3.14" }
+            - run: pip install black
+            - run: black --check .
 
-  prettier-format-check:
-    runs-on: ubuntu-latest
-    defaults: { run: { working-directory: ./frontend } }
-    steps:
-      - uses: actions/checkout@v4
-      - run: npm install -g prettier
-      - run: npx prettier --check "**/*.{html,css,js,json}"
+    prettier-format-check:
+        runs-on: ubuntu-latest
+        defaults: { run: { working-directory: ./frontend } }
+        steps:
+            - uses: actions/checkout@v4
+            - run: npm install -g prettier
+            - run: npx prettier --check "**/*.{html,css,js,json}"
 
-  # --- PHASE 2: RUST TESTING ---
-  cargo-test:
-    needs: [bacon-lint, ruff-lint, htmlhint, stylelint, black-format-check, prettier-format-check]
-    runs-on: ubuntu-latest
-    defaults: { run: { working-directory: ./rust } }
-    steps:
-      - uses: actions/checkout@v4
-      - run: cargo test --verbose
+    # --- PHASE 2: RUST TESTING ---
+    cargo-test:
+        needs:
+            [
+                bacon-and-fmt,
+                ruff-lint,
+                htmlhint,
+                stylelint,
+                black-format-check,
+                prettier-format-check,
+            ]
+        runs-on: ubuntu-latest
+        defaults: { run: { working-directory: ./rust } }
+        steps:
+            - uses: actions/checkout@v4
+            - run: cargo test --verbose
 
-  # --- PHASE 3: RUST BUILD ---
-  cargo-build:
-    needs: [cargo-test]
-    runs-on: ubuntu-latest
-    defaults: { run: { working-directory: ./rust } }
-    steps:
-      - uses: actions/checkout@v4
-      - run: cargo build --release --verbose
+    # --- PHASE 3: RUST BUILD ---
+    cargo-build:
+        needs: [cargo-test]
+        runs-on: ubuntu-latest
+        defaults: { run: { working-directory: ./rust } }
+        steps:
+            - uses: actions/checkout@v4
+            - run: cargo build --release --verbose
 
-  # --- PHASE 4: PYTHON GUI BUILD & RUN ---
-  python-build:
-    needs: [cargo-build]
-    runs-on: ubuntu-latest
-    defaults: { run: { working-directory: ./python } }
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: '3.14' }
-      - name: Install System Deps (Tkinter & Virtual Display)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y python3-tk xvfb
-      - name: Build & Run Headless GUI
-        run: |
-          python -m pip install --upgrade pip build
-          python -m build
-          xvfb-run python -m main.py
+    # --- PHASE 4: PYTHON GUI BUILD & RUN ---
+    python-build:
+        needs: [cargo-build]
+        runs-on: ubuntu-latest
+        defaults: { run: { working-directory: ./python } }
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-python@v5
+              with: { python-version: "3.14" }
+            - name: Install System Deps (Tkinter & Virtual Display)
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y python3-tk xvfb
+            - name: Build & Run Headless GUI
+              run: |
+                  python -m pip install --upgrade pip build
+                  python -m build
+                  xvfb-run python -m main.py
