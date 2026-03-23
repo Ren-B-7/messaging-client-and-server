@@ -111,6 +111,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let db_cleanup = state.clone().db;
     let sse_manager_clone = state.clone().sse_manager;
     let metrics_clone = state.clone().metrics;
+    let timeout = Duration::from_secs(state.config.read().await.server.timeout);
 
     // ── Background task: rate limiter + DB cleanup ───────────────────────────
     tokio::spawn(async move {
@@ -232,7 +233,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .layer(server::RateLimiterLayer::new(
                     user_state.rate_limiter.clone(),
                 ))
-                .layer(TimeoutLayer::new(Duration::from_secs(10)))
+                .layer(TimeoutLayer::new(timeout))
                 .layer(server::MetricsLayer::new(user_state.metrics.clone()))
                 .layer(user_cors.clone())
                 .service(user_tower_service);
@@ -314,7 +315,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .layer(CompressionLayer::new().quality(CompressionLevel::Default))
                 .layer(server::IpFilterLayer::new(admin_state.ip_filter.clone()))
                 .layer(server::RateLimiterLayer::new(admin_rate_limiter.clone()))
-                .layer(TimeoutLayer::new(Duration::from_secs(10)))
+                .layer(TimeoutLayer::new(timeout))
                 .layer(server::MetricsLayer::new(admin_state.metrics.clone()))
                 .layer(admin_cors.clone())
                 .service(admin_tower_service);
