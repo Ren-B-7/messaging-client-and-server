@@ -3,14 +3,14 @@ use shared::types::sse::*;
 #[test]
 fn sse_event_serializes_and_deserializes() {
     let e = SseEvent {
-        user_id: "42".into(),
+        user_id: 50,
         event_type: "message_sent".into(),
         data: serde_json::json!({ "msg_id": 1 }),
         timestamp: 1234,
     };
     let json = serde_json::to_string(&e).unwrap();
     let back: SseEvent = serde_json::from_str(&json).unwrap();
-    assert_eq!(back.user_id, "42");
+    assert_eq!(back.user_id, 50);
     assert_eq!(back.event_type, "message_sent");
 }
 

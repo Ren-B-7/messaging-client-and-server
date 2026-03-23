@@ -310,7 +310,7 @@ async fn deliver_page_reads_file_and_sets_content_type() {
     let mut f = NamedTempFile::with_suffix(".html").unwrap();
     write!(f, "<html><body>test</body></html>").unwrap();
 
-    let res = deliver_page_with_status(f.path(), StatusCode::OK, CacheStrategy::Explicit).unwrap();
+    let res = deliver_page_with_status(f.path(), StatusCode::OK, CacheStrategy::LongTerm).unwrap();
 
     assert_eq!(res.status(), StatusCode::OK);
     assert_eq!(res.headers()["content-type"], "text/html; charset=utf-8");
@@ -324,7 +324,7 @@ async fn deliver_page_with_json_status() {
     write!(f, r#"{{"test": true}}"#).unwrap();
 
     let res =
-        deliver_page_with_status(f.path(), StatusCode::CREATED, CacheStrategy::Explicit).unwrap();
+        deliver_page_with_status(f.path(), StatusCode::CREATED, CacheStrategy::ShortTerm).unwrap();
 
     assert_eq!(res.status(), StatusCode::CREATED);
     assert_eq!(res.headers()["content-type"], "application/json");
@@ -335,7 +335,7 @@ fn deliver_page_missing_file_returns_error() {
     let result = deliver_page_with_status(
         "/nonexistent/path/file.html",
         StatusCode::OK,
-        CacheStrategy::Explicit,
+        CacheStrategy::NoCache,
     );
     assert!(result.is_err());
 }
@@ -462,7 +462,7 @@ async fn deliver_page_with_etag_includes_etag_header() {
     let res = deliver_page_with_etag(
         f.path(),
         StatusCode::OK,
-        CacheStrategy::Explicit,
+        CacheStrategy::LongTerm,
         "\"abc123\"",
     )
     .unwrap();

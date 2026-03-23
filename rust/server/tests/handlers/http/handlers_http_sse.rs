@@ -218,7 +218,7 @@ fn test_multiple_query_parameters() {
 #[tokio::test]
 async fn test_get_channel_creates_channel() {
     let manager = SseManager::new();
-    let user_id = "test-user".to_string();
+    let user_id = 1;
 
     let tx1 = manager.get_channel(user_id.clone()).await;
     let tx2 = manager.get_channel(user_id).await;
@@ -232,7 +232,7 @@ async fn test_get_channel_creates_channel() {
 #[tokio::test]
 async fn test_broadcast_to_user() {
     let manager = SseManager::new();
-    let user_id = "test-user".to_string();
+    let user_id = 1;
 
     let tx = manager.get_channel(user_id.clone()).await;
     let mut rx = tx.subscribe();
@@ -256,8 +256,8 @@ async fn test_broadcast_to_user() {
 async fn test_broadcast_to_users() {
     let manager = SseManager::new();
 
-    let user1 = "user1".to_string();
-    let user2 = "user2".to_string();
+    let user1 = 1;
+    let user2 = 2;
 
     let _tx1 = manager.get_channel(user1.clone()).await;
     let _tx2 = manager.get_channel(user2.clone()).await;
@@ -276,8 +276,8 @@ async fn test_broadcast_to_users() {
 #[tokio::test]
 async fn test_cleanup_removes_inactive() {
     let manager = SseManager::new();
-    let user1 = "user1".to_string();
-    let user2 = "user2".to_string();
+    let user1 = 1;
+    let user2 = 2;
 
     let _tx1 = manager.get_channel(user1.clone()).await;
     let tx2 = manager.get_channel(user2.clone()).await;
@@ -294,7 +294,7 @@ async fn test_cleanup_removes_inactive() {
 #[tokio::test]
 async fn test_broadcast_with_no_channel() {
     let manager = SseManager::new();
-    let user_id = "ghost-user".to_string();
+    let user_id = 1;
 
     let event = SseEvent {
         user_id,
@@ -311,7 +311,7 @@ async fn test_broadcast_with_no_channel() {
 #[tokio::test]
 async fn test_channel_event_ordering() {
     let manager = SseManager::new();
-    let user_id = "alice".to_string();
+    let user_id = 1;
 
     let tx = manager.get_channel(user_id.clone()).await;
     let mut rx = tx.subscribe();
@@ -344,7 +344,7 @@ async fn test_channel_event_ordering() {
 #[tokio::test]
 async fn test_concurrent_broadcasts() {
     let manager = std::sync::Arc::new(SseManager::new());
-    let user_id = "test-user".to_string();
+    let user_id = 1;
 
     let tx = manager.get_channel(user_id.clone()).await;
     let mut rx = tx.subscribe();
@@ -381,7 +381,7 @@ async fn test_concurrent_broadcasts() {
 #[tokio::test]
 async fn test_multiple_subscribers_same_user() {
     let manager = SseManager::new();
-    let user_id = "alice".to_string();
+    let user_id = 1;
 
     let tx = manager.get_channel(user_id.clone()).await;
     let mut rx1 = tx.subscribe();
@@ -408,9 +408,9 @@ async fn test_multiple_subscribers_same_user() {
 async fn test_broadcast_to_users_with_mixed_subscribers() {
     let manager = SseManager::new();
 
-    let user1 = "alice".to_string();
-    let user2 = "bob".to_string();
-    let user3 = "charlie".to_string();
+    let user1 = 1;
+    let user2 = 2;
+    let user3 = 3;
 
     let tx1 = manager.get_channel(user1.clone()).await;
     let _tx2 = manager.get_channel(user2.clone()).await;
@@ -420,7 +420,7 @@ async fn test_broadcast_to_users_with_mixed_subscribers() {
     let mut rx3 = tx3.subscribe();
 
     let event = SseEvent {
-        user_id: "".to_string(),
+        user_id: 4,
         event_type: "group_message".to_string(),
         data: serde_json::json!({"content": "group update"}),
         timestamp: 2000,
@@ -438,7 +438,7 @@ async fn test_broadcast_to_users_with_mixed_subscribers() {
 #[tokio::test]
 async fn test_event_data_integrity() {
     let manager = SseManager::new();
-    let user_id = "test".to_string();
+    let user_id = 1;
 
     let tx = manager.get_channel(user_id.clone()).await;
     let mut rx = tx.subscribe();

@@ -94,11 +94,7 @@ impl SseManager {
         }
     }
 
-    pub async fn broadcast_to_users(
-        &self,
-        event: SseEvent,
-        user_ids: Vec<i64>,
-    ) -> SseResult<()> {
+    pub async fn broadcast_to_users(&self, event: SseEvent, user_ids: Vec<i64>) -> SseResult<()> {
         let channels = self.channels.read().await;
         info!(
             "Broadcasting {} event to {} users",
@@ -128,7 +124,9 @@ impl SseManager {
         if before != after {
             info!(
                 "SSE cleanup: removed {} inactive channels ({} → {} remaining)",
-                before - after, before, after
+                before - after,
+                before,
+                after
             );
         }
     }
@@ -204,7 +202,7 @@ fn parse_query(req: &Request<hyper::body::Incoming>) -> HashMap<String, String> 
 /// | `offset`   | Pagination offset into history (default 0)           |
 ///
 /// ### Event sequence emitted
-/// ```
+/// ```Text
 /// event: connected        — handshake OK
 /// event: history_start    — client enters history-replay mode
 /// event: history_message  — one per historical message (oldest first)

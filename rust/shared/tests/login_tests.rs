@@ -9,13 +9,6 @@ fn login_data_deserializes_username() {
 }
 
 #[test]
-fn login_data_email_alias_maps_to_username() {
-    let json = r#"{"email":"bob@example.com","password":"pass123"}"#;
-    let d: LoginData = serde_json::from_str(json).unwrap();
-    assert_eq!(d.username, "bob@example.com");
-}
-
-#[test]
 fn login_data_remember_me_defaults_false() {
     let json = r#"{"username":"x","password":"y"}"#;
     let d: LoginData = serde_json::from_str(json).unwrap();

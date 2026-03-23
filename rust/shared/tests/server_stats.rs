@@ -1,5 +1,5 @@
 use shared::types::{server_config::*, server_stats::*};
-use std::collections::HashSet;
+use std::{collections::HashSet};
 
 fn test_config() -> AppConfig {
     AppConfig {
@@ -19,6 +19,8 @@ fn test_config() -> AppConfig {
             token_expiry_minutes: 60,
             email_required: false,
             jwt_secret: None,
+            strict_ip_binding: default_strict_ip_binding(),
+            cors_origins: default_cors_origins(),
         },
     }
 }

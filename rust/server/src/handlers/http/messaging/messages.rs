@@ -819,7 +819,10 @@ async fn parse_message_body(
 }
 
 pub fn validate_message(data: &SendMessageData) -> std::result::Result<(), MessageError> {
-    if data.content.is_empty() {
+    // Trim before the empty check so whitespace-only content ("   ", "\t\n")
+    // is treated the same as an empty string — both are semantically empty
+    // messages that should never be stored.
+    if data.content.trim().is_empty() {
         return Err(MessageError::EmptyMessage);
     }
     if data.content.len() > MAX_MESSAGE_LENGTH {
