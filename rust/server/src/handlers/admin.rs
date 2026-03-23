@@ -394,4 +394,18 @@ pub fn build_admin_api_routes(router: Router) -> Router {
                     .context("Demote failed")
             },
         )
+        // ── Config reload (SIGHUP) ────────────────────────────────────────────
+        .post_hard(
+            "/admin/api/reload",
+            |_req, _state, user_id, claims| async move {
+                if (!claims.is_admin) || (claims.user_id != user_id) {
+                    return deliver_error_json(
+                        "FORBIDDEN",
+                        "Insufficient privileges",
+                        StatusCode::FORBIDDEN,
+                    );
+                }
+                admin::handle_reload_config(_req, user_id).await
+            },
+        )
 }

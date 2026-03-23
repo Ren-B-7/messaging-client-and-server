@@ -1,6 +1,8 @@
+pub mod reload;
 pub mod stats;
 pub mod users;
 
+pub use reload::handle_reload_config;
 pub use stats::{handle_metrics, handle_server_config};
 pub use users::{
     handle_ban_user, handle_delete_user, handle_demote_user, handle_get_sessions, handle_get_users,
