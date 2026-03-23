@@ -12,6 +12,10 @@ import time
 from urllib.error import URLError, HTTPError
 from concurrent.futures import ThreadPoolExecutor
 
+import mimetypes
+import os
+import uuid
+
 from config import DEFAULT_SERVER, USER_AGENT, CONNECTION_TIMEOUT, RECONNECT_TIMEOUT
 from cache import MessageCache
 from logger import logger
@@ -104,8 +108,6 @@ class ChatAPIClient:
         timeout=CONNECTION_TIMEOUT,
     ):
         """POST a multipart/form-data request (for file / avatar uploads)."""
-        import mimetypes, os, uuid
-
         url = f"{self.server_url}{path}"
         boundary = uuid.uuid4().hex
 

@@ -36,7 +36,7 @@ class ThemeManager:
                     self.theme = config.get("theme", "light")
                     self.colors = COLORS[self.theme]
                     logger.info(
-                        f"Theme loaded from config", extra_info=f"Theme: {self.theme}"
+                        "Theme loaded from config", extra_info=f"Theme: {self.theme}"
                     )
             except Exception as e:
                 logger.warning(
@@ -60,7 +60,7 @@ class ThemeManager:
             with open(config_file, "w") as f:
                 json.dump(config, f)
             logger.info(
-                f"Theme saved to config",
+                "Theme saved to config",
                 extra_info=f"Theme: {self.theme}, File: {config_file}",
             )
         except Exception as e:

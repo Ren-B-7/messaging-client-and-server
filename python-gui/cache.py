@@ -33,7 +33,7 @@ class MessageCache:
                 )
 
             logger.debug(
-                f"Message added to cache",
+                "Message added to cache",
                 extra_info=f"Chat: {chat_id}, Total: {len(self.messages[chat_id])}",
             )
         except Exception as e:
@@ -46,7 +46,7 @@ class MessageCache:
         try:
             messages = self.messages.get(chat_id, [])
             logger.debug(
-                f"Retrieved cached messages",
+                "Retrieved cached messages",
                 extra_info=f"Chat: {chat_id}, Count: {len(messages)}",
             )
             return messages
@@ -64,7 +64,7 @@ class MessageCache:
                 count = len(self.messages[chat_id])
                 del self.messages[chat_id]
                 logger.info(
-                    f"Cleared chat cache",
+                    "Cleared chat cache",
                     extra_info=f"Chat: {chat_id}, Cleared: {count} messages",
                 )
             else:
@@ -86,4 +86,4 @@ class MessageCache:
                 extra_info=f"Chats: {chat_count}, Messages: {count}",
             )
         except Exception as e:
-            logger.warning("Failed to clear cache", error_detail=str(e))
+            logger.warning("Failed to clear cache", extra_info=str(e))

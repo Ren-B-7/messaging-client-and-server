@@ -17,7 +17,6 @@ A signal handler posted to the Tk event loop via root.after() ensures
 Ctrl-C in the terminal triggers the same clean-close path as clicking ×.
 """
 
-from time import sleep
 import tkinter as tk
 import os
 import sys

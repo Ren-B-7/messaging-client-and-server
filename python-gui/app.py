@@ -604,7 +604,7 @@ class ChatClientApp:
             bold=True,
             bg=c("bg_primary"),
         ).pack(anchor=tk.W, pady=(0, SP[1]))
-        server_var = tk.StringVar(value=config.DEFAULT_SERVER)
+        _server_var = tk.StringVar(value=config.DEFAULT_SERVER)
         server_entry = make_entry(form, self)
         server_entry.insert(0, config.DEFAULT_SERVER)
 
@@ -752,7 +752,7 @@ class ChatClientApp:
                 self.root.after(0, lambda: self._handle_login_response(r, username))
             except Exception as e:
                 self.root.after(
-                    0, lambda: messagebox.showerror("Error", f"Login failed: {e}")
+                    0, lambda e=e: messagebox.showerror("Error", f"Login failed: {e}")
                 )
 
         threading.Thread(target=t, daemon=True).start()
@@ -821,7 +821,9 @@ class ChatClientApp:
             except Exception as e:
                 self.root.after(
                     0,
-                    lambda: messagebox.showerror("Error", f"Registration failed: {e}"),
+                    lambda e=e: messagebox.showerror(
+                        "Error", f"Registration failed: {e}"
+                    ),
                 )
 
         threading.Thread(target=t, daemon=True).start()
@@ -1394,7 +1396,8 @@ class ChatClientApp:
                 self.root.after(0, lambda: self._handle_send_response(r))
             except Exception as e:
                 self.root.after(
-                    0, lambda: messagebox.showerror("Error", "Failed to send message")
+                    0,
+                    lambda e=e: messagebox.showerror("Error", "Failed to send message"),
                 )
 
         threading.Thread(target=t, daemon=True).start()
@@ -1673,7 +1676,7 @@ class ChatClientApp:
                 except Exception as e:
                     self.root.after(
                         0,
-                        lambda: status_lbl.configure(
+                        lambda e=e: status_lbl.configure(
                             text=f"Search error: {e}", fg=c("danger")
                         ),
                     )
@@ -1732,7 +1735,7 @@ class ChatClientApp:
                 except Exception as e:
                     self.root.after(
                         0,
-                        lambda: status_lbl.configure(
+                        lambda e=e: status_lbl.configure(
                             text=f"Error: {e}", fg=c("danger")
                         ),
                     )
@@ -1980,7 +1983,7 @@ class ChatClientApp:
                 except Exception as e:
                     self.root.after(
                         0,
-                        lambda: status_lbl.configure(
+                        lambda e=e: status_lbl.configure(
                             text=f"Search error: {e}", fg=c("danger")
                         ),
                     )
@@ -2035,7 +2038,7 @@ class ChatClientApp:
                 except Exception as e:
                     self.root.after(
                         0,
-                        lambda: status_lbl.configure(
+                        lambda e=e: status_lbl.configure(
                             text=f"Error: {e}", fg=c("danger")
                         ),
                     )
@@ -2604,7 +2607,7 @@ class ChatClientApp:
 
 def main():
     root = tk.Tk()
-    app = ChatClientApp(root)
+    _app = ChatClientApp(root)
     root.mainloop()
 
 
