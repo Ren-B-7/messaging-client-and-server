@@ -4,31 +4,35 @@ on: [push, pull_request]
 
 jobs:
     # --- PHASE 1: LINTING & FORMATTING (Runs in Parallel) ---
-    bacon-and-fmt:
+    rust-lint-and-fmt:
         runs-on: ubuntu-latest
-        permissions:
-            checks: write
         defaults:
             run:
                 working-directory: ./rust
         steps:
             - uses: actions/checkout@v4
-            - name: Install Rust & Clippy
+
+            - name: Install Rust Toolchain
               uses: dtolnay/rust-toolchain@stable
               with:
-                  components: clippy, rustfmt
+                  components: rustfmt, clippy
+
             - name: Rust Cache
               uses: Swatinem/rust-cache@v2
               with:
-                  workspaces: "rust -> target" # Points to the subdirectory
+                  workspaces: "rust -> target"
+
+            # 1. Check Format First (Fastest)
             - name: Check Rust Format
               run: cargo fmt --check
-            - name: Run Clippy Action
-              uses: auguwu/clippy-action@v1
-              with:
-                  token: ${{ secrets.GITHUB_TOKEN }}
-                  working-directory: ./rust
-                  clippy_flags: --all-targets -- -D warnings
+
+            # 2. Run Clippy (Linting)
+            - name: Run Clippy
+              run: cargo clippy --all-targets -- -D warnings
+
+            # 3. Final Check
+            - name: Run Cargo Check
+              run: cargo check
 
     ruff-lint:
         runs-on: ubuntu-latest
