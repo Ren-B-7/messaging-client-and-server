@@ -208,7 +208,9 @@ pub fn build_admin_api_routes(router: Router) -> Router {
                     StatusCode::FORBIDDEN,
                 );
             }
-            admin::handle_server_config(req, state, user_id).await
+            admin::handle_server_config(req, state, user_id)
+                .await
+                .context("Handle server config failed")
         })
         .get_hard(
             "/admin/api/stats",
@@ -220,7 +222,9 @@ pub fn build_admin_api_routes(router: Router) -> Router {
                         StatusCode::FORBIDDEN,
                     );
                 }
-                admin::handle_server_config(req, state, user_id).await
+                admin::handle_server_config(req, state, user_id)
+                    .await
+                    .context("Handle server config failed")
             },
         )
         // ── Metrics ──────────────────────────────────────────────────────────
@@ -232,7 +236,9 @@ pub fn build_admin_api_routes(router: Router) -> Router {
                     StatusCode::FORBIDDEN,
                 );
             }
-            admin::handle_metrics(req, state, user_id).await
+            admin::handle_metrics(req, state, user_id)
+                .await
+                .context("Get metrics failed")
         })
         .get_hard(
             "/admin/api/metrics",
@@ -244,7 +250,9 @@ pub fn build_admin_api_routes(router: Router) -> Router {
                         StatusCode::FORBIDDEN,
                     );
                 }
-                admin::handle_metrics(req, state, user_id).await
+                admin::handle_metrics(req, state, user_id)
+                    .await
+                    .context("Get metrics failed")
             },
         )
         .get_hard(
@@ -259,7 +267,7 @@ pub fn build_admin_api_routes(router: Router) -> Router {
                 }
                 admin::handle_patch_config(req, state, user_id)
                     .await
-                    .context("Update server config failed")
+                    .context("Get server config failed")
             },
         )
         .post_hard(
@@ -274,7 +282,7 @@ pub fn build_admin_api_routes(router: Router) -> Router {
                 }
                 admin::handle_get_config(req, state, user_id)
                     .await
-                    .context("Get server config failed")
+                    .context("Update server config failed")
             },
         )
         // ── User list ─────────────────────────────────────────────────────────
@@ -286,7 +294,9 @@ pub fn build_admin_api_routes(router: Router) -> Router {
                     StatusCode::FORBIDDEN,
                 );
             }
-            admin::handle_get_users(req, state, 0).await
+            admin::handle_get_users(req, state, 0)
+                .await
+                .context("Get users list failed")
         })
         .get_light("/admin/api/users", |req, state, claims| async move {
             if !claims.is_admin {
@@ -296,7 +306,9 @@ pub fn build_admin_api_routes(router: Router) -> Router {
                     StatusCode::FORBIDDEN,
                 );
             }
-            admin::handle_get_users(req, state, 0).await
+            admin::handle_get_users(req, state, 0)
+                .await
+                .context("Get users list failed")
         })
         // ── Session list ──────────────────────────────────────────────────────
         .get_light("/admin/sessions", |req, state, claims| async move {
@@ -307,7 +319,9 @@ pub fn build_admin_api_routes(router: Router) -> Router {
                     StatusCode::FORBIDDEN,
                 );
             }
-            admin::handle_get_sessions(req, state, 0).await
+            admin::handle_get_sessions(req, state, 0)
+                .await
+                .context("Get open sessions failed")
         })
         .get_light("/admin/api/sessions", |req, state, claims| async move {
             if !claims.is_admin {
@@ -317,7 +331,9 @@ pub fn build_admin_api_routes(router: Router) -> Router {
                     StatusCode::FORBIDDEN,
                 );
             }
-            admin::handle_get_sessions(req, state, 0).await
+            admin::handle_get_sessions(req, state, 0)
+                .await
+                .context("Get open sessions failed")
         })
         // ── Ban / unban ───────────────────────────────────────────────────────
         .post_hard("/admin/ban", |req, state, user_id, claims| async move {
@@ -328,7 +344,9 @@ pub fn build_admin_api_routes(router: Router) -> Router {
                     StatusCode::FORBIDDEN,
                 );
             }
-            admin::handle_ban_user(req, state, user_id).await
+            admin::handle_ban_user(req, state, user_id)
+                .await
+                .context("Ban user failed")
         })
         .post_hard(
             "/admin/api/users/ban",
@@ -340,7 +358,9 @@ pub fn build_admin_api_routes(router: Router) -> Router {
                         StatusCode::FORBIDDEN,
                     );
                 }
-                admin::handle_ban_user(req, state, user_id).await
+                admin::handle_ban_user(req, state, user_id)
+                    .await
+                    .context("Ban user failed")
             },
         )
         .post_hard("/admin/unban", |req, state, user_id, claims| async move {
@@ -351,7 +371,9 @@ pub fn build_admin_api_routes(router: Router) -> Router {
                     StatusCode::FORBIDDEN,
                 );
             }
-            admin::handle_unban_user(req, state, user_id).await
+            admin::handle_unban_user(req, state, user_id)
+                .await
+                .context("Unban user failed")
         })
         .post_hard(
             "/admin/api/users/unban",
@@ -363,7 +385,9 @@ pub fn build_admin_api_routes(router: Router) -> Router {
                         StatusCode::FORBIDDEN,
                     );
                 }
-                admin::handle_unban_user(req, state, user_id).await
+                admin::handle_unban_user(req, state, user_id)
+                    .await
+                    .context("Unban user failed")
             },
         )
         // ── Delete user ───────────────────────────────────────────────────────
@@ -377,7 +401,9 @@ pub fn build_admin_api_routes(router: Router) -> Router {
                         StatusCode::FORBIDDEN,
                     );
                 }
-                admin::handle_delete_user(req, state, user_id).await
+                admin::handle_delete_user(req, state, user_id)
+                    .await
+                    .context("Delete user failed")
             },
         )
         .delete_hard(
@@ -390,7 +416,9 @@ pub fn build_admin_api_routes(router: Router) -> Router {
                         StatusCode::FORBIDDEN,
                     );
                 }
-                admin::handle_delete_user(req, state, user_id).await
+                admin::handle_delete_user(req, state, user_id)
+                    .await
+                    .context("Delete user failed")
             },
         )
         // ── Promote / demote ──────────────────────────────────────────────────
@@ -435,7 +463,9 @@ pub fn build_admin_api_routes(router: Router) -> Router {
                         StatusCode::FORBIDDEN,
                     );
                 }
-                admin::handle_reload_config(_req, user_id).await
+                admin::handle_reload_config(_req, user_id)
+                    .await
+                    .context("Reload config failed")
             },
         )
 }
