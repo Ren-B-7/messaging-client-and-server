@@ -28,7 +28,7 @@ fn claims_serialize_and_deserialize_roundtrip() {
 
 #[test]
 fn claims_json_contains_expected_keys() {
-    let json = serde_json::to_value(&sample_claims()).unwrap();
+    let json = serde_json::to_value(sample_claims()).unwrap();
     for key in &[
         "sub",
         "user_id",

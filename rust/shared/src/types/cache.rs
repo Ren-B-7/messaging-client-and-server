@@ -17,7 +17,7 @@ use std::fmt;
 /// `No` did NOT mean "no caching" — it meant "one-hour caching".  The old
 /// `Explicit` variant was the actual "no caching" option.  These names
 /// have been replaced with the unambiguous names above.
-#[derive(Deserialize, Debug, Clone, Copy)]
+#[derive(Deserialize, Debug, Clone)]
 pub enum CacheStrategy {
     /// Cache for one year.  Use for fingerprinted / immutable assets.
     LongTerm,
