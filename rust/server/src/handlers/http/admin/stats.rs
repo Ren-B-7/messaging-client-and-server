@@ -12,7 +12,7 @@ use tracing::info;
 
 use crate::AppState;
 use crate::handlers::http::utils::json_response::*;
-use shared::types::server_config::{AppConfig, ServerConfig};
+use shared::types::server_config::AppConfig;
 use shared::types::server_stats::{DatabaseInfo, ServerStats};
 
 /// GET /admin/api/stats — serve live server and database statistics.
@@ -124,10 +124,6 @@ pub async fn handle_metrics(
         StatusCode::OK,
     )
 }
-
-// =============================================================================
-// Config view/edit — GET + PATCH /admin/api/config
-// =============================================================================
 
 // ---------------------------------------------------------------------------
 // Serialisable mirror of AppConfig (GET response)
