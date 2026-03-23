@@ -4,7 +4,7 @@ on: [push, pull_request]
 
 jobs:
     # --- PHASE 1: LINTING & FORMATTING (Runs in Parallel) ---
-      bacon-and-fmt:
+    bacon-and-fmt:
         runs-on: ubuntu-latest
         defaults:
             run:
