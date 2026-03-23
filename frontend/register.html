@@ -1,370 +1,341 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Create Account - Chat App</title>
-    <meta
-      name="description"
-      content="Create a free Chat App account. Sign up in minutes to start messaging friends and family."
-    />
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Create Account - Chat App</title>
+        <meta
+            name="description"
+            content="Create a free Chat App account. Sign up in minutes to start messaging friends and family."
+        />
 
-    <!-- Primary CSS -->
-    <link rel="stylesheet" href="static/css/var.css" fetchpriority="high" />
-    <link
-      rel="stylesheet"
-      href="static/css/base/base.light.css"
-      fetchpriority="high"
-      data-theme-mod="base"
-      data-theme-variant="light"
-    />
-    <link
-      rel="stylesheet"
-      href="static/css/auth/auth.light.css"
-      fetchpriority="high"
-      data-theme-mod="auth"
-      data-theme-variant="light"
-    />
+        <!-- Primary CSS -->
+        <link rel="stylesheet" href="static/css/var.css" fetchpriority="high" />
+        <link
+            rel="stylesheet"
+            href="static/css/base/base.light.css"
+            fetchpriority="high"
+            data-theme-mod="base"
+            data-theme-variant="light"
+        />
+        <link
+            rel="stylesheet"
+            href="static/css/auth/auth.light.css"
+            fetchpriority="high"
+            data-theme-mod="auth"
+            data-theme-variant="light"
+        />
 
-    <!-- Synchronous theme detection — runs before render to avoid flash -->
-    <script>
-      (function () {
-        var t =
-          localStorage.getItem("theme") ||
-          (matchMedia("(prefers-color-scheme: dark)").matches
-            ? "dark"
-            : "light");
-        document.documentElement.setAttribute("data-theme", t);
-        if (t === "dark") {
-          ["base", "auth"].forEach(function (m) {
-            var l = document.createElement("link");
-            l.rel = "stylesheet";
-            l.href = "static/css/" + m + "/" + m + ".dark.css";
-            l.fetchPriority = "high";
-            l.dataset.themeMod = m;
-            l.dataset.themeVariant = "dark";
-            document.head.appendChild(l);
-          });
-        }
-        var ld = function (v) {
-          var e = document.getElementById("loading");
-          if (e) e.style.display = v;
-        };
-        window.addEventListener("beforeunload", function () {
-          ld("flex");
-        });
-        window.addEventListener("load", function () {
-          ld("none");
-        });
-        window.addEventListener("pageshow", function (e) {
-          if (e.persisted) ld("none");
-        });
-      })();
-    </script>
+        <!-- Synchronous theme detection — runs before render to avoid flash -->
+        <script>
+            (function () {
+                var t =
+                    localStorage.getItem("theme") ||
+                    (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+                document.documentElement.setAttribute("data-theme", t);
+                if (t === "dark") {
+                    ["base", "auth"].forEach(function (m) {
+                        var l = document.createElement("link");
+                        l.rel = "stylesheet";
+                        l.href = "static/css/" + m + "/" + m + ".dark.css";
+                        l.fetchPriority = "high";
+                        l.dataset.themeMod = m;
+                        l.dataset.themeVariant = "dark";
+                        document.head.appendChild(l);
+                    });
+                }
+                var ld = function (v) {
+                    var e = document.getElementById("loading");
+                    if (e) e.style.display = v;
+                };
+                window.addEventListener("beforeunload", function () {
+                    ld("flex");
+                });
+                window.addEventListener("load", function () {
+                    ld("none");
+                });
+                window.addEventListener("pageshow", function (e) {
+                    if (e.persisted) ld("none");
+                });
+            })();
+        </script>
 
-    <!-- Preloads -->
-    <link rel="preload" href="static/js/utils/theme.manager.js" as="script" />
-    <link
-      rel="preload"
-      href="static/js/utils/error.interceptor.js"
-      as="script"
-    />
-    <link
-      rel="preload"
-      href="static/js/config/platform.config.js"
-      as="script"
-    />
-    <link rel="preload" href="static/js/utils/utils.js" as="script" />
-    <link rel="preload" href="static/js/auth/auth.password.js" as="script" />
-    <link
-      rel="preload"
-      href="static/js/utils/error.interceptor.js"
-      as="script"
-    />
-    <link rel="preload" href="non-static/auth/auth.login.js" as="script" />
-    <link rel="preload" href="non-static/auth/auth.register.js" as="script" />
-    <link rel="preload" href="non-static/auth/auth.init.js" as="script" />
+        <!-- Preloads -->
+        <link rel="preload" href="static/js/utils/theme.manager.js" as="script" />
+        <link rel="preload" href="static/js/utils/error.interceptor.js" as="script" />
+        <link rel="preload" href="static/js/config/platform.config.js" as="script" />
+        <link rel="preload" href="static/js/utils/utils.js" as="script" />
+        <link rel="preload" href="static/js/auth/auth.password.js" as="script" />
+        <link rel="preload" href="static/js/utils/error.interceptor.js" as="script" />
+        <link rel="preload" href="non-static/auth/auth.login.js" as="script" />
+        <link rel="preload" href="non-static/auth/auth.register.js" as="script" />
+        <link rel="preload" href="non-static/auth/auth.init.js" as="script" />
 
-    <!-- Scripts (deferred — execute after HTML is parsed, in order) -->
-    <script defer src="static/js/utils/error.interceptor.js"></script>
-    <script defer src="static/js/utils/theme.manager.js"></script>
-    <script defer src="static/js/config/platform.config.js"></script>
-    <script defer src="static/js/utils/utils.js"></script>
-    <script defer src="static/js/auth/auth.password.js"></script>
-    <script defer src="non-static/auth/auth.login.js"></script>
-    <script defer src="non-static/auth/auth.register.js"></script>
-    <script defer src="non-static/auth/auth.init.js"></script>
-  </head>
-  <body>
-    <div id="loading">Loading...</div>
+        <!-- Scripts (deferred — execute after HTML is parsed, in order) -->
+        <script defer src="static/js/utils/error.interceptor.js"></script>
+        <script defer src="static/js/utils/theme.manager.js"></script>
+        <script defer src="static/js/config/platform.config.js"></script>
+        <script defer src="static/js/utils/utils.js"></script>
+        <script defer src="static/js/auth/auth.password.js"></script>
+        <script defer src="non-static/auth/auth.login.js"></script>
+        <script defer src="non-static/auth/auth.register.js"></script>
+        <script defer src="non-static/auth/auth.init.js"></script>
+    </head>
+    <body>
+        <div id="loading">Loading...</div>
 
-    <div class="auth-page">
-      <div class="auth-container">
-        <div class="auth-card">
-          <div class="auth-header">
-            <div class="auth-logo">💬</div>
-            <h1 class="auth-title">Create Account</h1>
-            <p class="auth-subtitle">Join our community today</p>
-          </div>
+        <div class="auth-page">
+            <div class="auth-container">
+                <div class="auth-card">
+                    <div class="auth-header">
+                        <div class="auth-logo">💬</div>
+                        <h1 class="auth-title">Create Account</h1>
+                        <p class="auth-subtitle">Join our community today</p>
+                    </div>
 
-          <!-- Step indicators -->
-          <div class="steps-container">
-            <div class="step active" data-step="1">
-              <div class="step-circle">1</div>
-              <span class="step-label">Account</span>
-            </div>
-            <div class="step-connector"></div>
-            <div class="step" data-step="2">
-              <div class="step-circle">2</div>
-              <span class="step-label">Profile</span>
-            </div>
-            <div class="step-connector"></div>
-            <div class="step" data-step="3">
-              <div class="step-circle">3</div>
-              <span class="step-label">Verify</span>
-            </div>
-          </div>
+                    <!-- Step indicators -->
+                    <div class="steps-container">
+                        <div class="step active" data-step="1">
+                            <div class="step-circle">1</div>
+                            <span class="step-label">Account</span>
+                        </div>
+                        <div class="step-connector"></div>
+                        <div class="step" data-step="2">
+                            <div class="step-circle">2</div>
+                            <span class="step-label">Profile</span>
+                        </div>
+                        <div class="step-connector"></div>
+                        <div class="step" data-step="3">
+                            <div class="step-circle">3</div>
+                            <span class="step-label">Verify</span>
+                        </div>
+                    </div>
 
-          <form id="registerForm" class="auth-form" novalidate>
-            <!-- ── Step 1: Account credentials ── -->
-            <div class="form-step active" data-step="1">
-              <div class="form-group">
-                <label class="form-label" for="regEmail">Email Address</label>
-                <input
-                  type="email"
-                  id="regEmail"
-                  name="email"
-                  class="form-input"
-                  placeholder="name@example.com"
-                  required
-                  autocomplete="email"
-                />
-                <div class="form-error" id="regEmailError"></div>
-              </div>
+                    <form id="registerForm" class="auth-form" novalidate>
+                        <!-- ── Step 1: Account credentials ── -->
+                        <div class="form-step active" data-step="1">
+                            <div class="form-group">
+                                <label class="form-label" for="regEmail">Email Address</label>
+                                <input
+                                    type="email"
+                                    id="regEmail"
+                                    name="email"
+                                    class="form-input"
+                                    placeholder="name@example.com"
+                                    required
+                                    autocomplete="email"
+                                />
+                                <div class="form-error" id="regEmailError"></div>
+                            </div>
 
-              <div class="form-group">
-                <label class="form-label" for="regPassword">Password</label>
-                <div class="password-input-wrapper">
-                  <input
-                    type="password"
-                    id="regPassword"
-                    name="password"
-                    class="form-input"
-                    placeholder="Create a strong password"
-                    required
-                    autocomplete="new-password"
-                  />
-                  <button
-                    type="button"
-                    class="password-toggle"
-                    aria-label="Toggle password visibility"
-                  >
-                    <img
-                      src="static/icons/icons/eye.svg"
-                      alt=""
-                      width="20"
-                      height="20"
-                    />
-                  </button>
+                            <div class="form-group">
+                                <label class="form-label" for="regPassword">Password</label>
+                                <div class="password-input-wrapper">
+                                    <input
+                                        type="password"
+                                        id="regPassword"
+                                        name="password"
+                                        class="form-input"
+                                        placeholder="Create a strong password"
+                                        required
+                                        autocomplete="new-password"
+                                    />
+                                    <button
+                                        type="button"
+                                        class="password-toggle"
+                                        aria-label="Toggle password visibility"
+                                    >
+                                        <img
+                                            src="static/icons/icons/eye.svg"
+                                            alt=""
+                                            width="20"
+                                            height="20"
+                                        />
+                                    </button>
+                                </div>
+                                <div class="password-strength">
+                                    <div class="strength-bar">
+                                        <div class="strength-fill" id="strengthFill"></div>
+                                    </div>
+                                    <span class="strength-text" id="strengthText"></span>
+                                    <div id="strengthHints" class="strength-hints"></div>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label" for="regConfirmPassword"
+                                    >Confirm Password</label
+                                >
+                                <div class="password-input-wrapper">
+                                    <input
+                                        type="password"
+                                        id="regConfirmPassword"
+                                        name="confirmPassword"
+                                        class="form-input"
+                                        placeholder="Re-enter your password"
+                                        required
+                                        autocomplete="new-password"
+                                    />
+                                    <button
+                                        type="button"
+                                        class="password-toggle"
+                                        aria-label="Toggle password visibility"
+                                    >
+                                        <img
+                                            src="static/icons/icons/eye.svg"
+                                            alt=""
+                                            width="20"
+                                            height="20"
+                                        />
+                                    </button>
+                                </div>
+                                <div class="form-error" id="regConfirmPasswordError"></div>
+                            </div>
+
+                            <div class="form-actions">
+                                <button
+                                    type="button"
+                                    id="nextBtn1"
+                                    class="btn btn-primary btn-block btn-lg"
+                                >
+                                    Continue
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- ── Step 2: Profile details ── -->
+                        <div class="form-step" data-step="2">
+                            <div class="form-group">
+                                <label class="form-label" for="fullName">Full Name</label>
+                                <input
+                                    type="text"
+                                    id="fullName"
+                                    name="fullName"
+                                    class="form-input"
+                                    placeholder="Your display name"
+                                    required
+                                    autocomplete="name"
+                                />
+                                <div class="form-error" id="fullNameError"></div>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label" for="regUsername">Username</label>
+                                <input
+                                    type="text"
+                                    id="regUsername"
+                                    name="username"
+                                    class="form-input"
+                                    placeholder="Choose a unique username"
+                                    required
+                                    autocomplete="username"
+                                />
+                                <div class="form-hint">
+                                    At least 3 characters. Letters, numbers and underscores only.
+                                </div>
+                                <div class="form-error" id="usernameError"></div>
+                            </div>
+
+                            <div class="form-actions">
+                                <button
+                                    type="button"
+                                    id="prevBtn2"
+                                    class="btn btn-secondary btn-lg"
+                                >
+                                    Back
+                                </button>
+                                <button type="button" id="nextBtn2" class="btn btn-primary btn-lg">
+                                    Continue
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- ── Step 3: Review & submit ── -->
+                        <div class="form-step" data-step="3">
+                            <p
+                                class="text-secondary"
+                                style="margin-bottom: var(--space-5); font-size: var(--text-sm)"
+                            >
+                                Please confirm your details before creating your account.
+                            </p>
+
+                            <div class="card" style="margin-bottom: var(--space-6)">
+                                <div
+                                    class="card-body"
+                                    style="
+                                        display: flex;
+                                        flex-direction: column;
+                                        gap: var(--space-3);
+                                    "
+                                >
+                                    <div style="display: flex; justify-content: space-between">
+                                        <span
+                                            class="text-tertiary"
+                                            style="font-size: var(--text-sm)"
+                                            >Email</span
+                                        >
+                                        <span
+                                            id="reviewEmail"
+                                            style="font-size: var(--text-sm); font-weight: 500"
+                                            >—</span
+                                        >
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between">
+                                        <span
+                                            class="text-tertiary"
+                                            style="font-size: var(--text-sm)"
+                                            >Full name</span
+                                        >
+                                        <span
+                                            id="reviewName"
+                                            style="font-size: var(--text-sm); font-weight: 500"
+                                            >—</span
+                                        >
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between">
+                                        <span
+                                            class="text-tertiary"
+                                            style="font-size: var(--text-sm)"
+                                            >Username</span
+                                        >
+                                        <span
+                                            id="reviewUsername"
+                                            style="font-size: var(--text-sm); font-weight: 500"
+                                            >—</span
+                                        >
+                                    </div>
+                                </div>
+                            </div>
+
+                            <label class="form-checkbox" style="margin-bottom: var(--space-5)">
+                                <input type="checkbox" id="termsCheckbox" class="checkbox-input" />
+                                <span class="checkbox-label">
+                                    I agree to the <a href="/terms">Terms of Service</a> and
+                                    <a href="/privacy">Privacy Policy</a>
+                                </span>
+                            </label>
+                            <div class="form-error" id="termsCheckboxError"></div>
+
+                            <div class="form-actions">
+                                <button
+                                    type="button"
+                                    id="prevBtn3"
+                                    class="btn btn-secondary btn-lg"
+                                >
+                                    Back
+                                </button>
+                                <button type="submit" id="submitBtn" class="btn btn-primary btn-lg">
+                                    Create Account
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+
+                    <div class="auth-link-text">
+                        Already have an account? <a href="/login">Sign In</a>
+                    </div>
                 </div>
-                <div class="password-strength">
-                  <div class="strength-bar">
-                    <div class="strength-fill" id="strengthFill"></div>
-                  </div>
-                  <span class="strength-text" id="strengthText"></span>
-                  <div id="strengthHints" class="strength-hints"></div>
-                </div>
-              </div>
-
-              <div class="form-group">
-                <label class="form-label" for="regConfirmPassword"
-                  >Confirm Password</label
-                >
-                <div class="password-input-wrapper">
-                  <input
-                    type="password"
-                    id="regConfirmPassword"
-                    name="confirmPassword"
-                    class="form-input"
-                    placeholder="Re-enter your password"
-                    required
-                    autocomplete="new-password"
-                  />
-                  <button
-                    type="button"
-                    class="password-toggle"
-                    aria-label="Toggle password visibility"
-                  >
-                    <img
-                      src="static/icons/icons/eye.svg"
-                      alt=""
-                      width="20"
-                      height="20"
-                    />
-                  </button>
-                </div>
-                <div class="form-error" id="regConfirmPasswordError"></div>
-              </div>
-
-              <div class="form-actions">
-                <button
-                  type="button"
-                  id="nextBtn1"
-                  class="btn btn-primary btn-block btn-lg"
-                >
-                  Continue
-                </button>
-              </div>
             </div>
-
-            <!-- ── Step 2: Profile details ── -->
-            <div class="form-step" data-step="2">
-              <div class="form-group">
-                <label class="form-label" for="fullName">Full Name</label>
-                <input
-                  type="text"
-                  id="fullName"
-                  name="fullName"
-                  class="form-input"
-                  placeholder="Your display name"
-                  required
-                  autocomplete="name"
-                />
-                <div class="form-error" id="fullNameError"></div>
-              </div>
-
-              <div class="form-group">
-                <label class="form-label" for="regUsername">Username</label>
-                <input
-                  type="text"
-                  id="regUsername"
-                  name="username"
-                  class="form-input"
-                  placeholder="Choose a unique username"
-                  required
-                  autocomplete="username"
-                />
-                <div class="form-hint">
-                  At least 3 characters. Letters, numbers and underscores only.
-                </div>
-                <div class="form-error" id="usernameError"></div>
-              </div>
-
-              <div class="form-actions">
-                <button
-                  type="button"
-                  id="prevBtn2"
-                  class="btn btn-secondary btn-lg"
-                >
-                  Back
-                </button>
-                <button
-                  type="button"
-                  id="nextBtn2"
-                  class="btn btn-primary btn-lg"
-                >
-                  Continue
-                </button>
-              </div>
-            </div>
-
-            <!-- ── Step 3: Review & submit ── -->
-            <div class="form-step" data-step="3">
-              <p
-                class="text-secondary"
-                style="margin-bottom: var(--space-5); font-size: var(--text-sm)"
-              >
-                Please confirm your details before creating your account.
-              </p>
-
-              <div class="card" style="margin-bottom: var(--space-6)">
-                <div
-                  class="card-body"
-                  style="
-                    display: flex;
-                    flex-direction: column;
-                    gap: var(--space-3);
-                  "
-                >
-                  <div style="display: flex; justify-content: space-between">
-                    <span
-                      class="text-tertiary"
-                      style="font-size: var(--text-sm)"
-                      >Email</span
-                    >
-                    <span
-                      id="reviewEmail"
-                      style="font-size: var(--text-sm); font-weight: 500"
-                      >—</span
-                    >
-                  </div>
-                  <div style="display: flex; justify-content: space-between">
-                    <span
-                      class="text-tertiary"
-                      style="font-size: var(--text-sm)"
-                      >Full name</span
-                    >
-                    <span
-                      id="reviewName"
-                      style="font-size: var(--text-sm); font-weight: 500"
-                      >—</span
-                    >
-                  </div>
-                  <div style="display: flex; justify-content: space-between">
-                    <span
-                      class="text-tertiary"
-                      style="font-size: var(--text-sm)"
-                      >Username</span
-                    >
-                    <span
-                      id="reviewUsername"
-                      style="font-size: var(--text-sm); font-weight: 500"
-                      >—</span
-                    >
-                  </div>
-                </div>
-              </div>
-
-              <label
-                class="form-checkbox"
-                style="margin-bottom: var(--space-5)"
-              >
-                <input
-                  type="checkbox"
-                  id="termsCheckbox"
-                  class="checkbox-input"
-                />
-                <span class="checkbox-label">
-                  I agree to the <a href="/terms">Terms of Service</a> and
-                  <a href="/privacy">Privacy Policy</a>
-                </span>
-              </label>
-              <div class="form-error" id="termsCheckboxError"></div>
-
-              <div class="form-actions">
-                <button
-                  type="button"
-                  id="prevBtn3"
-                  class="btn btn-secondary btn-lg"
-                >
-                  Back
-                </button>
-                <button
-                  type="submit"
-                  id="submitBtn"
-                  class="btn btn-primary btn-lg"
-                >
-                  Create Account
-                </button>
-              </div>
-            </div>
-          </form>
-
-          <div class="auth-link-text">
-            Already have an account? <a href="/login">Sign In</a>
-          </div>
         </div>
-      </div>
-    </div>
-  </body>
+    </body>
 </html>

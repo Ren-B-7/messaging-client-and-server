@@ -5,32 +5,33 @@
  */
 
 const AdminState = {
-  /** All users returned from /admin/api/users */
-  users : [],
+    /** All users returned from /admin/api/users */
+    users: [],
 
-  /** All sessions returned from /admin/api/sessions */
-  sessions : [],
+    /** All sessions returned from /admin/api/sessions */
+    sessions: [],
 
-  /** Activity log entries (newest first), capped at 200 */
-  log : [],
+    /** Activity log entries (newest first), capped at 200 */
+    log: [],
 
-  /** Last fetched stats from /admin/api/stats */
-  stats : null,
+    /** Last fetched stats from /admin/api/stats */
+    stats: null,
 
-  /** Currently active tab name */
-  activeTab : "dashboard",
+    /** Currently active tab name */
+    activeTab: "dashboard",
 
-  // ── Log ──────────────────────────────────────────────────────────────────
+    // ── Log ──────────────────────────────────────────────────────────────────
 
-  addLog(type, message) {
-    this.log.unshift({type, message, time : new Date()});
-    if (this.log.length > 200)
-      this.log.pop();
-  },
+    addLog(type, message) {
+        this.log.unshift({ type, message, time: new Date() });
+        if (this.log.length > 200) this.log.pop();
+    },
 
-  clearLog() { this.log = []; },
+    clearLog() {
+        this.log = [];
+    },
 
-  // ── Users ─────────────────────────────────────────────────────────────────
-  // User list is always re-fetched from the API after mutations.
-  // No local state is maintained for individual user fields.
+    // ── Users ─────────────────────────────────────────────────────────────────
+    // User list is always re-fetched from the API after mutations.
+    // No local state is maintained for individual user fields.
 };

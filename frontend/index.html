@@ -1,169 +1,155 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Sign In - Chat App</title>
-    <meta
-      name="description"
-      content="Sign in to your Chat App account to send messages, connect with friends, and stay in touch."
-    />
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Sign In - Chat App</title>
+        <meta
+            name="description"
+            content="Sign in to your Chat App account to send messages, connect with friends, and stay in touch."
+        />
 
-    <!-- Primary CSS -->
-    <link rel="stylesheet" href="static/css/var.css" fetchpriority="high" />
-    <link
-      rel="stylesheet"
-      href="static/css/base/base.light.css"
-      fetchpriority="high"
-      data-theme-mod="base"
-      data-theme-variant="light"
-    />
-    <link
-      rel="stylesheet"
-      href="static/css/auth/auth.light.css"
-      fetchpriority="high"
-      data-theme-mod="auth"
-      data-theme-variant="light"
-    />
+        <!-- Primary CSS -->
+        <link rel="stylesheet" href="static/css/var.css" fetchpriority="high" />
+        <link
+            rel="stylesheet"
+            href="static/css/base/base.light.css"
+            fetchpriority="high"
+            data-theme-mod="base"
+            data-theme-variant="light"
+        />
+        <link
+            rel="stylesheet"
+            href="static/css/auth/auth.light.css"
+            fetchpriority="high"
+            data-theme-mod="auth"
+            data-theme-variant="light"
+        />
 
-    <!-- Synchronous theme detection — runs before render to avoid flash -->
-    <script>
-      (function () {
-        var t =
-          localStorage.getItem("theme") ||
-          (matchMedia("(prefers-color-scheme: dark)").matches
-            ? "dark"
-            : "light");
-        document.documentElement.setAttribute("data-theme", t);
-        if (t === "dark") {
-          ["base", "auth"].forEach(function (m) {
-            var l = document.createElement("link");
-            l.rel = "stylesheet";
-            l.href = "static/css/" + m + "/" + m + ".dark.css";
-            l.fetchPriority = "high";
-            l.dataset.themeMod = m;
-            l.dataset.themeVariant = "dark";
-            document.head.appendChild(l);
-          });
-        }
-        var ld = function (v) {
-          var e = document.getElementById("loading");
-          if (e) e.style.display = v;
-        };
-        window.addEventListener("beforeunload", function () {
-          ld("flex");
-        });
-        window.addEventListener("load", function () {
-          ld("none");
-        });
-        window.addEventListener("pageshow", function (e) {
-          if (e.persisted) ld("none");
-        });
-      })();
-    </script>
+        <!-- Synchronous theme detection — runs before render to avoid flash -->
+        <script>
+            (function () {
+                var t =
+                    localStorage.getItem("theme") ||
+                    (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+                document.documentElement.setAttribute("data-theme", t);
+                if (t === "dark") {
+                    ["base", "auth"].forEach(function (m) {
+                        var l = document.createElement("link");
+                        l.rel = "stylesheet";
+                        l.href = "static/css/" + m + "/" + m + ".dark.css";
+                        l.fetchPriority = "high";
+                        l.dataset.themeMod = m;
+                        l.dataset.themeVariant = "dark";
+                        document.head.appendChild(l);
+                    });
+                }
+                var ld = function (v) {
+                    var e = document.getElementById("loading");
+                    if (e) e.style.display = v;
+                };
+                window.addEventListener("beforeunload", function () {
+                    ld("flex");
+                });
+                window.addEventListener("load", function () {
+                    ld("none");
+                });
+                window.addEventListener("pageshow", function (e) {
+                    if (e.persisted) ld("none");
+                });
+            })();
+        </script>
 
-    <!-- Preloads -->
-    <link rel="preload" href="static/js/utils/theme.manager.js" as="script" />
-    <link
-      rel="preload"
-      href="static/js/utils/error.interceptor.js"
-      as="script"
-    />
-    <link
-      rel="preload"
-      href="static/js/config/platform.config.js"
-      as="script"
-    />
-    <link rel="preload" href="static/js/utils/utils.js" as="script" />
-    <link rel="preload" href="static/js/auth/auth.password.js" as="script" />
-    <link
-      rel="preload"
-      href="static/js/utils/error.interceptor.js"
-      as="script"
-    />
-    <link rel="preload" href="non-static/auth/auth.login.js" as="script" />
-    <link rel="preload" href="non-static/auth/auth.init.js" as="script" />
+        <!-- Preloads -->
+        <link rel="preload" href="static/js/utils/theme.manager.js" as="script" />
+        <link rel="preload" href="static/js/utils/error.interceptor.js" as="script" />
+        <link rel="preload" href="static/js/config/platform.config.js" as="script" />
+        <link rel="preload" href="static/js/utils/utils.js" as="script" />
+        <link rel="preload" href="static/js/auth/auth.password.js" as="script" />
+        <link rel="preload" href="static/js/utils/error.interceptor.js" as="script" />
+        <link rel="preload" href="non-static/auth/auth.login.js" as="script" />
+        <link rel="preload" href="non-static/auth/auth.init.js" as="script" />
 
-    <!-- Scripts (deferred — execute after HTML is parsed, in order) -->
-    <script defer src="static/js/utils/error.interceptor.js"></script>
-    <script defer src="static/js/utils/theme.manager.js"></script>
-    <script defer src="static/js/config/platform.config.js"></script>
-    <script defer src="static/js/utils/utils.js"></script>
-    <script defer src="static/js/auth/auth.password.js"></script>
-    <script defer src="non-static/auth/auth.login.js"></script>
-    <script defer src="non-static/auth/auth.init.js"></script>
-  </head>
-  <body>
-    <div id="loading">Loading...</div>
+        <!-- Scripts (deferred — execute after HTML is parsed, in order) -->
+        <script defer src="static/js/utils/error.interceptor.js"></script>
+        <script defer src="static/js/utils/theme.manager.js"></script>
+        <script defer src="static/js/config/platform.config.js"></script>
+        <script defer src="static/js/utils/utils.js"></script>
+        <script defer src="static/js/auth/auth.password.js"></script>
+        <script defer src="non-static/auth/auth.login.js"></script>
+        <script defer src="non-static/auth/auth.init.js"></script>
+    </head>
+    <body>
+        <div id="loading">Loading...</div>
 
-    <div class="auth-page">
-      <div class="auth-container">
-        <div class="auth-card">
-          <div class="auth-header">
-            <div class="auth-logo">💬</div>
-            <h1 class="auth-title">Welcome Back</h1>
-            <p class="auth-subtitle">Sign in to continue to your account</p>
-          </div>
+        <div class="auth-page">
+            <div class="auth-container">
+                <div class="auth-card">
+                    <div class="auth-header">
+                        <div class="auth-logo">💬</div>
+                        <h1 class="auth-title">Welcome Back</h1>
+                        <p class="auth-subtitle">Sign in to continue to your account</p>
+                    </div>
 
-          <form id="loginForm" class="auth-form" novalidate>
-            <div class="form-group">
-              <label class="form-label" for="username">Username</label>
-              <input
-                type="text"
-                id="username"
-                name="username"
-                class="form-input"
-                placeholder="your-username"
-                required
-                autocomplete="username"
-                autofocus
-              />
-              <div class="form-error" id="usernameError"></div>
+                    <form id="loginForm" class="auth-form" novalidate>
+                        <div class="form-group">
+                            <label class="form-label" for="username">Username</label>
+                            <input
+                                type="text"
+                                id="username"
+                                name="username"
+                                class="form-input"
+                                placeholder="your-username"
+                                required
+                                autocomplete="username"
+                                autofocus
+                            />
+                            <div class="form-error" id="usernameError"></div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label" for="password">Password</label>
+                            <div class="password-input-wrapper">
+                                <input
+                                    type="password"
+                                    id="password"
+                                    name="password"
+                                    class="form-input"
+                                    placeholder="Enter your password"
+                                    required
+                                    autocomplete="current-password"
+                                />
+                                <button
+                                    type="button"
+                                    class="password-toggle"
+                                    aria-label="Toggle password visibility"
+                                >
+                                    <img
+                                        src="static/icons/icons/eye.svg"
+                                        alt=""
+                                        width="20"
+                                        height="20"
+                                    />
+                                </button>
+                            </div>
+                            <div class="form-error" id="passwordError"></div>
+                        </div>
+
+                        <label class="form-checkbox">
+                            <input type="checkbox" name="remember" class="checkbox-input" />
+                            <span class="checkbox-label">Remember me for 30 days</span>
+                        </label>
+
+                        <button type="submit" class="btn btn-primary btn-block btn-lg">
+                            Sign In
+                        </button>
+                    </form>
+
+                    <div class="auth-link-text">
+                        Don't have an account? <a href="/register">Create account</a>
+                    </div>
+                </div>
             </div>
-
-            <div class="form-group">
-              <label class="form-label" for="password">Password</label>
-              <div class="password-input-wrapper">
-                <input
-                  type="password"
-                  id="password"
-                  name="password"
-                  class="form-input"
-                  placeholder="Enter your password"
-                  required
-                  autocomplete="current-password"
-                />
-                <button
-                  type="button"
-                  class="password-toggle"
-                  aria-label="Toggle password visibility"
-                >
-                  <img
-                    src="static/icons/icons/eye.svg"
-                    alt=""
-                    width="20"
-                    height="20"
-                  />
-                </button>
-              </div>
-              <div class="form-error" id="passwordError"></div>
-            </div>
-
-            <label class="form-checkbox">
-              <input type="checkbox" name="remember" class="checkbox-input" />
-              <span class="checkbox-label">Remember me for 30 days</span>
-            </label>
-
-            <button type="submit" class="btn btn-primary btn-block btn-lg">
-              Sign In
-            </button>
-          </form>
-
-          <div class="auth-link-text">
-            Don't have an account? <a href="/register">Create account</a>
-          </div>
         </div>
-      </div>
-    </div>
-  </body>
+    </body>
 </html>

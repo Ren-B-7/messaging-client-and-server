@@ -6,282 +6,267 @@
  */
 
 const AdminActions = {
-  // ── Modal helpers ──────────────────────────────────────────────────────────
+    // ── Modal helpers ──────────────────────────────────────────────────────────
 
-  openModal(id) { document.getElementById(id)?.classList.add("open"); },
+    openModal(id) {
+        document.getElementById(id)?.classList.add("open");
+    },
 
-  closeModal(id) { document.getElementById(id)?.classList.remove("open"); },
+    closeModal(id) {
+        document.getElementById(id)?.classList.remove("open");
+    },
 
-  openBanModal() {
-    document.getElementById("ban-user-id").value = "";
-    document.getElementById("ban-reason").value = "";
-    this.openModal("ban-modal");
-    document.getElementById("ban-user-id").focus();
-  },
+    openBanModal() {
+        document.getElementById("ban-user-id").value = "";
+        document.getElementById("ban-reason").value = "";
+        this.openModal("ban-modal");
+        document.getElementById("ban-user-id").focus();
+    },
 
-  openUnbanModal() {
-    document.getElementById("unban-user-id").value = "";
-    this.openModal("unban-modal");
-    document.getElementById("unban-user-id").focus();
-  },
+    openUnbanModal() {
+        document.getElementById("unban-user-id").value = "";
+        this.openModal("unban-modal");
+        document.getElementById("unban-user-id").focus();
+    },
 
-  openDeleteModal() {
-    document.getElementById("delete-user-id").value = "";
-    document.getElementById("delete-confirm-text").value = "";
-    document.getElementById("delete-submit-btn").disabled = true;
-    this.openModal("delete-modal");
-    document.getElementById("delete-user-id").focus();
-  },
+    openDeleteModal() {
+        document.getElementById("delete-user-id").value = "";
+        document.getElementById("delete-confirm-text").value = "";
+        document.getElementById("delete-submit-btn").disabled = true;
+        this.openModal("delete-modal");
+        document.getElementById("delete-user-id").focus();
+    },
 
-  checkDeleteConfirm() {
-    const val = document.getElementById("delete-confirm-text")?.value || "";
-    const btn = document.getElementById("delete-submit-btn");
-    if (btn)
-      btn.disabled = val !== "DELETE";
-  },
+    checkDeleteConfirm() {
+        const val = document.getElementById("delete-confirm-text")?.value || "";
+        const btn = document.getElementById("delete-submit-btn");
+        if (btn) btn.disabled = val !== "DELETE";
+    },
 
-  // ── Quick-action (table row buttons) ──────────────────────────────────────
+    // ── Quick-action (table row buttons) ──────────────────────────────────────
 
-  quickBan(id) {
-    document.getElementById("ban-user-id").value = id;
-    this.openBanModal();
-  },
+    quickBan(id) {
+        document.getElementById("ban-user-id").value = id;
+        this.openBanModal();
+    },
 
-  quickUnban(id) {
-    document.getElementById("unban-user-id").value = id;
-    this.openUnbanModal();
-  },
+    quickUnban(id) {
+        document.getElementById("unban-user-id").value = id;
+        this.openUnbanModal();
+    },
 
-  quickDelete(id) {
-    document.getElementById("delete-user-id").value = id;
-    this.openDeleteModal();
-  },
+    quickDelete(id) {
+        document.getElementById("delete-user-id").value = id;
+        this.openDeleteModal();
+    },
 
-  // ── Submit: ban ────────────────────────────────────────────────────────────
+    // ── Submit: ban ────────────────────────────────────────────────────────────
 
-  async submitBan() {
-    const userId = document.getElementById("ban-user-id")?.value.trim();
-    const reason = document.getElementById("ban-reason")?.value.trim();
+    async submitBan() {
+        const userId = document.getElementById("ban-user-id")?.value.trim();
+        const reason = document.getElementById("ban-reason")?.value.trim();
 
-    if (!userId) {
-      AdminUI.toast("User ID is required", "warn");
-      return;
-    }
+        if (!userId) {
+            AdminUI.toast("User ID is required", "warn");
+            return;
+        }
 
-    AdminUI.setLoading("ban-submit-btn", true);
+        AdminUI.setLoading("ban-submit-btn", true);
 
-    try {
-      const res = await this._post("/admin/api/users/ban", {
-        user_id : Number(userId),
-        reason : reason || "No reason provided",
-      });
+        try {
+            const res = await this._post("/admin/api/users/ban", {
+                user_id: Number(userId),
+                reason: reason || "No reason provided",
+            });
 
-      if (res.status === "success") {
-        AdminUI.toast(`User #${userId} has been banned`, "success");
-        AdminUI.logAction(
-            "warn",
-            `Banned user <strong>#${userId}</strong>${
-                reason ? ` — ${reason}` : ""}`,
-        );
-        this.closeModal("ban-modal");
-        AdminUsers.reload();
-      } else {
-        AdminUI.toast(res.message || "Ban failed", "error");
-        AdminUI.logAction(
-            "error",
-            `Ban failed for #${userId}: ${res.message || "unknown"}`,
-        );
-      }
-    } catch (e) {
-      AdminUI.toast("Request failed — see console", "error");
-      AdminUI.logAction("error", `Ban request error for #${userId}`);
-      console.error("[admin] ban:", e);
-    }
+            if (res.status === "success") {
+                AdminUI.toast(`User #${userId} has been banned`, "success");
+                AdminUI.logAction(
+                    "warn",
+                    `Banned user <strong>#${userId}</strong>${reason ? ` — ${reason}` : ""}`
+                );
+                this.closeModal("ban-modal");
+                AdminUsers.reload();
+            } else {
+                AdminUI.toast(res.message || "Ban failed", "error");
+                AdminUI.logAction(
+                    "error",
+                    `Ban failed for #${userId}: ${res.message || "unknown"}`
+                );
+            }
+        } catch (e) {
+            AdminUI.toast("Request failed — see console", "error");
+            AdminUI.logAction("error", `Ban request error for #${userId}`);
+            console.error("[admin] ban:", e);
+        }
 
-    AdminUI.setLoading("ban-submit-btn", false);
-  },
+        AdminUI.setLoading("ban-submit-btn", false);
+    },
 
-  // ── Submit: unban ──────────────────────────────────────────────────────────
+    // ── Submit: unban ──────────────────────────────────────────────────────────
 
-  async submitUnban() {
-    const userId = document.getElementById("unban-user-id")?.value.trim();
+    async submitUnban() {
+        const userId = document.getElementById("unban-user-id")?.value.trim();
 
-    if (!userId) {
-      AdminUI.toast("User ID is required", "warn");
-      return;
-    }
+        if (!userId) {
+            AdminUI.toast("User ID is required", "warn");
+            return;
+        }
 
-    AdminUI.setLoading("unban-submit-btn", true);
+        AdminUI.setLoading("unban-submit-btn", true);
 
-    try {
-      const res = await this._post("/admin/api/users/unban", {
-        user_id : Number(userId),
-      });
+        try {
+            const res = await this._post("/admin/api/users/unban", {
+                user_id: Number(userId),
+            });
 
-      if (res.status === "success") {
-        AdminUI.toast(`User #${userId} has been unbanned`, "success");
-        AdminUI.logAction(
-            "success",
-            `Unbanned user <strong>#${userId}</strong>`,
-        );
-        this.closeModal("unban-modal");
-        AdminUsers.reload();
-      } else {
-        AdminUI.toast(res.message || "Unban failed", "error");
-        AdminUI.logAction(
-            "error",
-            `Unban failed for #${userId}: ${res.message || "unknown"}`,
-        );
-      }
-    } catch (e) {
-      AdminUI.toast("Request failed — see console", "error");
-      AdminUI.logAction("error", `Unban request error for #${userId}`);
-      console.error("[admin] unban:", e);
-    }
+            if (res.status === "success") {
+                AdminUI.toast(`User #${userId} has been unbanned`, "success");
+                AdminUI.logAction("success", `Unbanned user <strong>#${userId}</strong>`);
+                this.closeModal("unban-modal");
+                AdminUsers.reload();
+            } else {
+                AdminUI.toast(res.message || "Unban failed", "error");
+                AdminUI.logAction(
+                    "error",
+                    `Unban failed for #${userId}: ${res.message || "unknown"}`
+                );
+            }
+        } catch (e) {
+            AdminUI.toast("Request failed — see console", "error");
+            AdminUI.logAction("error", `Unban request error for #${userId}`);
+            console.error("[admin] unban:", e);
+        }
 
-    AdminUI.setLoading("unban-submit-btn", false);
-  },
+        AdminUI.setLoading("unban-submit-btn", false);
+    },
 
-  // ── Submit: delete ─────────────────────────────────────────────────────────
+    // ── Submit: delete ─────────────────────────────────────────────────────────
 
-  async submitDelete() {
-    const userId = document.getElementById("delete-user-id")?.value.trim();
+    async submitDelete() {
+        const userId = document.getElementById("delete-user-id")?.value.trim();
 
-    if (!userId) {
-      AdminUI.toast("User ID is required", "warn");
-      return;
-    }
+        if (!userId) {
+            AdminUI.toast("User ID is required", "warn");
+            return;
+        }
 
-    AdminUI.setLoading("delete-submit-btn", true);
+        AdminUI.setLoading("delete-submit-btn", true);
 
-    try {
-      const res = await this._delete(
-          `/admin/api/users/${encodeURIComponent(userId)}`,
-      );
+        try {
+            const res = await this._delete(`/admin/api/users/${encodeURIComponent(userId)}`);
 
-      if (res.status === "success") {
-        AdminUI.toast(`User #${userId} has been deleted`, "success");
-        AdminUI.logAction("error", `Deleted user <strong>#${userId}</strong>`);
-        this.closeModal("delete-modal");
-        AdminUsers.reload();
-      } else {
-        AdminUI.toast(res.message || "Delete failed", "error");
-        AdminUI.logAction(
-            "error",
-            `Delete failed for #${userId}: ${res.message || "unknown"}`,
-        );
-      }
-    } catch (e) {
-      AdminUI.toast("Request failed — see console", "error");
-      AdminUI.logAction("error", `Delete request error for #${userId}`);
-      console.error("[admin] delete:", e);
-    }
+            if (res.status === "success") {
+                AdminUI.toast(`User #${userId} has been deleted`, "success");
+                AdminUI.logAction("error", `Deleted user <strong>#${userId}</strong>`);
+                this.closeModal("delete-modal");
+                AdminUsers.reload();
+            } else {
+                AdminUI.toast(res.message || "Delete failed", "error");
+                AdminUI.logAction(
+                    "error",
+                    `Delete failed for #${userId}: ${res.message || "unknown"}`
+                );
+            }
+        } catch (e) {
+            AdminUI.toast("Request failed — see console", "error");
+            AdminUI.logAction("error", `Delete request error for #${userId}`);
+            console.error("[admin] delete:", e);
+        }
 
-    AdminUI.setLoading("delete-submit-btn", false);
-  },
+        AdminUI.setLoading("delete-submit-btn", false);
+    },
 
-  // ── Submit: promote ────────────────────────────────────────────────────────
+    // ── Submit: promote ────────────────────────────────────────────────────────
 
-  async submitPromote(userId) {
-    try {
-      const res = await this._post("/admin/api/users/promote", {
-        user_id : Number(userId),
-      });
+    async submitPromote(userId) {
+        try {
+            const res = await this._post("/admin/api/users/promote", {
+                user_id: Number(userId),
+            });
 
-      if (res.status === "success") {
-        AdminUI.toast(`User #${userId} promoted to admin`, "success");
-        AdminUI.logAction(
-            "info",
-            `Promoted user <strong>#${userId}</strong> to admin`,
-        );
-        AdminUsers.reload();
-      } else {
-        AdminUI.toast(res.message || "Promote failed", "error");
-      }
-    } catch (e) {
-      AdminUI.toast("Request failed — see console", "error");
-      console.error("[admin] promote:", e);
-    }
-  },
+            if (res.status === "success") {
+                AdminUI.toast(`User #${userId} promoted to admin`, "success");
+                AdminUI.logAction("info", `Promoted user <strong>#${userId}</strong> to admin`);
+                AdminUsers.reload();
+            } else {
+                AdminUI.toast(res.message || "Promote failed", "error");
+            }
+        } catch (e) {
+            AdminUI.toast("Request failed — see console", "error");
+            console.error("[admin] promote:", e);
+        }
+    },
 
-  // ── Submit: demote ─────────────────────────────────────────────────────────
+    // ── Submit: demote ─────────────────────────────────────────────────────────
 
-  async submitDemote(userId) {
-    try {
-      const res = await this._post("/admin/api/users/demote", {
-        user_id : Number(userId),
-      });
+    async submitDemote(userId) {
+        try {
+            const res = await this._post("/admin/api/users/demote", {
+                user_id: Number(userId),
+            });
 
-      if (res.status === "success") {
-        AdminUI.toast(`User #${userId} demoted`, "success");
-        AdminUI.logAction(
-            "warn",
-            `Demoted user <strong>#${userId}</strong> from admin`,
-        );
-        AdminUsers.reload();
-      } else {
-        AdminUI.toast(res.message || "Demote failed", "error");
-      }
-    } catch (e) {
-      AdminUI.toast("Request failed — see console", "error");
-      console.error("[admin] demote:", e);
-    }
-  },
+            if (res.status === "success") {
+                AdminUI.toast(`User #${userId} demoted`, "success");
+                AdminUI.logAction("warn", `Demoted user <strong>#${userId}</strong> from admin`);
+                AdminUsers.reload();
+            } else {
+                AdminUI.toast(res.message || "Demote failed", "error");
+            }
+        } catch (e) {
+            AdminUI.toast("Request failed — see console", "error");
+            console.error("[admin] demote:", e);
+        }
+    },
 
-  // ── Refresh all ────────────────────────────────────────────────────────────
+    // ── Refresh all ────────────────────────────────────────────────────────────
 
-  refreshAll() {
-    AdminUsers.loadStats();
-    AdminUsers.loadMetrics();
-    if (AdminState.activeTab === "users")
-      AdminUsers.reload();
-    if (AdminState.activeTab === "sessions")
-      AdminUsers.loadSessions();
-    if (AdminState.activeTab === "server")
-      AdminUsers.loadStats();
-    if (AdminState.activeTab === "metrics")
-      AdminUsers.loadMetrics();
-    AdminUI.toast("Data refreshed", "info");
-    AdminUI.logAction("info", "Manual refresh triggered");
-  },
+    refreshAll() {
+        AdminUsers.loadStats();
+        AdminUsers.loadMetrics();
+        if (AdminState.activeTab === "users") AdminUsers.reload();
+        if (AdminState.activeTab === "sessions") AdminUsers.loadSessions();
+        if (AdminState.activeTab === "server") AdminUsers.loadStats();
+        if (AdminState.activeTab === "metrics") AdminUsers.loadMetrics();
+        AdminUI.toast("Data refreshed", "info");
+        AdminUI.logAction("info", "Manual refresh triggered");
+    },
 
-  // ── Setup ──────────────────────────────────────────────────────────────────
+    // ── Setup ──────────────────────────────────────────────────────────────────
 
-  setupBackdropDismiss() {
-    document.querySelectorAll(".modal-backdrop").forEach((el) => {
-      el.addEventListener("click", (e) => {
-        if (e.target === el)
-          el.classList.remove("open");
-      });
-    });
-  },
+    setupBackdropDismiss() {
+        document.querySelectorAll(".modal-backdrop").forEach((el) => {
+            el.addEventListener("click", (e) => {
+                if (e.target === el) el.classList.remove("open");
+            });
+        });
+    },
 
-  setupKeyboard() {
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") {
-        document.querySelectorAll(".modal-backdrop.open")
-            .forEach((el) => el.classList.remove("open"));
-      }
-    });
-  },
+    setupKeyboard() {
+        document.addEventListener("keydown", (e) => {
+            if (e.key === "Escape") {
+                document
+                    .querySelectorAll(".modal-backdrop.open")
+                    .forEach((el) => el.classList.remove("open"));
+            }
+        });
+    },
 
-  // ── HTTP ───────────────────────────────────────────────────────────────────
+    // ── HTTP ───────────────────────────────────────────────────────────────────
 
-  async _post(url, body) {
-    const res = await fetch(url, {
-      method : "POST",
-      headers : {"content-type" : "application/json"},
-      body : JSON.stringify(body),
-    });
-    if (!res.ok)
-      throw new Error(`HTTP ${res.status}`);
-    return res.json();
-  },
+    async _post(url, body) {
+        const res = await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+    },
 
-  async _delete(url) {
-    const res = await fetch(url, {method : "DELETE"});
-    if (!res.ok)
-      throw new Error(`HTTP ${res.status}`);
-    return res.json();
-  },
+    async _delete(url) {
+        const res = await fetch(url, { method: "DELETE" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+    },
 };

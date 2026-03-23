@@ -10,67 +10,67 @@
  */
 
 document.addEventListener("DOMContentLoaded", async () => {
-  // ── Theme ──────────────────────────────────────────────────────────────────
-  themeManager.init([ "base", "chat", "settings" ]);
+    // ── Theme ──────────────────────────────────────────────────────────────────
+    themeManager.init(["base", "chat", "settings"]);
 
-  const settingsThemeBtn = document.getElementById("themeToggle");
-  themeManager.syncIcon(settingsThemeBtn);
-  settingsThemeBtn?.addEventListener("click", () => { themeManager.toggle(); });
+    const settingsThemeBtn = document.getElementById("themeToggle");
+    themeManager.syncIcon(settingsThemeBtn);
+    settingsThemeBtn?.addEventListener("click", () => {
+        themeManager.toggle();
+    });
 
-  // ── Fetch fresh user data from the API ─────────────────────────────────────
-  // Always hit /api/profile so avatar_url, username, and email are current.
-  let user = Utils.getStorage("user") || {};
+    // ── Fetch fresh user data from the API ─────────────────────────────────────
+    // Always hit /api/profile so avatar_url, username, and email are current.
+    let user = Utils.getStorage("user") || {};
 
-  try {
-    const res = await fetch("/api/profile");
-    if (res.ok) {
-      const data = await res.json();
-      const profile = data.data ?? data;
-      // Merge API fields into the local user object.
-      user = {
-        ...user,
-        id : Number(profile.user_id),
-        username : profile.username ?? user.username ?? "",
-        email : profile.email ?? user.email ?? "",
-        isAdmin : profile.is_admin ?? user.isAdmin ?? false,
-        avatarUrl : profile.avatar_url ?? null,
-      };
-      Utils.setStorage("user", user);
+    try {
+        const res = await fetch("/api/profile");
+        if (res.ok) {
+            const data = await res.json();
+            const profile = data.data ?? data;
+            // Merge API fields into the local user object.
+            user = {
+                ...user,
+                id: Number(profile.user_id),
+                username: profile.username ?? user.username ?? "",
+                email: profile.email ?? user.email ?? "",
+                isAdmin: profile.is_admin ?? user.isAdmin ?? false,
+                avatarUrl: profile.avatar_url ?? null,
+            };
+            Utils.setStorage("user", user);
+        }
+    } catch (e) {
+        console.warn("[settings] Profile fetch failed, using cached data:", e);
     }
-  } catch (e) {
-    console.warn("[settings] Profile fetch failed, using cached data:", e);
-  }
 
-  // ── Navbar avatar chip ─────────────────────────────────────────────────────
-  const initialsEl = document.getElementById("userInitials");
-  const userAvatarEl = document.getElementById("userAvatarImg");
+    // ── Navbar avatar chip ─────────────────────────────────────────────────────
+    const initialsEl = document.getElementById("userInitials");
+    const userAvatarEl = document.getElementById("userAvatarImg");
 
-  if (user.avatarUrl && userAvatarEl) {
-    userAvatarEl.src = user.avatarUrl;
-    userAvatarEl.style.display = "block";
-    if (initialsEl)
-      initialsEl.style.display = "none";
-  } else if (initialsEl) {
-    initialsEl.textContent =
-        Utils.getInitials(user.username || user.email || "?");
-    initialsEl.style.display = "";
-  }
+    if (user.avatarUrl && userAvatarEl) {
+        userAvatarEl.src = user.avatarUrl;
+        userAvatarEl.style.display = "block";
+        if (initialsEl) initialsEl.style.display = "none";
+    } else if (initialsEl) {
+        initialsEl.textContent = Utils.getInitials(user.username || user.email || "?");
+        initialsEl.style.display = "";
+    }
 
-  // ── Platform info (Help tab) ───────────────────────────────────────────────
-  const platformEl = document.getElementById("platformInfo");
-  if (platformEl && window.PlatformConfig) {
-    platformEl.textContent = window.PlatformConfig.platform || "Web";
-  }
+    // ── Platform info (Help tab) ───────────────────────────────────────────────
+    const platformEl = document.getElementById("platformInfo");
+    if (platformEl && window.PlatformConfig) {
+        platformEl.textContent = window.PlatformConfig.platform || "Web";
+    }
 
-  // ── Boot sub-modules ───────────────────────────────────────────────────────
-  SettingsNav.setup();
+    // ── Boot sub-modules ───────────────────────────────────────────────────────
+    SettingsNav.setup();
 
-  SettingsProfile.load(user);
-  SettingsProfile.setup();
+    SettingsProfile.load(user);
+    SettingsProfile.setup();
 
-  SettingsAccount.load(user);
-  SettingsAccount.setup();
+    SettingsAccount.load(user);
+    SettingsAccount.setup();
 
-  SettingsPreferences.load();
-  SettingsPreferences.setup();
+    SettingsPreferences.load();
+    SettingsPreferences.setup();
 });

@@ -4,23 +4,23 @@
  */
 
 :root[data-theme="dark"] {
-  --chat-sidebar-bg: #1c2127;
-  --chat-message-received-bg: #2d333b;
-  --chat-message-sent-bg: var(--accent);
-  --chat-input-bg: #1c2127;
+    --chat-sidebar-bg: #1c2127;
+    --chat-message-received-bg: #2d333b;
+    --chat-message-sent-bg: var(--accent);
+    --chat-input-bg: #1c2127;
 }
 
 /* Dark mode specific adjustments */
 :root[data-theme="dark"] .navbar {
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
 }
 
 :root[data-theme="dark"] .conversation-item.active {
-  background: var(--accent-light);
+    background: var(--accent-light);
 }
 
 :root[data-theme="dark"] .message.sent .message-bubble {
-  box-shadow: 0 2px 8px rgb(59 143 243 / 0.2);
+    box-shadow: 0 2px 8px rgb(59 143 243 / 0.2);
 }
 
 /* All other styles inherit from chat.light.css */
@@ -29,25 +29,25 @@
 /* ── SSE dark-mode colour overrides ── */
 
 :root[data-theme="dark"] .typing-indicator {
-  background: #1c2127;
-  color: #768390;
+    background: #1c2127;
+    color: #768390;
 }
 
 :root[data-theme="dark"] .message-read-tick {
-  color: #58a6ff; /* lighter blue readable on dark */
+    color: #58a6ff; /* lighter blue readable on dark */
 }
 
 :root[data-theme="dark"] .message-read-tick--sent {
-  color: #6e7681;
+    color: #6e7681;
 }
 
 /* ── Group settings dark overrides ── */
 
 :root[data-theme="dark"] .group-members-list {
-  border-color: var(--border);
+    border-color: var(--border);
 }
 
 :root[data-theme="dark"] .group-search-results {
-  background: #1c2127;
-  border-color: var(--border);
+    background: #1c2127;
+    border-color: var(--border);
 }

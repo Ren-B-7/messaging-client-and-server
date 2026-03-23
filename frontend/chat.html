@@ -1,641 +1,582 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Chat - Messages</title>
-    <meta
-      name="description"
-      content="Send messages, connect with friends, and stay in touch with real-time chat."
-    />
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Chat - Messages</title>
+        <meta
+            name="description"
+            content="Send messages, connect with friends, and stay in touch with real-time chat."
+        />
 
-    <!-- Primary CSS -->
-    <link rel="stylesheet" href="static/css/var.css" fetchpriority="high" />
-    <link
-      rel="stylesheet"
-      href="static/css/base/base.light.css"
-      fetchpriority="high"
-      data-theme-mod="base"
-      data-theme-variant="light"
-    />
-    <link
-      rel="stylesheet"
-      href="static/css/chat/chat.light.css"
-      fetchpriority="high"
-      data-theme-mod="chat"
-      data-theme-variant="light"
-    />
-    <!-- Chrome styles — no data-theme-* attrs so the theme manager never removes this -->
-    <link
-      rel="stylesheet"
-      href="static/css/chat/chat.override.css"
-      fetchpriority="low"
-    />
+        <!-- Primary CSS -->
+        <link rel="stylesheet" href="static/css/var.css" fetchpriority="high" />
+        <link
+            rel="stylesheet"
+            href="static/css/base/base.light.css"
+            fetchpriority="high"
+            data-theme-mod="base"
+            data-theme-variant="light"
+        />
+        <link
+            rel="stylesheet"
+            href="static/css/chat/chat.light.css"
+            fetchpriority="high"
+            data-theme-mod="chat"
+            data-theme-variant="light"
+        />
+        <!-- Chrome styles — no data-theme-* attrs so the theme manager never removes this -->
+        <link rel="stylesheet" href="static/css/chat/chat.override.css" fetchpriority="low" />
 
-    <!-- Synchronous theme detection — runs before render to avoid flash -->
-    <script>
-      (function () {
-        var t =
-          localStorage.getItem("theme") ||
-          (matchMedia("(prefers-color-scheme: dark)").matches
-            ? "dark"
-            : "light");
-        document.documentElement.setAttribute("data-theme", t);
-        if (t === "dark") {
-          ["base", "chat"].forEach(function (m) {
-            var l = document.createElement("link");
-            l.rel = "stylesheet";
-            l.href = "static/css/" + m + "/" + m + ".dark.css";
-            l.fetchPriority = "high";
-            l.dataset.themeMod = m;
-            l.dataset.themeVariant = "dark";
-            document.head.appendChild(l);
-          });
-        }
-        var ld = function (v) {
-          var e = document.getElementById("loading");
-          if (e) e.style.display = v;
-        };
-        window.addEventListener("beforeunload", function () {
-          ld("flex");
-        });
-        window.addEventListener("load", function () {
-          ld("none");
-        });
-        window.addEventListener("pageshow", function (e) {
-          if (e.persisted) ld("none");
-        });
-      })();
-    </script>
+        <!-- Synchronous theme detection — runs before render to avoid flash -->
+        <script>
+            (function () {
+                var t =
+                    localStorage.getItem("theme") ||
+                    (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+                document.documentElement.setAttribute("data-theme", t);
+                if (t === "dark") {
+                    ["base", "chat"].forEach(function (m) {
+                        var l = document.createElement("link");
+                        l.rel = "stylesheet";
+                        l.href = "static/css/" + m + "/" + m + ".dark.css";
+                        l.fetchPriority = "high";
+                        l.dataset.themeMod = m;
+                        l.dataset.themeVariant = "dark";
+                        document.head.appendChild(l);
+                    });
+                }
+                var ld = function (v) {
+                    var e = document.getElementById("loading");
+                    if (e) e.style.display = v;
+                };
+                window.addEventListener("beforeunload", function () {
+                    ld("flex");
+                });
+                window.addEventListener("load", function () {
+                    ld("none");
+                });
+                window.addEventListener("pageshow", function (e) {
+                    if (e.persisted) ld("none");
+                });
+            })();
+        </script>
 
-    <!-- Preloads -->
-    <link rel="preload" href="static/js/utils/theme.manager.js" as="script" />
-    <link
-      rel="preload"
-      href="static/js/utils/error.interceptor.js"
-      as="script"
-    />
-    <link
-      rel="preload"
-      href="static/js/config/platform.config.js"
-      as="script"
-    />
-    <link rel="preload" href="static/js/utils/utils.js" as="script" />
-    <link
-      rel="preload"
-      href="static/js/utils/error.interceptor.js"
-      as="script"
-    />
-    <link rel="preload" href="non-static/chat/chat.state.js" as="script" />
-    <link rel="preload" href="non-static/chat/chat.ui.js" as="script" />
-    <link rel="preload" href="non-static/chat/chat.messages.js" as="script" />
-    <link
-      rel="preload"
-      href="non-static/chat/chat.conversations.js"
-      as="script"
-    />
-    <link rel="preload" href="non-static/chat/chat.sse.js" as="script" />
-    <link rel="preload" href="non-static/chat/chat.files.js" as="script" />
-    <link rel="preload" href="non-static/chat/chat.init.js" as="script" />
+        <!-- Preloads -->
+        <link rel="preload" href="static/js/utils/theme.manager.js" as="script" />
+        <link rel="preload" href="static/js/utils/error.interceptor.js" as="script" />
+        <link rel="preload" href="static/js/config/platform.config.js" as="script" />
+        <link rel="preload" href="static/js/utils/utils.js" as="script" />
+        <link rel="preload" href="static/js/utils/error.interceptor.js" as="script" />
+        <link rel="preload" href="non-static/chat/chat.state.js" as="script" />
+        <link rel="preload" href="non-static/chat/chat.ui.js" as="script" />
+        <link rel="preload" href="non-static/chat/chat.messages.js" as="script" />
+        <link rel="preload" href="non-static/chat/chat.conversations.js" as="script" />
+        <link rel="preload" href="non-static/chat/chat.sse.js" as="script" />
+        <link rel="preload" href="non-static/chat/chat.files.js" as="script" />
+        <link rel="preload" href="non-static/chat/chat.init.js" as="script" />
 
-    <!-- Scripts (deferred — execute after HTML is parsed, in order) -->
-    <script defer src="static/js/utils/error.interceptor.js"></script>
-    <script defer src="static/js/utils/theme.manager.js"></script>
-    <script defer src="static/js/config/platform.config.js"></script>
-    <script defer src="static/js/utils/utils.js"></script>
-    <script defer src="non-static/chat/chat.state.js"></script>
-    <script defer src="non-static/chat/chat.ui.js"></script>
-    <script defer src="non-static/chat/chat.messages.js"></script>
-    <script defer src="non-static/chat/chat.conversations.js"></script>
-    <script defer src="non-static/chat/chat.sse.js"></script>
-    <script defer src="non-static/chat/chat.files.js"></script>
-    <script defer src="non-static/chat/chat.init.js"></script>
-  </head>
-  <body>
-    <div id="loading">Loading...</div>
+        <!-- Scripts (deferred — execute after HTML is parsed, in order) -->
+        <script defer src="static/js/utils/error.interceptor.js"></script>
+        <script defer src="static/js/utils/theme.manager.js"></script>
+        <script defer src="static/js/config/platform.config.js"></script>
+        <script defer src="static/js/utils/utils.js"></script>
+        <script defer src="non-static/chat/chat.state.js"></script>
+        <script defer src="non-static/chat/chat.ui.js"></script>
+        <script defer src="non-static/chat/chat.messages.js"></script>
+        <script defer src="non-static/chat/chat.conversations.js"></script>
+        <script defer src="non-static/chat/chat.sse.js"></script>
+        <script defer src="non-static/chat/chat.files.js"></script>
+        <script defer src="non-static/chat/chat.init.js"></script>
+    </head>
+    <body>
+        <div id="loading">Loading...</div>
 
-    <nav class="navbar">
-      <a href="/chat" class="navbar-brand">
-        <div class="navbar-logo">💬</div>
-        <span>Chat</span>
-      </a>
-      <div class="navbar-menu">
-        <a href="/chat" class="active">Messages</a>
-      </div>
-      <div class="navbar-end">
-        <button
-          class="btn btn-ghost btn-icon"
-          id="themeToggle"
-          title="Toggle theme"
-        >
-          <img
-            src="static/icons/icons/sun.svg"
-            alt="Toggle theme"
-            width="20"
-            height="20"
-          />
-        </button>
-        <a href="/settings" class="btn btn-ghost btn-icon" title="Settings">
-          <img
-            src="static/icons/icons/settings.svg"
-            alt="Settings"
-            width="20"
-            height="20"
-          />
-        </a>
-        <div
-          class="avatar avatar-sm"
-          style="position: relative; overflow: hidden"
-        >
-          <span id="userInitials">U</span>
-          <img
-            id="userAvatarImg"
-            style="
-              display: none;
-              position: absolute;
-              inset: 0;
-              width: 100%;
-              height: 100%;
-              object-fit: cover;
-              border-radius: inherit;
-            "
-            alt="Your avatar"
-          />
-        </div>
-      </div>
-    </nav>
-
-    <div class="chat-container">
-      <!-- ── Sidebar: conversation list ── -->
-      <aside class="conversations-panel">
-        <div class="panel-header">
-          <div class="panel-tabs">
-            <button class="panel-tab active" data-tab="dm">Messages</button>
-            <button class="panel-tab" data-tab="groups">Groups</button>
-          </div>
-          <div class="panel-actions">
-            <div class="search-box">
-              <img
-                src="static/icons/icons/search.svg"
-                alt=""
-                class="search-icon"
-                width="16"
-                height="16"
-              />
-              <input
-                type="text"
-                class="search-input"
-                id="conversationSearch"
-                placeholder="Search..."
-              />
+        <nav class="navbar">
+            <a href="/chat" class="navbar-brand">
+                <div class="navbar-logo">💬</div>
+                <span>Chat</span>
+            </a>
+            <div class="navbar-menu">
+                <a href="/chat" class="active">Messages</a>
             </div>
-            <button
-              class="refresh-btn"
-              id="refreshConvsBtn"
-              title="Refresh"
-              aria-label="Refresh conversations"
-            >
-              ↺
-            </button>
-            <button class="new-chat-btn" id="newChatBtn" title="New">+</button>
-          </div>
-        </div>
-        <div class="conversations-list" id="conversationsList"></div>
-      </aside>
-
-      <!-- ── Main: message area ── -->
-      <main class="chat-area">
-        <!-- Shown when no conversation is selected -->
-        <div
-          id="emptyChatState"
-          style="
-            display: flex;
-            flex: 1;
-            align-items: center;
-            justify-content: center;
-          "
-        >
-          <div style="text-align: center; color: var(--fg-tertiary)">
-            <img
-              src="static/icons/icons/chat.svg"
-              alt="Chat icon"
-              style="
-                width: 64px;
-                height: 64px;
-                margin-bottom: var(--space-4);
-                opacity: 0.7;
-              "
-            />
-            <h2 style="color: var(--fg-secondary)">Select a conversation</h2>
-            <p>Choose a conversation from the sidebar to start messaging</p>
-          </div>
-        </div>
-        <!-- Shown when a conversation is active -->
-        <div id="activeChatView" class="active-chat-view" style="display: none">
-          <div class="chat-header">
-            <div class="chat-info">
-              <div class="avatar" id="chatAvatar">U</div>
-              <div class="chat-details">
-                <div class="chat-name" id="chatName">User</div>
-                <div class="chat-status">
-                  <span id="statusText">Server indicator:</span>
-                  <!-- SSE connection indicator: green=live, amber=reconnecting, red=disconnected -->
-                  <span
-                    id="sseStatusDot"
-                    data-status="disconnected"
-                    title="Connecting…"
-                  ></span>
+            <div class="navbar-end">
+                <button class="btn btn-ghost btn-icon" id="themeToggle" title="Toggle theme">
+                    <img
+                        src="static/icons/icons/sun.svg"
+                        alt="Toggle theme"
+                        width="20"
+                        height="20"
+                    />
+                </button>
+                <a href="/settings" class="btn btn-ghost btn-icon" title="Settings">
+                    <img
+                        src="static/icons/icons/settings.svg"
+                        alt="Settings"
+                        width="20"
+                        height="20"
+                    />
+                </a>
+                <div class="avatar avatar-sm" style="position: relative; overflow: hidden">
+                    <span id="userInitials">U</span>
+                    <img
+                        id="userAvatarImg"
+                        style="
+                            display: none;
+                            position: absolute;
+                            inset: 0;
+                            width: 100%;
+                            height: 100%;
+                            object-fit: cover;
+                            border-radius: inherit;
+                        "
+                        alt="Your avatar"
+                    />
                 </div>
-              </div>
             </div>
-            <div class="chat-actions">
-              <!-- Only visible for group conversations -->
-              <button
-                class="chat-action-btn"
-                id="groupSettingsBtn"
-                title="Group settings"
-                style="display: none"
-              >
-                <img
-                  src="static/icons/icons/settings.svg"
-                  alt="Group settings"
-                  width="20"
-                  height="20"
-                  style="display: block; opacity: 0.7"
-                />
-              </button>
-              <!-- Only visible for group conversations -->
-              <button
-                class="chat-action-btn"
-                id="addMemberBtn"
-                title="Add member"
-                style="display: none"
-              >
-                <img
-                  src="static/icons/icons/add-user.svg"
-                  alt="Add member"
-                  width="20"
-                  height="20"
-                  style="display: block; opacity: 0.7"
-                />
-              </button>
-              <!-- View files button — always visible when a chat is open -->
-              <button
-                class="chat-action-btn"
-                id="viewFilesBtn"
-                title="View files"
-              >
-                <img
-                  src="static/icons/icons/file.svg"
-                  alt="Add member"
-                  width="20"
-                  height="20"
-                  style="display: block; opacity: 0.7"
-                />
-              </button>
-            </div>
-          </div>
+        </nav>
 
-          <!-- Isolated scrollable message viewport -->
-          <div class="chat-body">
-            <!-- Messages list — scrolls independently -->
-            <div class="messages-container" id="messagesContainer"></div>
-          </div>
+        <div class="chat-container">
+            <!-- ── Sidebar: conversation list ── -->
+            <aside class="conversations-panel">
+                <div class="panel-header">
+                    <div class="panel-tabs">
+                        <button class="panel-tab active" data-tab="dm">Messages</button>
+                        <button class="panel-tab" data-tab="groups">Groups</button>
+                    </div>
+                    <div class="panel-actions">
+                        <div class="search-box">
+                            <img
+                                src="static/icons/icons/search.svg"
+                                alt=""
+                                class="search-icon"
+                                width="16"
+                                height="16"
+                            />
+                            <input
+                                type="text"
+                                class="search-input"
+                                id="conversationSearch"
+                                placeholder="Search..."
+                            />
+                        </div>
+                        <button
+                            class="refresh-btn"
+                            id="refreshConvsBtn"
+                            title="Refresh"
+                            aria-label="Refresh conversations"
+                        >
+                            ↺
+                        </button>
+                        <button class="new-chat-btn" id="newChatBtn" title="New">+</button>
+                    </div>
+                </div>
+                <div class="conversations-list" id="conversationsList"></div>
+            </aside>
 
-          <!-- Pinned bottom bar: typing indicator + input (never scrolls away) -->
-          <div class="chat-bottom-bar">
-            <!-- Typing indicator is injected here by ChatUI.showTyping() -->
-            <!-- id="messageInputArea" lets ChatUI insert the typing banner just above -->
-            <div class="message-input-area" id="messageInputArea">
-              <!-- Hidden file picker — triggered by the paperclip button -->
-              <input
-                type="file"
-                id="fileInput"
-                style="display: none"
-                multiple
-              />
-              <div class="input-tools">
-                <button
-                  class="input-tool-btn"
-                  id="attachFileBtn"
-                  title="Attach file"
-                >
-                  <img
-                    src="static/icons/icons/paperclip.svg"
-                    alt="Attach file"
-                    width="20"
-                    height="20"
-                  />
-                </button>
-              </div>
-              <!-- Upload progress/status strip -->
-              <div
-                id="uploadStatus"
-                class="upload-status"
-                style="display: none"
-              ></div>
-              <div class="message-input-wrapper">
-                <textarea
-                  class="message-input"
-                  id="messageInput"
-                  placeholder="Type a message…"
-                  rows="1"
-                ></textarea>
-                <button class="send-btn" id="sendBtn" disabled>
-                  <img
-                    src="static/icons/icons/send.svg"
-                    alt="Send"
-                    width="20"
-                    height="20"
-                  />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-        <!-- /activeChatView -->
-      </main>
-    </div>
-    <!-- /chat-container -->
-
-    <!-- ── Modal: New Direct Message ── -->
-    <div class="conv-modal-backdrop" id="new-dm-modal">
-      <div class="conv-modal">
-        <div class="conv-modal-head">
-          <span class="conv-modal-title">New Message</span>
-          <button
-            class="conv-modal-close"
-            data-close-conv-modal="new-dm-modal"
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
-        <div class="conv-modal-body">
-          <p>Start a new direct message conversation.</p>
-          <div class="form-group">
-            <label class="form-label" for="dmRecipientInput"
-              >Name or username</label
-            >
-            <input
-              type="text"
-              class="form-input"
-              id="dmRecipientInput"
-              placeholder="e.g. jane_doe"
-              autocomplete="off"
-            />
-            <div class="conv-modal-error" id="dmRecipientError"></div>
-          </div>
-        </div>
-        <div class="conv-modal-footer">
-          <button
-            class="btn btn-secondary btn-sm"
-            data-close-conv-modal="new-dm-modal"
-          >
-            Cancel
-          </button>
-          <button class="btn btn-primary btn-sm" id="newDmSubmitBtn">
-            Start Chat
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- ── Modal: New Group ── -->
-    <div class="conv-modal-backdrop" id="new-group-modal">
-      <div class="conv-modal">
-        <div class="conv-modal-head">
-          <span class="conv-modal-title">New Group</span>
-          <button
-            class="conv-modal-close"
-            data-close-conv-modal="new-group-modal"
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
-        <div class="conv-modal-body">
-          <p>Create a new group conversation.</p>
-          <div class="form-group">
-            <label class="form-label" for="groupNameInput">Group name</label>
-            <input
-              type="text"
-              class="form-input"
-              id="groupNameInput"
-              placeholder="e.g. Team Updates"
-              autocomplete="off"
-            />
-            <div class="conv-modal-error" id="groupNameError"></div>
-          </div>
-        </div>
-        <div class="conv-modal-footer">
-          <button
-            class="btn btn-secondary btn-sm"
-            data-close-conv-modal="new-group-modal"
-          >
-            Cancel
-          </button>
-          <button class="btn btn-primary btn-sm" id="newGroupSubmitBtn">
-            Create Group
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- ── Modal: Add Group Member ── -->
-    <div class="conv-modal-backdrop" id="add-member-modal">
-      <div class="conv-modal">
-        <div class="conv-modal-head">
-          <span class="conv-modal-title">Add Member</span>
-          <button
-            class="conv-modal-close"
-            data-close-conv-modal="add-member-modal"
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
-        <div class="conv-modal-body">
-          <p>Add someone to <strong id="addMemberGroupName"></strong>.</p>
-          <div class="form-group">
-            <label class="form-label" for="addMemberInput"
-              >Name or username</label
-            >
-            <input
-              type="text"
-              class="form-input"
-              id="addMemberInput"
-              placeholder="e.g. jane_doe"
-              autocomplete="off"
-            />
-            <div class="conv-modal-error" id="addMemberError"></div>
-          </div>
-        </div>
-        <div class="conv-modal-footer">
-          <button
-            class="btn btn-secondary btn-sm"
-            data-close-conv-modal="add-member-modal"
-          >
-            Cancel
-          </button>
-          <button class="btn btn-primary btn-sm" id="addMemberSubmitBtn">
-            Add Member
-          </button>
-        </div>
-      </div>
-    </div>
-    <!-- ── Modal: Group Settings ── -->
-    <div class="conv-modal-backdrop" id="group-settings-modal">
-      <div class="conv-modal conv-modal--wide">
-        <div class="conv-modal-head">
-          <span class="conv-modal-title">Group Settings</span>
-          <button
-            class="conv-modal-close"
-            data-close-conv-modal="group-settings-modal"
-            aria-label="Close"
-          >
-            ×
-          </button>
-        </div>
-        <div class="conv-modal-body">
-          <!-- Rename section -->
-          <div class="group-settings-section">
-            <h4 class="group-settings-label">Group Name</h4>
-            <div class="group-settings-row">
-              <input
-                type="text"
-                class="form-input"
-                id="groupRenameInput"
-                placeholder="Enter new name"
-                autocomplete="off"
-              />
-              <button class="btn btn-primary btn-sm" id="groupRenameBtn">
-                Rename
-              </button>
-            </div>
-            <div class="conv-modal-error" id="groupRenameError"></div>
-          </div>
-
-          <!-- Members section -->
-          <div class="group-settings-section">
-            <h4 class="group-settings-label">
-              Members
-              <span id="groupMemberCount" class="group-member-count"></span>
-            </h4>
-            <div id="groupMembersList" class="group-members-list">
-              <p style="color: var(--fg-tertiary); font-size: var(--text-sm)">
-                Loading…
-              </p>
-            </div>
-          </div>
-
-          <!-- Add member section -->
-          <div class="group-settings-section">
-            <h4 class="group-settings-label">Add Member</h4>
-            <div class="group-settings-row">
-              <div class="group-search-wrapper">
-                <input
-                  type="text"
-                  class="form-input"
-                  id="groupAddMemberInput"
-                  placeholder="Search by username…"
-                  autocomplete="off"
-                />
+            <!-- ── Main: message area ── -->
+            <main class="chat-area">
+                <!-- Shown when no conversation is selected -->
                 <div
-                  class="group-search-results"
-                  id="groupSearchResults"
-                  style="display: none"
-                ></div>
-              </div>
-              <button class="btn btn-primary btn-sm" id="groupAddMemberBtn">
-                Add
-              </button>
-            </div>
-            <div class="conv-modal-error" id="groupAddMemberError"></div>
-          </div>
-        </div>
-        <div class="conv-modal-footer conv-modal-footer--split">
-          <button class="btn btn-danger btn-sm" id="groupDeleteBtn">
-            Delete Group
-          </button>
-          <button
-            class="btn btn-secondary btn-sm"
-            data-close-conv-modal="group-settings-modal"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
+                    id="emptyChatState"
+                    style="display: flex; flex: 1; align-items: center; justify-content: center"
+                >
+                    <div style="text-align: center; color: var(--fg-tertiary)">
+                        <img
+                            src="static/icons/icons/chat.svg"
+                            alt="Chat icon"
+                            style="
+                                width: 64px;
+                                height: 64px;
+                                margin-bottom: var(--space-4);
+                                opacity: 0.7;
+                            "
+                        />
+                        <h2 style="color: var(--fg-secondary)">Select a conversation</h2>
+                        <p>Choose a conversation from the sidebar to start messaging</p>
+                    </div>
+                </div>
+                <!-- Shown when a conversation is active -->
+                <div id="activeChatView" class="active-chat-view" style="display: none">
+                    <div class="chat-header">
+                        <div class="chat-info">
+                            <div class="avatar" id="chatAvatar">U</div>
+                            <div class="chat-details">
+                                <div class="chat-name" id="chatName">User</div>
+                                <div class="chat-status">
+                                    <span id="statusText">Server indicator:</span>
+                                    <!-- SSE connection indicator: green=live, amber=reconnecting, red=disconnected -->
+                                    <span
+                                        id="sseStatusDot"
+                                        data-status="disconnected"
+                                        title="Connecting…"
+                                    ></span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="chat-actions">
+                            <!-- Only visible for group conversations -->
+                            <button
+                                class="chat-action-btn"
+                                id="groupSettingsBtn"
+                                title="Group settings"
+                                style="display: none"
+                            >
+                                <img
+                                    src="static/icons/icons/settings.svg"
+                                    alt="Group settings"
+                                    width="20"
+                                    height="20"
+                                    style="display: block; opacity: 0.7"
+                                />
+                            </button>
+                            <!-- Only visible for group conversations -->
+                            <button
+                                class="chat-action-btn"
+                                id="addMemberBtn"
+                                title="Add member"
+                                style="display: none"
+                            >
+                                <img
+                                    src="static/icons/icons/add-user.svg"
+                                    alt="Add member"
+                                    width="20"
+                                    height="20"
+                                    style="display: block; opacity: 0.7"
+                                />
+                            </button>
+                            <!-- View files button — always visible when a chat is open -->
+                            <button class="chat-action-btn" id="viewFilesBtn" title="View files">
+                                <img
+                                    src="static/icons/icons/file.svg"
+                                    alt="Add member"
+                                    width="20"
+                                    height="20"
+                                    style="display: block; opacity: 0.7"
+                                />
+                            </button>
+                        </div>
+                    </div>
 
-    <!-- ── Modal: Confirm Delete Group ── -->
-    <div class="conv-modal-backdrop" id="group-delete-confirm-modal">
-      <div class="conv-modal">
-        <div class="conv-modal-head">
-          <span class="conv-modal-title">Delete Group</span>
-          <button
-            class="conv-modal-close"
-            data-close-conv-modal="group-delete-confirm-modal"
-            aria-label="Close"
-          >
-            ×
-          </button>
+                    <!-- Isolated scrollable message viewport -->
+                    <div class="chat-body">
+                        <!-- Messages list — scrolls independently -->
+                        <div class="messages-container" id="messagesContainer"></div>
+                    </div>
+
+                    <!-- Pinned bottom bar: typing indicator + input (never scrolls away) -->
+                    <div class="chat-bottom-bar">
+                        <!-- Typing indicator is injected here by ChatUI.showTyping() -->
+                        <!-- id="messageInputArea" lets ChatUI insert the typing banner just above -->
+                        <div class="message-input-area" id="messageInputArea">
+                            <!-- Hidden file picker — triggered by the paperclip button -->
+                            <input type="file" id="fileInput" style="display: none" multiple />
+                            <div class="input-tools">
+                                <button
+                                    class="input-tool-btn"
+                                    id="attachFileBtn"
+                                    title="Attach file"
+                                >
+                                    <img
+                                        src="static/icons/icons/paperclip.svg"
+                                        alt="Attach file"
+                                        width="20"
+                                        height="20"
+                                    />
+                                </button>
+                            </div>
+                            <!-- Upload progress/status strip -->
+                            <div
+                                id="uploadStatus"
+                                class="upload-status"
+                                style="display: none"
+                            ></div>
+                            <div class="message-input-wrapper">
+                                <textarea
+                                    class="message-input"
+                                    id="messageInput"
+                                    placeholder="Type a message…"
+                                    rows="1"
+                                ></textarea>
+                                <button class="send-btn" id="sendBtn" disabled>
+                                    <img
+                                        src="static/icons/icons/send.svg"
+                                        alt="Send"
+                                        width="20"
+                                        height="20"
+                                    />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- /activeChatView -->
+            </main>
         </div>
-        <div class="conv-modal-body">
-          <p>
-            Are you sure you want to permanently delete
-            <strong id="groupDeleteName"></strong>? This cannot be undone.
-          </p>
-          <div class="conv-modal-error" id="groupDeleteError"></div>
+        <!-- /chat-container -->
+
+        <!-- ── Modal: New Direct Message ── -->
+        <div class="conv-modal-backdrop" id="new-dm-modal">
+            <div class="conv-modal">
+                <div class="conv-modal-head">
+                    <span class="conv-modal-title">New Message</span>
+                    <button
+                        class="conv-modal-close"
+                        data-close-conv-modal="new-dm-modal"
+                        aria-label="Close"
+                    >
+                        ×
+                    </button>
+                </div>
+                <div class="conv-modal-body">
+                    <p>Start a new direct message conversation.</p>
+                    <div class="form-group">
+                        <label class="form-label" for="dmRecipientInput">Name or username</label>
+                        <input
+                            type="text"
+                            class="form-input"
+                            id="dmRecipientInput"
+                            placeholder="e.g. jane_doe"
+                            autocomplete="off"
+                        />
+                        <div class="conv-modal-error" id="dmRecipientError"></div>
+                    </div>
+                </div>
+                <div class="conv-modal-footer">
+                    <button class="btn btn-secondary btn-sm" data-close-conv-modal="new-dm-modal">
+                        Cancel
+                    </button>
+                    <button class="btn btn-primary btn-sm" id="newDmSubmitBtn">Start Chat</button>
+                </div>
+            </div>
         </div>
-        <div class="conv-modal-footer">
-          <button
-            class="btn btn-secondary btn-sm"
-            data-close-conv-modal="group-delete-confirm-modal"
-          >
-            Cancel
-          </button>
-          <button class="btn btn-danger btn-sm" id="groupDeleteConfirmBtn">
-            Delete
-          </button>
+
+        <!-- ── Modal: New Group ── -->
+        <div class="conv-modal-backdrop" id="new-group-modal">
+            <div class="conv-modal">
+                <div class="conv-modal-head">
+                    <span class="conv-modal-title">New Group</span>
+                    <button
+                        class="conv-modal-close"
+                        data-close-conv-modal="new-group-modal"
+                        aria-label="Close"
+                    >
+                        ×
+                    </button>
+                </div>
+                <div class="conv-modal-body">
+                    <p>Create a new group conversation.</p>
+                    <div class="form-group">
+                        <label class="form-label" for="groupNameInput">Group name</label>
+                        <input
+                            type="text"
+                            class="form-input"
+                            id="groupNameInput"
+                            placeholder="e.g. Team Updates"
+                            autocomplete="off"
+                        />
+                        <div class="conv-modal-error" id="groupNameError"></div>
+                    </div>
+                </div>
+                <div class="conv-modal-footer">
+                    <button
+                        class="btn btn-secondary btn-sm"
+                        data-close-conv-modal="new-group-modal"
+                    >
+                        Cancel
+                    </button>
+                    <button class="btn btn-primary btn-sm" id="newGroupSubmitBtn">
+                        Create Group
+                    </button>
+                </div>
+            </div>
         </div>
-      </div>
-    </div>
-    <!-- ── Modal: Chat Files ── -->
-    <div class="conv-modal-backdrop" id="files-modal">
-      <div class="conv-modal conv-modal--wide">
-        <div class="conv-modal-head">
-          <span class="conv-modal-title">Files</span>
-          <button
-            class="conv-modal-close"
-            data-close-conv-modal="files-modal"
-            aria-label="Close"
-          >
-            ×
-          </button>
+
+        <!-- ── Modal: Add Group Member ── -->
+        <div class="conv-modal-backdrop" id="add-member-modal">
+            <div class="conv-modal">
+                <div class="conv-modal-head">
+                    <span class="conv-modal-title">Add Member</span>
+                    <button
+                        class="conv-modal-close"
+                        data-close-conv-modal="add-member-modal"
+                        aria-label="Close"
+                    >
+                        ×
+                    </button>
+                </div>
+                <div class="conv-modal-body">
+                    <p>Add someone to <strong id="addMemberGroupName"></strong>.</p>
+                    <div class="form-group">
+                        <label class="form-label" for="addMemberInput">Name or username</label>
+                        <input
+                            type="text"
+                            class="form-input"
+                            id="addMemberInput"
+                            placeholder="e.g. jane_doe"
+                            autocomplete="off"
+                        />
+                        <div class="conv-modal-error" id="addMemberError"></div>
+                    </div>
+                </div>
+                <div class="conv-modal-footer">
+                    <button
+                        class="btn btn-secondary btn-sm"
+                        data-close-conv-modal="add-member-modal"
+                    >
+                        Cancel
+                    </button>
+                    <button class="btn btn-primary btn-sm" id="addMemberSubmitBtn">
+                        Add Member
+                    </button>
+                </div>
+            </div>
         </div>
-        <div class="conv-modal-body" style="padding: 0">
-          <div id="filesModalList" class="files-modal-list">
-            <p
-              style="
-                color: var(--fg-tertiary);
-                font-size: var(--text-sm);
-                padding: var(--space-6);
-              "
-            >
-              Loading…
-            </p>
-          </div>
+        <!-- ── Modal: Group Settings ── -->
+        <div class="conv-modal-backdrop" id="group-settings-modal">
+            <div class="conv-modal conv-modal--wide">
+                <div class="conv-modal-head">
+                    <span class="conv-modal-title">Group Settings</span>
+                    <button
+                        class="conv-modal-close"
+                        data-close-conv-modal="group-settings-modal"
+                        aria-label="Close"
+                    >
+                        ×
+                    </button>
+                </div>
+                <div class="conv-modal-body">
+                    <!-- Rename section -->
+                    <div class="group-settings-section">
+                        <h4 class="group-settings-label">Group Name</h4>
+                        <div class="group-settings-row">
+                            <input
+                                type="text"
+                                class="form-input"
+                                id="groupRenameInput"
+                                placeholder="Enter new name"
+                                autocomplete="off"
+                            />
+                            <button class="btn btn-primary btn-sm" id="groupRenameBtn">
+                                Rename
+                            </button>
+                        </div>
+                        <div class="conv-modal-error" id="groupRenameError"></div>
+                    </div>
+
+                    <!-- Members section -->
+                    <div class="group-settings-section">
+                        <h4 class="group-settings-label">
+                            Members
+                            <span id="groupMemberCount" class="group-member-count"></span>
+                        </h4>
+                        <div id="groupMembersList" class="group-members-list">
+                            <p style="color: var(--fg-tertiary); font-size: var(--text-sm)">
+                                Loading…
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Add member section -->
+                    <div class="group-settings-section">
+                        <h4 class="group-settings-label">Add Member</h4>
+                        <div class="group-settings-row">
+                            <div class="group-search-wrapper">
+                                <input
+                                    type="text"
+                                    class="form-input"
+                                    id="groupAddMemberInput"
+                                    placeholder="Search by username…"
+                                    autocomplete="off"
+                                />
+                                <div
+                                    class="group-search-results"
+                                    id="groupSearchResults"
+                                    style="display: none"
+                                ></div>
+                            </div>
+                            <button class="btn btn-primary btn-sm" id="groupAddMemberBtn">
+                                Add
+                            </button>
+                        </div>
+                        <div class="conv-modal-error" id="groupAddMemberError"></div>
+                    </div>
+                </div>
+                <div class="conv-modal-footer conv-modal-footer--split">
+                    <button class="btn btn-danger btn-sm" id="groupDeleteBtn">Delete Group</button>
+                    <button
+                        class="btn btn-secondary btn-sm"
+                        data-close-conv-modal="group-settings-modal"
+                    >
+                        Close
+                    </button>
+                </div>
+            </div>
         </div>
-        <div class="conv-modal-footer">
-          <button
-            class="btn btn-secondary btn-sm"
-            data-close-conv-modal="files-modal"
-          >
-            Close
-          </button>
+
+        <!-- ── Modal: Confirm Delete Group ── -->
+        <div class="conv-modal-backdrop" id="group-delete-confirm-modal">
+            <div class="conv-modal">
+                <div class="conv-modal-head">
+                    <span class="conv-modal-title">Delete Group</span>
+                    <button
+                        class="conv-modal-close"
+                        data-close-conv-modal="group-delete-confirm-modal"
+                        aria-label="Close"
+                    >
+                        ×
+                    </button>
+                </div>
+                <div class="conv-modal-body">
+                    <p>
+                        Are you sure you want to permanently delete
+                        <strong id="groupDeleteName"></strong>? This cannot be undone.
+                    </p>
+                    <div class="conv-modal-error" id="groupDeleteError"></div>
+                </div>
+                <div class="conv-modal-footer">
+                    <button
+                        class="btn btn-secondary btn-sm"
+                        data-close-conv-modal="group-delete-confirm-modal"
+                    >
+                        Cancel
+                    </button>
+                    <button class="btn btn-danger btn-sm" id="groupDeleteConfirmBtn">Delete</button>
+                </div>
+            </div>
         </div>
-      </div>
-    </div>
-  </body>
+        <!-- ── Modal: Chat Files ── -->
+        <div class="conv-modal-backdrop" id="files-modal">
+            <div class="conv-modal conv-modal--wide">
+                <div class="conv-modal-head">
+                    <span class="conv-modal-title">Files</span>
+                    <button
+                        class="conv-modal-close"
+                        data-close-conv-modal="files-modal"
+                        aria-label="Close"
+                    >
+                        ×
+                    </button>
+                </div>
+                <div class="conv-modal-body" style="padding: 0">
+                    <div id="filesModalList" class="files-modal-list">
+                        <p
+                            style="
+                                color: var(--fg-tertiary);
+                                font-size: var(--text-sm);
+                                padding: var(--space-6);
+                            "
+                        >
+                            Loading…
+                        </p>
+                    </div>
+                </div>
+                <div class="conv-modal-footer">
+                    <button class="btn btn-secondary btn-sm" data-close-conv-modal="files-modal">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </body>
 </html>

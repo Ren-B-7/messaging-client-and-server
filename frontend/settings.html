@@ -1,610 +1,525 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Settings - Chat App</title>
-    <meta
-      name="description"
-      content="Manage your Chat App profile, account security, appearance, notifications, and privacy settings."
-    />
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Settings - Chat App</title>
+        <meta
+            name="description"
+            content="Manage your Chat App profile, account security, appearance, notifications, and privacy settings."
+        />
 
-    <!-- Primary CSS -->
-    <link rel="stylesheet" href="static/css/var.css" fetchpriority="high" />
-    <link
-      rel="stylesheet"
-      href="static/css/base/base.light.css"
-      fetchpriority="high"
-      data-theme-mod="base"
-      data-theme-variant="light"
-    />
-    <link
-      rel="stylesheet"
-      href="static/css/chat/chat.light.css"
-      fetchpriority="high"
-      data-theme-mod="chat"
-      data-theme-variant="light"
-    />
-    <link
-      rel="stylesheet"
-      href="static/css/settings/settings.light.css"
-      fetchpriority="high"
-      data-theme-mod="settings"
-      data-theme-variant="light"
-    />
+        <!-- Primary CSS -->
+        <link rel="stylesheet" href="static/css/var.css" fetchpriority="high" />
+        <link
+            rel="stylesheet"
+            href="static/css/base/base.light.css"
+            fetchpriority="high"
+            data-theme-mod="base"
+            data-theme-variant="light"
+        />
+        <link
+            rel="stylesheet"
+            href="static/css/chat/chat.light.css"
+            fetchpriority="high"
+            data-theme-mod="chat"
+            data-theme-variant="light"
+        />
+        <link
+            rel="stylesheet"
+            href="static/css/settings/settings.light.css"
+            fetchpriority="high"
+            data-theme-mod="settings"
+            data-theme-variant="light"
+        />
 
-    <!-- Synchronous theme detection — runs before render to avoid flash -->
-    <script>
-      (function () {
-        var t =
-          localStorage.getItem("theme") ||
-          (matchMedia("(prefers-color-scheme: dark)").matches
-            ? "dark"
-            : "light");
-        document.documentElement.setAttribute("data-theme", t);
-        if (t === "dark") {
-          ["base", "chat", "settings"].forEach(function (m) {
-            var l = document.createElement("link");
-            l.rel = "stylesheet";
-            l.href = "static/css/" + m + "/" + m + ".dark.css";
-            l.fetchPriority = "high";
-            l.dataset.themeMod = m;
-            l.dataset.themeVariant = "dark";
-            document.head.appendChild(l);
-          });
-        }
-        var ld = function (v) {
-          var e = document.getElementById("loading");
-          if (e) e.style.display = v;
-        };
-        window.addEventListener("beforeunload", function () {
-          ld("flex");
-        });
-        window.addEventListener("load", function () {
-          ld("none");
-        });
-        window.addEventListener("pageshow", function (e) {
-          if (e.persisted) ld("none");
-        });
-      })();
-    </script>
+        <!-- Synchronous theme detection — runs before render to avoid flash -->
+        <script>
+            (function () {
+                var t =
+                    localStorage.getItem("theme") ||
+                    (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+                document.documentElement.setAttribute("data-theme", t);
+                if (t === "dark") {
+                    ["base", "chat", "settings"].forEach(function (m) {
+                        var l = document.createElement("link");
+                        l.rel = "stylesheet";
+                        l.href = "static/css/" + m + "/" + m + ".dark.css";
+                        l.fetchPriority = "high";
+                        l.dataset.themeMod = m;
+                        l.dataset.themeVariant = "dark";
+                        document.head.appendChild(l);
+                    });
+                }
+                var ld = function (v) {
+                    var e = document.getElementById("loading");
+                    if (e) e.style.display = v;
+                };
+                window.addEventListener("beforeunload", function () {
+                    ld("flex");
+                });
+                window.addEventListener("load", function () {
+                    ld("none");
+                });
+                window.addEventListener("pageshow", function (e) {
+                    if (e.persisted) ld("none");
+                });
+            })();
+        </script>
 
-    <!-- Preloads -->
-    <link rel="preload" href="static/js/utils/theme.manager.js" as="script" />
-    <link
-      rel="preload"
-      href="static/js/config/platform.config.js"
-      as="script"
-    />
-    <link rel="preload" href="static/js/utils/utils.js" as="script" />
-    <link
-      rel="preload"
-      href="static/js/utils/error.interceptor.js"
-      as="script"
-    />
-    <link
-      rel="preload"
-      href="non-static/settings/settings.nav.js"
-      as="script"
-    />
-    <link
-      rel="preload"
-      href="non-static/settings/settings.profile.js"
-      as="script"
-    />
-    <link
-      rel="preload"
-      href="non-static/settings/settings.account.js"
-      as="script"
-    />
-    <link
-      rel="preload"
-      href="non-static/settings/settings.preferences.js"
-      as="script"
-    />
-    <link
-      rel="preload"
-      href="non-static/settings/settings.init.js"
-      as="script"
-    />
+        <!-- Preloads -->
+        <link rel="preload" href="static/js/utils/theme.manager.js" as="script" />
+        <link rel="preload" href="static/js/config/platform.config.js" as="script" />
+        <link rel="preload" href="static/js/utils/utils.js" as="script" />
+        <link rel="preload" href="static/js/utils/error.interceptor.js" as="script" />
+        <link rel="preload" href="non-static/settings/settings.nav.js" as="script" />
+        <link rel="preload" href="non-static/settings/settings.profile.js" as="script" />
+        <link rel="preload" href="non-static/settings/settings.account.js" as="script" />
+        <link rel="preload" href="non-static/settings/settings.preferences.js" as="script" />
+        <link rel="preload" href="non-static/settings/settings.init.js" as="script" />
 
-    <!-- Scripts (deferred — execute after HTML is parsed, in order) -->
-    <script defer src="static/js/utils/theme.manager.js"></script>
-    <script defer src="static/js/config/platform.config.js"></script>
-    <script defer src="static/js/utils/utils.js"></script>
-    <script defer src="non-static/settings/settings.nav.js"></script>
-    <script defer src="non-static/settings/settings.profile.js"></script>
-    <script defer src="non-static/settings/settings.account.js"></script>
-    <script defer src="non-static/settings/settings.preferences.js"></script>
-    <script defer src="non-static/settings/settings.init.js"></script>
-  </head>
-  <body>
-    <div id="loading">Loading...</div>
+        <!-- Scripts (deferred — execute after HTML is parsed, in order) -->
+        <script defer src="static/js/utils/theme.manager.js"></script>
+        <script defer src="static/js/config/platform.config.js"></script>
+        <script defer src="static/js/utils/utils.js"></script>
+        <script defer src="non-static/settings/settings.nav.js"></script>
+        <script defer src="non-static/settings/settings.profile.js"></script>
+        <script defer src="non-static/settings/settings.account.js"></script>
+        <script defer src="non-static/settings/settings.preferences.js"></script>
+        <script defer src="non-static/settings/settings.init.js"></script>
+    </head>
+    <body>
+        <div id="loading">Loading...</div>
 
-    <nav class="navbar">
-      <a href="/chat" class="navbar-brand">
-        <div class="navbar-logo">💬</div>
-        <span>Chat</span>
-      </a>
-      <div class="navbar-menu">
-        <a href="/chat">Messages</a>
-      </div>
-      <div class="navbar-end">
-        <button
-          class="btn btn-ghost btn-icon"
-          id="themeToggle"
-          title="Toggle theme"
-        >
-          <img
-            src="static/icons/icons/sun.svg"
-            alt="Toggle theme"
-            width="20"
-            height="20"
-          />
-        </button>
-        <a
-          href="/settings"
-          class="avatar avatar-sm active"
-          title="Settings"
-          style="position: relative; overflow: hidden"
-        >
-          <span id="userInitials"></span>
-          <img
-            id="userAvatarImg"
-            style="
-              display: none;
-              position: absolute;
-              inset: 0;
-              width: 100%;
-              height: 100%;
-              object-fit: cover;
-              border-radius: inherit;
-            "
-            alt="Your avatar"
-          />
-        </a>
-      </div>
-    </nav>
-
-    <div class="settings-layout">
-      <!-- ── Sidebar navigation ── -->
-      <div class="settings-sidebar">
-        <span class="settings-section-title">Account</span>
-        <a
-          href="#profile"
-          class="settings-nav-item active"
-          data-tab="profileTab"
-        >
-          <img
-            src="static/icons/icons/user.svg"
-            alt=""
-            width="20"
-            height="20"
-          />
-          <span>Profile</span>
-        </a>
-        <a href="#account" class="settings-nav-item" data-tab="accountTab">
-          <img
-            src="static/icons/icons/settings.svg"
-            alt=""
-            width="20"
-            height="20"
-          />
-          <span>Account</span>
-        </a>
-
-        <span class="settings-section-title">Preferences</span>
-        <a
-          href="#appearance"
-          class="settings-nav-item"
-          data-tab="appearanceTab"
-        >
-          <img src="static/icons/icons/sun.svg" alt="" width="20" height="20" />
-          <span>Appearance</span>
-        </a>
-        <a
-          href="#notifications"
-          class="settings-nav-item"
-          data-tab="notificationsTab"
-        >
-          <img
-            src="static/icons/icons/bell.svg"
-            alt=""
-            width="20"
-            height="20"
-          />
-          <span>Notifications</span>
-        </a>
-        <a href="#privacy" class="settings-nav-item" data-tab="privacyTab">
-          <img
-            src="static/icons/icons/shield.svg"
-            alt=""
-            width="20"
-            height="20"
-          />
-          <span>Privacy</span>
-        </a>
-
-        <span class="settings-section-title">About</span>
-        <a href="#help" class="settings-nav-item" data-tab="helpTab">
-          <img
-            src="static/icons/icons/help-circle.svg"
-            alt=""
-            width="20"
-            height="20"
-          />
-          <span>Help</span>
-        </a>
-      </div>
-
-      <!-- ── Tab panels ── -->
-      <div class="settings-content">
-        <!-- Profile tab -->
-        <div id="profileTab" class="settings-tab active">
-          <div class="page-header">
-            <h1>Profile</h1>
-            <p>Manage your personal information and how others see you</p>
-          </div>
-
-          <div class="settings-section">
-            <div class="profile-header">
-              <div class="profile-avatar-wrapper">
-                <div
-                  class="avatar avatar-xl"
-                  id="profileAvatar"
-                  style="position: relative; overflow: hidden"
-                >
-                  <!-- content set by settings.profile.js (initials or img) -->
-                </div>
-                <button
-                  class="avatar-edit-btn"
-                  id="avatarEditBtn"
-                  title="Change photo"
-                >
-                  ✎
+        <nav class="navbar">
+            <a href="/chat" class="navbar-brand">
+                <div class="navbar-logo">💬</div>
+                <span>Chat</span>
+            </a>
+            <div class="navbar-menu">
+                <a href="/chat">Messages</a>
+            </div>
+            <div class="navbar-end">
+                <button class="btn btn-ghost btn-icon" id="themeToggle" title="Toggle theme">
+                    <img
+                        src="static/icons/icons/sun.svg"
+                        alt="Toggle theme"
+                        width="20"
+                        height="20"
+                    />
                 </button>
-                <!-- Hidden file input — triggered by avatarEditBtn -->
-                <input
-                  id="avatarFileInput"
-                  type="file"
-                  accept="image/jpeg,image/png,image/gif,image/webp"
-                  style="display: none"
-                />
-              </div>
-              <!-- Upload status message -->
-              <span
-                id="avatarUploadStatus"
-                style="
-                  display: none;
-                  font-size: var(--text-sm);
-                  margin-top: var(--space-1);
-                "
-              ></span>
-              <div class="profile-info">
-                <h2 id="profileName">User Name</h2>
-                <p id="profileEmail"></p>
-              </div>
-            </div>
-
-            <form class="settings-form" id="profileForm">
-              <div class="form-row">
-                <div class="form-group">
-                  <label class="form-label" for="firstName">First Name</label>
-                  <input
-                    type="text"
-                    id="firstName"
-                    name="firstName"
-                    class="form-input"
-                  />
-                </div>
-                <div class="form-group">
-                  <label class="form-label" for="lastName">Last Name</label>
-                  <input
-                    type="text"
-                    id="lastName"
-                    name="lastName"
-                    class="form-input"
-                  />
-                </div>
-              </div>
-              <div class="form-group">
-                <label class="form-label" for="username">Username</label>
-                <input
-                  type="text"
-                  id="username"
-                  name="username"
-                  class="form-input"
-                />
-              </div>
-              <div class="form-actions">
-                <button
-                  type="button"
-                  id="cancelProfileBtn"
-                  class="btn btn-secondary"
+                <a
+                    href="/settings"
+                    class="avatar avatar-sm active"
+                    title="Settings"
+                    style="position: relative; overflow: hidden"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  id="saveProfileBtn"
-                  class="btn btn-primary"
-                  disabled
-                >
-                  Save Changes
-                </button>
-              </div>
-              <span
-                id="profile-feedback"
-                class="form-feedback"
-                style="display: none"
-              ></span>
-            </form>
-          </div>
-        </div>
+                    <span id="userInitials"></span>
+                    <img
+                        id="userAvatarImg"
+                        style="
+                            display: none;
+                            position: absolute;
+                            inset: 0;
+                            width: 100%;
+                            height: 100%;
+                            object-fit: cover;
+                            border-radius: inherit;
+                        "
+                        alt="Your avatar"
+                    />
+                </a>
+            </div>
+        </nav>
 
-        <!-- Account tab -->
-        <div id="accountTab" class="settings-tab">
-          <div class="page-header">
-            <h1>Account</h1>
-            <p>Manage your account security and credentials</p>
-          </div>
+        <div class="settings-layout">
+            <!-- ── Sidebar navigation ── -->
+            <div class="settings-sidebar">
+                <span class="settings-section-title">Account</span>
+                <a href="#profile" class="settings-nav-item active" data-tab="profileTab">
+                    <img src="static/icons/icons/user.svg" alt="" width="20" height="20" />
+                    <span>Profile</span>
+                </a>
+                <a href="#account" class="settings-nav-item" data-tab="accountTab">
+                    <img src="static/icons/icons/settings.svg" alt="" width="20" height="20" />
+                    <span>Account</span>
+                </a>
 
-          <div class="settings-section">
-            <div class="section-header">
-              <h2>Email Address</h2>
-              <p>The email associated with your account</p>
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="accountEmail">Email</label>
-              <input
-                type="email"
-                id="accountEmail"
-                name="email"
-                class="form-input"
-                readonly
-              />
-            </div>
-          </div>
+                <span class="settings-section-title">Preferences</span>
+                <a href="#appearance" class="settings-nav-item" data-tab="appearanceTab">
+                    <img src="static/icons/icons/sun.svg" alt="" width="20" height="20" />
+                    <span>Appearance</span>
+                </a>
+                <a href="#notifications" class="settings-nav-item" data-tab="notificationsTab">
+                    <img src="static/icons/icons/bell.svg" alt="" width="20" height="20" />
+                    <span>Notifications</span>
+                </a>
+                <a href="#privacy" class="settings-nav-item" data-tab="privacyTab">
+                    <img src="static/icons/icons/shield.svg" alt="" width="20" height="20" />
+                    <span>Privacy</span>
+                </a>
 
-          <div class="settings-section">
-            <div class="section-header">
-              <h2>Password</h2>
-              <p>Change your account password</p>
+                <span class="settings-section-title">About</span>
+                <a href="#help" class="settings-nav-item" data-tab="helpTab">
+                    <img src="static/icons/icons/help-circle.svg" alt="" width="20" height="20" />
+                    <span>Help</span>
+                </a>
             </div>
-            <div class="form-group">
-              <label class="form-label" for="currentPassword"
-                >Current Password</label
-              >
-              <input
-                type="password"
-                id="currentPassword"
-                class="form-input"
-                autocomplete="current-password"
-              />
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="newPassword">New Password</label>
-              <input
-                type="password"
-                id="newPassword"
-                class="form-input"
-                autocomplete="new-password"
-              />
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="confirmPassword"
-                >Confirm New Password</label
-              >
-              <input
-                type="password"
-                id="confirmPassword"
-                class="form-input"
-                autocomplete="new-password"
-              />
-            </div>
-            <button class="btn btn-secondary" id="changePasswordBtn">
-              Update Password
-            </button>
-            <span
-              id="password-feedback"
-              class="form-feedback"
-              style="display: none"
-            ></span>
-          </div>
 
-          <div class="settings-section danger-zone">
-            <div class="section-header">
-              <h2>Danger Zone</h2>
-              <p>Permanent and irreversible actions</p>
-            </div>
-            <div class="danger-actions">
-              <div class="form-group">
-                <label class="form-label" for="deleteEmailConfirm">
-                  Type your email address to confirm
-                </label>
-                <input
-                  type="email"
-                  id="deleteEmailConfirm"
-                  class="form-input"
-                  placeholder="you@example.com"
-                  autocomplete="off"
-                />
-              </div>
-              <button class="btn btn-danger" id="deleteAccountBtn">
-                Delete Account
-              </button>
-              <span
-                id="delete-feedback"
-                class="form-feedback"
-                style="display: none"
-              ></span>
-            </div>
-          </div>
-        </div>
+            <!-- ── Tab panels ── -->
+            <div class="settings-content">
+                <!-- Profile tab -->
+                <div id="profileTab" class="settings-tab active">
+                    <div class="page-header">
+                        <h1>Profile</h1>
+                        <p>Manage your personal information and how others see you</p>
+                    </div>
 
-        <!-- Appearance tab -->
-        <div id="appearanceTab" class="settings-tab">
-          <div class="page-header">
-            <h1>Appearance</h1>
-            <p>Choose how the app looks</p>
-          </div>
+                    <div class="settings-section">
+                        <div class="profile-header">
+                            <div class="profile-avatar-wrapper">
+                                <div
+                                    class="avatar avatar-xl"
+                                    id="profileAvatar"
+                                    style="position: relative; overflow: hidden"
+                                >
+                                    <!-- content set by settings.profile.js (initials or img) -->
+                                </div>
+                                <button
+                                    class="avatar-edit-btn"
+                                    id="avatarEditBtn"
+                                    title="Change photo"
+                                >
+                                    ✎
+                                </button>
+                                <!-- Hidden file input — triggered by avatarEditBtn -->
+                                <input
+                                    id="avatarFileInput"
+                                    type="file"
+                                    accept="image/jpeg,image/png,image/gif,image/webp"
+                                    style="display: none"
+                                />
+                            </div>
+                            <!-- Upload status message -->
+                            <span
+                                id="avatarUploadStatus"
+                                style="
+                                    display: none;
+                                    font-size: var(--text-sm);
+                                    margin-top: var(--space-1);
+                                "
+                            ></span>
+                            <div class="profile-info">
+                                <h2 id="profileName">User Name</h2>
+                                <p id="profileEmail"></p>
+                            </div>
+                        </div>
 
-          <div class="settings-section">
-            <div class="section-header">
-              <h2>Theme</h2>
-              <p>Select a colour scheme</p>
-            </div>
-            <div class="theme-grid">
-              <label class="theme-preview light">
-                <input
-                  type="radio"
-                  name="theme"
-                  value="light"
-                  id="lightTheme"
-                />
-                <div class="theme-preview-content">
-                  <span class="theme-label">Light</span>
+                        <form class="settings-form" id="profileForm">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label" for="firstName">First Name</label>
+                                    <input
+                                        type="text"
+                                        id="firstName"
+                                        name="firstName"
+                                        class="form-input"
+                                    />
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="lastName">Last Name</label>
+                                    <input
+                                        type="text"
+                                        id="lastName"
+                                        name="lastName"
+                                        class="form-input"
+                                    />
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="username">Username</label>
+                                <input
+                                    type="text"
+                                    id="username"
+                                    name="username"
+                                    class="form-input"
+                                />
+                            </div>
+                            <div class="form-actions">
+                                <button
+                                    type="button"
+                                    id="cancelProfileBtn"
+                                    class="btn btn-secondary"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    id="saveProfileBtn"
+                                    class="btn btn-primary"
+                                    disabled
+                                >
+                                    Save Changes
+                                </button>
+                            </div>
+                            <span
+                                id="profile-feedback"
+                                class="form-feedback"
+                                style="display: none"
+                            ></span>
+                        </form>
+                    </div>
                 </div>
-              </label>
-              <label class="theme-preview dark">
-                <input type="radio" name="theme" value="dark" id="darkTheme" />
-                <div class="theme-preview-content">
-                  <span class="theme-label">Dark</span>
+
+                <!-- Account tab -->
+                <div id="accountTab" class="settings-tab">
+                    <div class="page-header">
+                        <h1>Account</h1>
+                        <p>Manage your account security and credentials</p>
+                    </div>
+
+                    <div class="settings-section">
+                        <div class="section-header">
+                            <h2>Email Address</h2>
+                            <p>The email associated with your account</p>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="accountEmail">Email</label>
+                            <input
+                                type="email"
+                                id="accountEmail"
+                                name="email"
+                                class="form-input"
+                                readonly
+                            />
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <div class="section-header">
+                            <h2>Password</h2>
+                            <p>Change your account password</p>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="currentPassword">Current Password</label>
+                            <input
+                                type="password"
+                                id="currentPassword"
+                                class="form-input"
+                                autocomplete="current-password"
+                            />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="newPassword">New Password</label>
+                            <input
+                                type="password"
+                                id="newPassword"
+                                class="form-input"
+                                autocomplete="new-password"
+                            />
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="confirmPassword"
+                                >Confirm New Password</label
+                            >
+                            <input
+                                type="password"
+                                id="confirmPassword"
+                                class="form-input"
+                                autocomplete="new-password"
+                            />
+                        </div>
+                        <button class="btn btn-secondary" id="changePasswordBtn">
+                            Update Password
+                        </button>
+                        <span
+                            id="password-feedback"
+                            class="form-feedback"
+                            style="display: none"
+                        ></span>
+                    </div>
+
+                    <div class="settings-section danger-zone">
+                        <div class="section-header">
+                            <h2>Danger Zone</h2>
+                            <p>Permanent and irreversible actions</p>
+                        </div>
+                        <div class="danger-actions">
+                            <div class="form-group">
+                                <label class="form-label" for="deleteEmailConfirm">
+                                    Type your email address to confirm
+                                </label>
+                                <input
+                                    type="email"
+                                    id="deleteEmailConfirm"
+                                    class="form-input"
+                                    placeholder="you@example.com"
+                                    autocomplete="off"
+                                />
+                            </div>
+                            <button class="btn btn-danger" id="deleteAccountBtn">
+                                Delete Account
+                            </button>
+                            <span
+                                id="delete-feedback"
+                                class="form-feedback"
+                                style="display: none"
+                            ></span>
+                        </div>
+                    </div>
                 </div>
-              </label>
+
+                <!-- Appearance tab -->
+                <div id="appearanceTab" class="settings-tab">
+                    <div class="page-header">
+                        <h1>Appearance</h1>
+                        <p>Choose how the app looks</p>
+                    </div>
+
+                    <div class="settings-section">
+                        <div class="section-header">
+                            <h2>Theme</h2>
+                            <p>Select a colour scheme</p>
+                        </div>
+                        <div class="theme-grid">
+                            <label class="theme-preview light">
+                                <input type="radio" name="theme" value="light" id="lightTheme" />
+                                <div class="theme-preview-content">
+                                    <span class="theme-label">Light</span>
+                                </div>
+                            </label>
+                            <label class="theme-preview dark">
+                                <input type="radio" name="theme" value="dark" id="darkTheme" />
+                                <div class="theme-preview-content">
+                                    <span class="theme-label">Dark</span>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Notifications tab -->
+                <div id="notificationsTab" class="settings-tab">
+                    <div class="page-header">
+                        <h1>Notifications</h1>
+                        <p>Control how and when you are notified</p>
+                    </div>
+
+                    <div class="settings-section">
+                        <div class="setting-option">
+                            <div class="option-info">
+                                <h3>Push Notifications</h3>
+                                <p>Receive notifications for new messages</p>
+                            </div>
+                            <label class="toggle">
+                                <input
+                                    type="checkbox"
+                                    class="toggle-input"
+                                    id="pushNotifications"
+                                />
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="setting-option">
+                            <div class="option-info">
+                                <h3>Notification Sound</h3>
+                                <p>Play a sound when a message arrives</p>
+                            </div>
+                            <label class="toggle">
+                                <input
+                                    type="checkbox"
+                                    class="toggle-input"
+                                    id="notificationSound"
+                                />
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Privacy tab -->
+                <div id="privacyTab" class="settings-tab">
+                    <div class="page-header">
+                        <h1>Privacy</h1>
+                        <p>Control what others can see about you</p>
+                    </div>
+
+                    <div class="settings-section">
+                        <div class="setting-option">
+                            <div class="option-info">
+                                <h3>Show Last Seen</h3>
+                                <p>Let others see when you were last active</p>
+                            </div>
+                            <label class="toggle">
+                                <input type="checkbox" class="toggle-input" id="showLastSeen" />
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="setting-option">
+                            <div class="option-info">
+                                <h3>Show Profile Photo</h3>
+                                <p>Allow others to see your avatar</p>
+                            </div>
+                            <label class="toggle">
+                                <input type="checkbox" class="toggle-input" id="showProfilePhoto" />
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Help tab -->
+                <div id="helpTab" class="settings-tab">
+                    <div class="page-header">
+                        <h1>Help</h1>
+                        <p>App information and support resources</p>
+                    </div>
+
+                    <div class="settings-section">
+                        <div class="section-header">
+                            <h2>About</h2>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Version</label>
+                            <p style="font-size: var(--text-sm); color: var(--fg-secondary)">
+                                1.0.0
+                            </p>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Platform</label>
+                            <p
+                                id="platformInfo"
+                                style="font-size: var(--text-sm); color: var(--fg-secondary)"
+                            >
+                                Web
+                            </p>
+                        </div>
+                    </div>
+                </div>
             </div>
-          </div>
         </div>
-
-        <!-- Notifications tab -->
-        <div id="notificationsTab" class="settings-tab">
-          <div class="page-header">
-            <h1>Notifications</h1>
-            <p>Control how and when you are notified</p>
-          </div>
-
-          <div class="settings-section">
-            <div class="setting-option">
-              <div class="option-info">
-                <h3>Push Notifications</h3>
-                <p>Receive notifications for new messages</p>
-              </div>
-              <label class="toggle">
-                <input
-                  type="checkbox"
-                  class="toggle-input"
-                  id="pushNotifications"
-                />
-                <span class="toggle-slider"></span>
-              </label>
+        <template id="__error_template__">
+            <div id="__error_overlay__">
+                <div class="__err_backdrop__">
+                    <div class="__err_card__">
+                        <div class="__err_icon__"></div>
+                        <div class="__err_code__"></div>
+                        <h1 class="__err_title__"></h1>
+                        <p class="__err_subtitle__"></p>
+                        <p class="__err_hint__"></p>
+                        <div class="__err_actions__">
+                            <button
+                                class="__err_btn__ __err_btn_primary__"
+                                id="__err_primary_btn__"
+                            ></button>
+                            <button class="__err_btn__ __err_btn_ghost__" id="__err_back_btn__">
+                                ← Go Back
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="setting-option">
-              <div class="option-info">
-                <h3>Notification Sound</h3>
-                <p>Play a sound when a message arrives</p>
-              </div>
-              <label class="toggle">
-                <input
-                  type="checkbox"
-                  class="toggle-input"
-                  id="notificationSound"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-          </div>
-        </div>
-
-        <!-- Privacy tab -->
-        <div id="privacyTab" class="settings-tab">
-          <div class="page-header">
-            <h1>Privacy</h1>
-            <p>Control what others can see about you</p>
-          </div>
-
-          <div class="settings-section">
-            <div class="setting-option">
-              <div class="option-info">
-                <h3>Show Last Seen</h3>
-                <p>Let others see when you were last active</p>
-              </div>
-              <label class="toggle">
-                <input type="checkbox" class="toggle-input" id="showLastSeen" />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <div class="setting-option">
-              <div class="option-info">
-                <h3>Show Profile Photo</h3>
-                <p>Allow others to see your avatar</p>
-              </div>
-              <label class="toggle">
-                <input
-                  type="checkbox"
-                  class="toggle-input"
-                  id="showProfilePhoto"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-          </div>
-        </div>
-
-        <!-- Help tab -->
-        <div id="helpTab" class="settings-tab">
-          <div class="page-header">
-            <h1>Help</h1>
-            <p>App information and support resources</p>
-          </div>
-
-          <div class="settings-section">
-            <div class="section-header">
-              <h2>About</h2>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Version</label>
-              <p style="font-size: var(--text-sm); color: var(--fg-secondary)">
-                1.0.0
-              </p>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Platform</label>
-              <p
-                id="platformInfo"
-                style="font-size: var(--text-sm); color: var(--fg-secondary)"
-              >
-                Web
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-    <template id="__error_template__">
-      <div id="__error_overlay__">
-        <div class="__err_backdrop__">
-          <div class="__err_card__">
-            <div class="__err_icon__"></div>
-            <div class="__err_code__"></div>
-            <h1 class="__err_title__"></h1>
-            <p class="__err_subtitle__"></p>
-            <p class="__err_hint__"></p>
-            <div class="__err_actions__">
-              <button
-                class="__err_btn__ __err_btn_primary__"
-                id="__err_primary_btn__"
-              ></button>
-              <button
-                class="__err_btn__ __err_btn_ghost__"
-                id="__err_back_btn__"
-              >
-                ← Go Back
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </template>
-    <script defer src="static/js/utils/error.interceptor.js"></script>
-  </body>
+        </template>
+        <script defer src="static/js/utils/error.interceptor.js"></script>
+    </body>
 </html>
