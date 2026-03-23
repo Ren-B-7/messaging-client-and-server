@@ -99,7 +99,7 @@ def main():
         for sig in (signal.SIGINT, signal.SIGTERM):
             try:
                 signal.signal(sig, _signal_handler)
-            except OSError, ValueError:
+            except (OSError, ValueError):
                 # Signal registration may fail on some platforms (e.g. non-main thread).
                 pass
 

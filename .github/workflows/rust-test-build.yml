@@ -109,10 +109,5 @@ jobs:
               run: |
                   sudo apt-get update
                   sudo apt-get install -y python3-tk xvfb
-            - name: Install Python deps
-              run: |
-                  pip install --upgrade pip
-                  # Install from requirements.txt if you have one, otherwise just direct deps:
-                  pip install -r requirements.txt  # or: pip install requests httpx etc.
             - name: Run headless GUI smoke test
               run: xvfb-run python main.py
