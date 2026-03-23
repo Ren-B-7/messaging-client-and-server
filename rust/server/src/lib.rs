@@ -1,6 +1,5 @@
 use std::{sync::Arc, time::Duration};
 
-use base64::engine::Config;
 use hyper::{
     Method,
     header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderValue},
@@ -44,7 +43,6 @@ pub struct AppState {
     pub ip_filter: IpFilter,
     pub rate_limiter: RateLimiter,
     pub metrics: Metrics,
-    pub timeout: Duration,
     pub sse_manager: Arc<SseManager>,
     pub jwt_secret: Arc<String>,
     pub user_router: Arc<Router>,
