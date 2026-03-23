@@ -6,19 +6,29 @@ jobs:
     # --- PHASE 1: LINTING & FORMATTING (Runs in Parallel) ---
     bacon-and-fmt:
         runs-on: ubuntu-latest
+        permissions:
+            checks: write
         defaults:
             run:
                 working-directory: ./rust
         steps:
             - uses: actions/checkout@v4
-            - name: Install Clippy # Ensure clippy is available
-              run: rustup component add clippy
+            - name: Install Rust & Clippy
+              uses: dtolnay/rust-toolchain@stable
+              with:
+                  components: clippy, rustfmt
+            - name: Rust Cache
+              uses: Swatinem/rust-cache@v2
+              with:
+                  workspaces: "rust -> target" # Points to the subdirectory
             - name: Check Rust Format
               run: cargo fmt --check
-            - name: Run Clippy
-              run: cargo clippy --all-targets -- -D warnings
-            - name: Run Check
-              run: cargo check
+            - name: Run Clippy Action
+              uses: auguwu/clippy-action@v1
+              with:
+                  token: ${{ secrets.GITHUB_TOKEN }}
+                  working-directory: ./rust
+                  clippy_flags: --all-targets -- -D warnings
 
     ruff-lint:
         runs-on: ubuntu-latest
@@ -68,6 +78,10 @@ jobs:
         defaults: { run: { working-directory: ./rust } }
         steps:
             - uses: actions/checkout@v4
+            - name: Rust Cache
+              uses: Swatinem/rust-cache@v2
+              with:
+                  workspaces: "rust -> target"
             - run: cargo test --verbose
 
     # --- PHASE 3: RUST BUILD ---
@@ -77,8 +91,11 @@ jobs:
         defaults: { run: { working-directory: ./rust } }
         steps:
             - uses: actions/checkout@v4
+            - name: Rust Cache
+              uses: Swatinem/rust-cache@v2
+              with:
+                  workspaces: "rust -> target"
             - run: cargo build --release --verbose
-
     # --- PHASE 4: PYTHON GUI BUILD & RUN ---
     python-build:
         needs: [ruff-lint, black-format-check]
