@@ -790,7 +790,7 @@ async fn sse_broadcast_chat_created(
 // ---------------------------------------------------------------------------
 
 async fn parse_message_body(
-    _req: Request<Incoming>,
+    req: Request<Incoming>,
 ) -> std::result::Result<SendMessageData, MessageError> {
     let body = req
         .collect()
