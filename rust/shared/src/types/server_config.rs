@@ -31,6 +31,8 @@ pub struct ServerConfig {
     pub port_client: Option<u16>,
     #[serde(default = "default_max_connections")]
     pub max_connections: usize,
+    #[serde(default = "default_timeout")]
+    pub timeout: u64,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -151,6 +153,10 @@ pub fn default_client_port() -> Option<u16> {
 
 pub fn default_max_connections() -> usize {
     1000
+}
+
+pub fn default_timeout() -> u64 {
+    10
 }
 
 pub fn default_token_expiry() -> u64 {

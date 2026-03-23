@@ -1,266 +1,351 @@
-/// Tests for SSE manager and broadcast functionality
+use server::handlers::sse::sse_helper::{ChatContext, SseManager, SseStreamBuilder};
+use shared::types::sse::SseEvent;
 use std::collections::HashMap;
 
-// These tests are extracted from src/handlers/sse/mod.rs (the SSE manager tests)
-// They verify the SseManager's ability to manage channels, broadcast events, and cleanup
-
-// ── SSE Manager channel tests ────────────────────────────────────────
+// ── ChatContext::from_params ──────────────────────────────────────────────
 
 #[test]
-fn test_get_channel_creates_channel() {
-    // get_channel should create a new broadcast channel for first call
-    let user_id = 100;
-    let user_id2 = 100;
-
-    // Verify both references are to the same user
-    assert_eq!(user_id, user_id2);
-}
-
-#[test]
-fn test_get_channel_returns_sender() {
-    // get_channel should return a broadcast Sender
-    let _user_id = 1;
-
-    // The sender can have multiple subscribers
-    let can_subscribe = true;
-    assert!(can_subscribe);
-}
-
-#[test]
-fn test_different_users_different_channels() {
-    // Different users should get different channels
-    let user1 = 2;
-    let user2 = 3;
-
-    assert_ne!(user1, user2);
-}
-
-#[test]
-fn test_same_user_same_channel() {
-    // Multiple calls for same user should return same channel
-    let user_id = 4;
-    let user_id2 = 4;
-
-    assert_eq!(user_id, user_id2);
-}
-
-// ── Broadcast tests ──────────────────────────────────────────────────
-
-#[test]
-fn test_broadcast_to_user_with_channel() {
-    // Broadcasting to user with active channel should succeed
-    let _user_id = 3;
-
-    // If user has a channel, broadcast succeeds
-    let has_channel = true;
-    assert!(has_channel);
-}
-
-#[test]
-fn test_broadcast_to_user_no_channel() {
-    // Broadcasting to user with no channel should return 0 subscribers
-    let _user_id = 1;
-
-    // No channel = 0 subscribers
-    let subscriber_count = 0;
-    assert_eq!(subscriber_count, 0);
-}
-
-#[test]
-fn test_broadcast_to_multiple_users() {
-    // broadcast_to_users should send to all specified users
-    let users = [1, 2, 3];
-    assert_eq!(users.len(), 3);
-}
-
-#[test]
-fn test_broadcast_preserves_event_data() {
-    // Broadcast should preserve the original event data
-    let _user_id = 2;
-    let event_type = "message".to_string();
-
-    assert_eq!(event_type, "message");
-}
-
-#[test]
-fn test_broadcast_multiple_subscribers_same_user() {
-    // Multiple subscribers on same user should receive event
-    let subscriber_count = 3;
-    assert!(subscriber_count > 1);
-}
-
-// ── Cleanup tests ───────────────────────────────────────────────────
-
-#[test]
-fn test_cleanup_removes_inactive_channels() {
-    // Cleanup should remove channels with no receivers
-    let active_user = 2;
-    let inactive_user = 3;
-
-    assert_ne!(active_user, inactive_user);
-}
-
-#[test]
-fn test_cleanup_keeps_active_channels() {
-    // Cleanup should keep channels with active receivers
-    let _user_with_subscriber = 4;
-
-    // If user still has subscribers, channel should remain
-    let has_subscriber = true;
-    assert!(has_subscriber);
-}
-
-#[test]
-fn test_cleanup_updates_channel_count() {
-    // Cleanup should reduce channel count
-    let before_cleanup = 10;
-    let removed = 5;
-    let after_cleanup = before_cleanup - removed;
-
-    assert_eq!(after_cleanup, 5);
-}
-
-// ── Concurrent operations tests ──────────────────────────────────────
-
-#[test]
-fn test_concurrent_broadcasts_same_user() {
-    // Multiple concurrent broadcasts to same user
-    let _user_id = 5;
-    let broadcast_count = 5;
-
-    assert_eq!(broadcast_count, 5);
-}
-
-#[test]
-fn test_concurrent_broadcasts_different_users() {
-    // Multiple concurrent broadcasts to different users
-    let users = [1, 2, 3];
-    assert_eq!(users.len(), 3);
-}
-
-// ── Event data integrity tests ───────────────────────────────────────
-
-#[test]
-fn test_complex_json_data_preserved() {
-    // Complex JSON structures should be preserved
-    let json_keys = ["message", "user_id", "tags", "nested"];
-    assert_eq!(json_keys.len(), 4);
-}
-
-#[test]
-fn test_event_type_preserved() {
-    // Event type should be unchanged in broadcast
-    let original_type = "complex_event".to_string();
-    let broadcast_type = "complex_event".to_string();
-
-    assert_eq!(original_type, broadcast_type);
-}
-
-#[test]
-fn test_user_id_overwritten_in_broadcast() {
-    // user_id should be set to recipient in broadcast_to_users
-    let _original_user_id = 1;
-    let recipient_user_id = 2;
-
-    // After broadcast, should have recipient's user_id
-    assert_eq!(recipient_user_id, 2);
-}
-
-// ── Event ordering tests ─────────────────────────────────────────────
-
-#[test]
-fn test_events_received_in_order() {
-    // Events should be received in the order broadcast
-    let events = [
-        ("message".to_string(), 1000i64),
-        ("typing".to_string(), 1001i64),
-        ("read".to_string(), 1002i64),
-    ];
-
-    for (i, (_, timestamp)) in events.iter().enumerate() {
-        assert_eq!(*timestamp, 1000 + i as i64);
+fn chat_context_parses_chat_id() {
+    let mut p = HashMap::new();
+    p.insert("chat_id".to_string(), "42".to_string());
+    let ctx = ChatContext::from_params(&p);
+    assert!(ctx.is_some());
+    match ctx.unwrap() {
+        ChatContext::Chat { chat_id } => assert_eq!(chat_id, 42),
     }
 }
 
 #[test]
-fn test_receiver_sees_all_events() {
-    // Subscriber should receive all broadcasts
-    let broadcast_count = 5;
-    let expected_receives = 5;
-
-    assert_eq!(broadcast_count, expected_receives);
-}
-
-// ── Error handling tests ─────────────────────────────────────────────
-
-#[test]
-fn test_channel_send_failure_handled() {
-    // Failed sends should be handled gracefully
-    let send_error = true;
-    assert!(send_error); // Error should be caught
+fn chat_context_parses_large_id() {
+    let mut p = HashMap::new();
+    p.insert("chat_id".to_string(), format!("{}", i64::MAX));
+    let ctx = ChatContext::from_params(&p);
+    assert!(ctx.is_some());
+    match ctx.unwrap() {
+        ChatContext::Chat { chat_id } => assert_eq!(chat_id, i64::MAX),
+    }
 }
 
 #[test]
-fn test_no_panic_on_missing_channel() {
-    // Should not panic when channel doesn't exist
-    let _user_id = 3;
-
-    // Broadcasting to non-existent user shouldn't panic
-    let should_not_panic = true;
-    assert!(should_not_panic);
-}
-
-// ── ChatContext parsing tests ────────────────────────────────────────
-// (These duplicate tests from sse.rs but verify both contexts)
-
-#[test]
-fn test_chat_context_group_by_chat_id_1() {
-    let mut params = HashMap::new();
-    params.insert("chat_id".to_string(), "1".to_string());
-
-    let chat_id: Option<i64> = params.get("chat_id").and_then(|s| s.parse().ok());
-
-    assert!(chat_id.is_some());
-    assert_eq!(chat_id.unwrap(), 1);
+fn chat_context_missing_param_returns_none() {
+    let p: HashMap<String, String> = HashMap::new();
+    assert!(ChatContext::from_params(&p).is_none());
 }
 
 #[test]
-fn test_chat_context_group_by_chat_id_2() {
-    let mut params = HashMap::new();
-    params.insert("chat_id".to_string(), "7".to_string());
-
-    let chat_id: Option<i64> = params.get("chat_id").and_then(|s| s.parse().ok());
-
-    assert!(chat_id.is_some());
-    assert_eq!(chat_id.unwrap(), 7);
+fn chat_context_non_numeric_returns_none() {
+    let mut p = HashMap::new();
+    p.insert("chat_id".to_string(), "not-a-number".to_string());
+    assert!(ChatContext::from_params(&p).is_none());
 }
 
 #[test]
-fn test_chat_context_group_by_chat_id_large() {
-    let mut params = HashMap::new();
-    params.insert("chat_id".to_string(), "991234565445".to_string());
+fn chat_context_wrong_key_returns_none() {
+    let mut p = HashMap::new();
+    p.insert("group_id".to_string(), "5".to_string()); // wrong key
+    assert!(ChatContext::from_params(&p).is_none());
+}
 
-    let chat_id: Option<i64> = params.get("chat_id").and_then(|s| s.parse().ok());
+// ── SseStreamBuilder::format_raw ─────────────────────────────────────────
 
-    assert!(chat_id.is_some());
-    assert_eq!(chat_id.unwrap(), 991234565445);
+#[test]
+fn format_raw_contains_event_line() {
+    let data = serde_json::json!({ "count": 3 });
+    let frame = SseStreamBuilder::format_raw("history_start", &data);
+    assert!(
+        frame.starts_with("event: history_start\n"),
+        "frame: {}",
+        frame
+    );
 }
 
 #[test]
-fn test_chat_context_missing_returns_none() {
-    let params: HashMap<String, String> = HashMap::new();
-
-    let chat_id: Option<i64> = params.get("chat_id").and_then(|s| s.parse().ok());
-
-    assert!(chat_id.is_none());
+fn format_raw_contains_data_line() {
+    let data = serde_json::json!({ "count": 3 });
+    let frame = SseStreamBuilder::format_raw("history_start", &data);
+    assert!(frame.contains("data:"), "frame: {}", frame);
+    assert!(frame.contains("\"count\":3"), "frame: {}", frame);
 }
 
 #[test]
-fn test_chat_context_invalid_value_returns_none() {
-    let mut params = HashMap::new();
-    params.insert("other_param".to_string(), "not-a-number".to_string());
+fn format_raw_contains_id_line() {
+    let data = serde_json::json!({});
+    let frame = SseStreamBuilder::format_raw("history_end", &data);
+    assert!(frame.contains("id:"), "frame: {}", frame);
+}
 
-    let chat_id: Option<i64> = params.get("chat_id").and_then(|s| s.parse().ok());
+#[test]
+fn format_raw_ends_with_double_newline() {
+    let data = serde_json::json!({});
+    let frame = SseStreamBuilder::format_raw("connected", &data);
+    assert!(frame.ends_with("\n\n"), "SSE frame must end with \\n\\n");
+}
 
-    assert!(chat_id.is_none());
+#[test]
+fn format_raw_ids_are_unique() {
+    let data = serde_json::json!({});
+    let f1 = SseStreamBuilder::format_raw("evt", &data);
+    let f2 = SseStreamBuilder::format_raw("evt", &data);
+    // Extract the id lines and verify they differ (UUID v4 each time)
+    let id1: &str = f1.lines().find(|l| l.starts_with("id:")).unwrap();
+    let id2: &str = f2.lines().find(|l| l.starts_with("id:")).unwrap();
+    assert_ne!(id1, id2, "each frame must carry a fresh UUID");
+}
+
+// ── SseStreamBuilder::format_event ───────────────────────────────────────
+
+#[test]
+fn format_event_embeds_event_type() {
+    let event = SseEvent {
+        user_id: 1,
+        event_type: "new_message".to_string(),
+        data: serde_json::json!({ "content": "hi" }),
+        timestamp: 1000,
+    };
+    let frame = SseStreamBuilder::format_event(&event);
+    assert!(frame.contains("event: new_message"), "frame: {}", frame);
+}
+
+#[test]
+fn format_event_ends_with_double_newline() {
+    let event = SseEvent {
+        user_id: 1,
+        event_type: "ping".to_string(),
+        data: serde_json::json!({}),
+        timestamp: 0,
+    };
+    let frame = SseStreamBuilder::format_event(&event);
+    assert!(frame.ends_with("\n\n"));
+}
+
+// ── SseManager — channel creation and reuse ───────────────────────────────
+
+#[tokio::test]
+async fn get_channel_creates_channel_on_first_call() {
+    let manager = SseManager::new();
+    let _tx = manager.get_channel(1).await;
+    let channels = manager.channels.read().await;
+    assert!(channels.contains_key(&1));
+}
+
+#[tokio::test]
+async fn get_channel_same_user_returns_same_channel() {
+    let manager = SseManager::new();
+    let tx1 = manager.get_channel(1).await;
+    let tx2 = manager.get_channel(1).await;
+    // If they share the same channel, subscribing on one is visible on the other.
+    assert_eq!(
+        tx1.receiver_count(),
+        tx2.receiver_count(),
+        "both handles must reflect the same underlying channel"
+    );
+}
+
+#[tokio::test]
+async fn get_channel_different_users_are_isolated() {
+    let manager = SseManager::new();
+    let tx1 = manager.get_channel(1).await;
+    let tx2 = manager.get_channel(2).await;
+    // Subscribe on user-1's channel; user-2's count should be unaffected.
+    let _rx = tx1.subscribe();
+    assert_eq!(tx1.receiver_count(), 1);
+    assert_eq!(tx2.receiver_count(), 0);
+}
+
+// ── SseManager — broadcast_to_user ────────────────────────────────────────
+
+#[tokio::test]
+async fn broadcast_to_user_returns_subscriber_count() {
+    let manager = SseManager::new();
+    let tx = manager.get_channel(1).await;
+    let _rx1 = tx.subscribe();
+    let _rx2 = tx.subscribe();
+
+    let event = SseEvent {
+        user_id: 1,
+        event_type: "test".to_string(),
+        data: serde_json::json!({}),
+        timestamp: 0,
+    };
+    let count = manager.broadcast_to_user(event).await.unwrap();
+    assert_eq!(count, 2);
+}
+
+#[tokio::test]
+async fn broadcast_to_user_no_channel_returns_zero() {
+    let manager = SseManager::new();
+    let event = SseEvent {
+        user_id: 99,
+        event_type: "test".to_string(),
+        data: serde_json::json!({}),
+        timestamp: 0,
+    };
+    let count = manager.broadcast_to_user(event).await.unwrap();
+    assert_eq!(count, 0);
+}
+
+#[tokio::test]
+async fn broadcast_to_user_delivers_event_data() {
+    let manager = SseManager::new();
+    let tx = manager.get_channel(1).await;
+    let mut rx = tx.subscribe();
+
+    let payload = serde_json::json!({ "text": "hello", "id": 42 });
+    let event = SseEvent {
+        user_id: 1,
+        event_type: "message".to_string(),
+        data: payload.clone(),
+        timestamp: 9999,
+    };
+    manager.broadcast_to_user(event).await.unwrap();
+
+    let received = rx.recv().await.unwrap();
+    assert_eq!(received.data, payload);
+    assert_eq!(received.event_type, "message");
+    assert_eq!(received.user_id, 1);
+}
+
+// ── SseManager — broadcast_to_users ──────────────────────────────────────
+
+#[tokio::test]
+async fn broadcast_to_users_stamps_recipient_user_id() {
+    // broadcast_to_users must rewrite user_id on each copy to the recipient,
+    // not leave the original sender's user_id on every frame.
+    let manager = SseManager::new();
+
+    let tx1 = manager.get_channel(10).await;
+    let tx2 = manager.get_channel(20).await;
+    let mut rx1 = tx1.subscribe();
+    let mut rx2 = tx2.subscribe();
+
+    let event = SseEvent {
+        user_id: 99, // original sender — should be replaced on delivery
+        event_type: "group_msg".to_string(),
+        data: serde_json::json!({}),
+        timestamp: 0,
+    };
+    manager
+        .broadcast_to_users(event, vec![10, 20])
+        .await
+        .unwrap();
+
+    let r1 = rx1.recv().await.unwrap();
+    let r2 = rx2.recv().await.unwrap();
+    assert_eq!(r1.user_id, 10, "recipient 10 must see their own user_id");
+    assert_eq!(r2.user_id, 20, "recipient 20 must see their own user_id");
+}
+
+#[tokio::test]
+async fn broadcast_to_users_skips_users_with_no_channel() {
+    let manager = SseManager::new();
+    let tx1 = manager.get_channel(1).await;
+    let mut rx1 = tx1.subscribe();
+    // user 2 has no channel
+
+    let event = SseEvent {
+        user_id: 0,
+        event_type: "evt".to_string(),
+        data: serde_json::json!({}),
+        timestamp: 0,
+    };
+    // Should not panic or error when user 2 has no channel
+    let result = manager.broadcast_to_users(event, vec![1, 2]).await;
+    assert!(result.is_ok());
+    assert!(rx1.recv().await.is_ok());
+}
+
+// ── SseManager — event ordering ───────────────────────────────────────────
+
+#[tokio::test]
+async fn events_delivered_in_broadcast_order() {
+    let manager = SseManager::new();
+    let tx = manager.get_channel(1).await;
+    let mut rx = tx.subscribe();
+
+    for i in 0u64..5 {
+        manager
+            .broadcast_to_user(SseEvent {
+                user_id: 1,
+                event_type: format!("evt_{}", i),
+                data: serde_json::json!({ "seq": i }),
+                timestamp: i as i64,
+            })
+            .await
+            .unwrap();
+    }
+
+    for i in 0u64..5 {
+        let received = rx.recv().await.unwrap();
+        assert_eq!(received.event_type, format!("evt_{}", i));
+    }
+}
+
+// ── SseManager — cleanup ─────────────────────────────────────────────────
+
+#[tokio::test]
+async fn cleanup_removes_channels_with_no_receivers() {
+    let manager = SseManager::new();
+
+    // user 1: no subscriber → should be cleaned up
+    let _tx1 = manager.get_channel(1).await;
+
+    // user 2: keeps a live subscriber → must survive cleanup
+    let tx2 = manager.get_channel(2).await;
+    let _rx2 = tx2.subscribe();
+
+    manager.cleanup().await;
+
+    let channels = manager.channels.read().await;
+    assert!(!channels.contains_key(&1), "user 1 should be removed");
+    assert!(channels.contains_key(&2), "user 2 should remain");
+}
+
+#[tokio::test]
+async fn cleanup_does_not_affect_active_channels() {
+    let manager = SseManager::new();
+    let tx = manager.get_channel(5).await;
+    let _rx = tx.subscribe();
+
+    manager.cleanup().await;
+    manager.cleanup().await; // idempotent
+
+    let channels = manager.channels.read().await;
+    assert!(channels.contains_key(&5));
+}
+
+// ── SseManager — concurrent broadcasts ───────────────────────────────────
+
+#[tokio::test]
+async fn concurrent_broadcasts_all_delivered() {
+    let manager = std::sync::Arc::new(SseManager::new());
+    let tx = manager.get_channel(1).await;
+    let mut rx = tx.subscribe();
+
+    let handles: Vec<_> = (0..10u64)
+        .map(|i| {
+            let m = manager.clone();
+            tokio::spawn(async move {
+                m.broadcast_to_user(SseEvent {
+                    user_id: 1,
+                    event_type: "concurrent".to_string(),
+                    data: serde_json::json!({ "i": i }),
+                    timestamp: i as i64,
+                })
+                .await
+                .unwrap();
+            })
+        })
+        .collect();
+
+    for h in handles {
+        h.await.unwrap();
+    }
+
+    let mut count = 0;
+    while let Ok(Ok(_)) =
+        tokio::time::timeout(std::time::Duration::from_millis(200), rx.recv()).await
+    {
+        count += 1;
+    }
+    assert_eq!(count, 10);
 }

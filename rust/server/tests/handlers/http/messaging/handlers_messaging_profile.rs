@@ -1,7 +1,6 @@
-/// Tests for user profile and settings handlers
 use std::collections::HashMap;
 
-// ── Form parsing utilities ─────────────────────────────────────────────────
+// ── Form parsing (username + email update) ────────────────────────────────
 
 #[test]
 fn parse_update_both_fields() {
@@ -72,19 +71,22 @@ fn parse_update_empty_fields_become_none() {
 }
 
 #[test]
-fn parse_update_whitespace_trimmed() {
-    let body = b"username=%20alice%20";
+fn parse_update_whitespace_is_trimmed_to_none() {
+    let body = b"username=%20%20%20";
     let params: HashMap<String, String> =
         form_urlencoded::parse(body.as_ref()).into_owned().collect();
     let username = params
         .get("username")
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
-    assert_eq!(username, Some("alice".to_string()));
+    assert!(
+        username.is_none(),
+        "whitespace-only username must become None"
+    );
 }
 
 #[test]
-fn parse_update_special_chars_encoded() {
+fn parse_update_url_encoded_chars_decoded() {
     let body = b"email=user%2Btest%40example.com";
     let params: HashMap<String, String> =
         form_urlencoded::parse(body.as_ref()).into_owned().collect();
@@ -93,188 +95,119 @@ fn parse_update_special_chars_encoded() {
 }
 
 #[test]
-fn parse_update_multiple_same_key_last_wins() {
-    let body = b"username=alice&username=bob";
-    let params: HashMap<String, String> =
-        form_urlencoded::parse(body.as_ref()).into_owned().collect();
-    // HashMap behavior — last value typically wins
-    let username = params.get("username").map(|s| s.to_string());
-    assert!(username.is_some());
-}
-
-#[test]
-fn parse_update_unknown_fields_ignored() {
+fn parse_update_unknown_fields_are_ignored() {
     let body = b"username=alice&unknown_field=value&email=alice@example.com";
     let params: HashMap<String, String> =
         form_urlencoded::parse(body.as_ref()).into_owned().collect();
-    let username = params.get("username").map(|s| s.to_string());
-    let email = params.get("email").map(|s| s.to_string());
-    assert_eq!(username, Some("alice".to_string()));
-    assert_eq!(email, Some("alice@example.com".to_string()));
-    // unknown_field is present but should be ignored
+    assert_eq!(params.get("username").map(|s| s.as_str()), Some("alice"));
+    assert_eq!(
+        params.get("email").map(|s| s.as_str()),
+        Some("alice@example.com")
+    );
+    // Unknown fields are present in the map but the handler ignores them
     assert!(params.contains_key("unknown_field"));
 }
 
-// ── Email validation ───────────────────────────────────────────────────────
+// ── Avatar MIME type → extension mapping ─────────────────────────────────
 
 #[test]
-fn valid_email_simple() {
-    let email = "user@example.com";
-    assert!(email.contains("@"));
-}
-
-#[test]
-fn valid_email_with_plus() {
-    let email = "user+tag@example.com";
-    assert!(email.contains("@"));
-    assert!(email.contains("+"));
-}
-
-#[test]
-fn valid_email_with_dots() {
-    let email = "user.name@example.com";
-    assert!(email.contains("@"));
-    assert!(email.contains("."));
-}
-
-#[test]
-fn invalid_email_no_at_sign() {
-    let email = "userexample.com";
-    assert!(!email.contains("@"));
-}
-
-#[test]
-fn invalid_email_no_domain() {
-    let email = "user@";
-    assert!(email.contains("@"));
-    assert_eq!(email.split('@').count(), 2);
-}
-
-// ── Avatar filename/extension handling ──────────────────────────────────
-
-#[test]
-fn avatar_extension_jpg() {
-    let ext = "jpg";
-    assert_eq!(ext, "jpg");
-}
-
-#[test]
-fn avatar_extension_jpeg() {
-    let ext = "jpeg";
-    assert_eq!(ext, "jpeg");
-}
-
-#[test]
-fn avatar_extension_png() {
-    let ext = "png";
-    assert_eq!(ext, "png");
-}
-
-#[test]
-fn avatar_extension_gif() {
-    let ext = "gif";
-    assert_eq!(ext, "gif");
-}
-
-#[test]
-fn avatar_extension_webp() {
-    let ext = "webp";
-    assert_eq!(ext, "webp");
-}
-
-#[test]
-fn avatar_filename_user_id_based() {
-    let user_id = 42;
-    let ext = "jpg";
-    let filename = format!("{}.{}", user_id, ext);
-    assert_eq!(filename, "42.jpg");
-}
-
-#[test]
-fn avatar_filename_large_user_id() {
-    let user_id = 9223372036854775800_i64;
-    let ext = "png";
-    let filename = format!("{}.{}", user_id, ext);
-    assert!(filename.contains(".png"));
-}
-
-// ── MIME type validation ───────────────────────────────────────────────────
-
-#[test]
-fn mime_type_jpeg() {
-    let mime = "image/jpeg";
-    assert!(mime.contains("image"));
-}
-
-#[test]
-fn mime_type_png() {
-    let mime = "image/png";
-    assert_eq!(mime, "image/png");
-}
-
-#[test]
-fn mime_type_gif() {
-    let mime = "image/gif";
-    assert_eq!(mime, "image/gif");
-}
-
-#[test]
-fn mime_type_webp() {
-    let mime = "image/webp";
-    assert_eq!(mime, "image/webp");
-}
-
-#[test]
-fn mime_type_invalid_not_image() {
-    let mime = "text/plain";
-    assert!(!mime.starts_with("image"));
-}
-
-// ── Integration scenarios ──────────────────────────────────────────────────
-
-#[test]
-fn parse_then_validate_username() {
-    let body = b"username=alice_new";
-    let params: HashMap<String, String> =
-        form_urlencoded::parse(body.as_ref()).into_owned().collect();
-    let username = params
-        .get("username")
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-
-    assert!(username.is_some());
-    let name = username.unwrap();
-    assert!(!name.is_empty());
-}
-
-#[test]
-fn parse_then_validate_email() {
-    let body = b"email=new%40example.com";
-    let params: HashMap<String, String> =
-        form_urlencoded::parse(body.as_ref()).into_owned().collect();
-    let email = params
-        .get("email")
-        .map(|s| s.to_string())
-        .filter(|s| !s.is_empty());
-
-    assert!(email.is_some());
-    let e = email.unwrap();
-    assert!(e.contains("@"));
-}
-
-#[test]
-fn avatar_upload_flow() {
-    // Simulate avatar upload flow
-    let user_id = 123_i64;
-    let mime_type = "image/png";
-    let ext = match mime_type {
+fn jpeg_mime_maps_to_jpg_extension() {
+    let ext = match "image/jpeg" {
         "image/jpeg" | "image/jpg" => "jpg",
         "image/png" => "png",
         "image/gif" => "gif",
         "image/webp" => "webp",
         _ => "jpg",
     };
+    assert_eq!(ext, "jpg");
+}
 
+#[test]
+fn png_mime_maps_to_png_extension() {
+    let ext = match "image/png" {
+        "image/jpeg" | "image/jpg" => "jpg",
+        "image/png" => "png",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        _ => "jpg",
+    };
+    assert_eq!(ext, "png");
+}
+
+#[test]
+fn gif_mime_maps_to_gif_extension() {
+    let ext = match "image/gif" {
+        "image/jpeg" | "image/jpg" => "jpg",
+        "image/png" => "png",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        _ => "jpg",
+    };
+    assert_eq!(ext, "gif");
+}
+
+#[test]
+fn webp_mime_maps_to_webp_extension() {
+    let ext = match "image/webp" {
+        "image/jpeg" | "image/jpg" => "jpg",
+        "image/png" => "png",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        _ => "jpg",
+    };
+    assert_eq!(ext, "webp");
+}
+
+#[test]
+fn unknown_mime_falls_back_to_jpg() {
+    let ext = match "image/bmp" {
+        "image/jpeg" | "image/jpg" => "jpg",
+        "image/png" => "png",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        _ => "jpg",
+    };
+    assert_eq!(ext, "jpg");
+}
+
+#[test]
+fn non_image_mime_is_rejected() {
+    let mime = "text/plain";
+    assert!(
+        !mime.starts_with("image/"),
+        "non-image MIME must be rejected"
+    );
+}
+
+#[test]
+fn non_image_application_mime_is_rejected() {
+    let mime = "application/pdf";
+    assert!(!mime.starts_with("image/"));
+}
+
+// ── Avatar filename construction ──────────────────────────────────────────
+
+#[test]
+fn avatar_filename_uses_user_id_and_extension() {
+    let user_id = 123_i64;
+    let mime = "image/png";
+    let ext = match mime {
+        "image/jpeg" | "image/jpg" => "jpg",
+        "image/png" => "png",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        _ => "jpg",
+    };
     let filename = format!("{}.{}", user_id, ext);
     assert_eq!(filename, "123.png");
+}
+
+#[test]
+fn avatar_filename_overwrites_previous_for_same_user() {
+    // Two uploads by the same user produce the same filename, so the second
+    // replaces the first on disk — no orphaned files.
+    let user_id = 7_i64;
+    let filename_first = format!("{}.jpg", user_id);
+    let filename_second = format!("{}.jpg", user_id);
+    assert_eq!(filename_first, filename_second);
 }

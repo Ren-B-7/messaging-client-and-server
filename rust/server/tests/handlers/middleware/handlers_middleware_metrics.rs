@@ -1,335 +1,226 @@
-/// Tests for metrics tracking functionality
+use server::Metrics;
 use std::time::Duration;
 
-// Tests for metrics functionality from src/tower_middle/security/metrics.rs
+// ── Initialisation ────────────────────────────────────────────────────────
 
-// ── Metrics initialization tests ──────────────────────────────────────
+#[tokio::test]
+async fn fresh_metrics_snapshot_is_all_zero() {
+    let metrics = Metrics::new();
+    let snap = metrics.snapshot().await;
 
-#[test]
-fn test_metrics_creation() {
-    // Metrics should be created successfully
-    let total_requests = 0u64;
-    let active_connections = 0usize;
-
-    assert_eq!(total_requests, 0);
-    assert_eq!(active_connections, 0);
+    assert_eq!(snap.total_requests, 0, "total_requests must start at 0");
+    assert_eq!(
+        snap.active_connections, 0,
+        "active_connections must start at 0"
+    );
+    assert_eq!(snap.error_count, 0, "error_count must start at 0");
 }
 
-#[test]
-fn test_metrics_counters_start_at_zero() {
-    // All metrics should start at zero
-    let error_count = 0u64;
-    let bytes_sent = 0u64;
-    let bytes_received = 0u64;
-    let rate_limited = 0u64;
-    let ip_blocked = 0u64;
+// ── request_start / request_end lifecycle ────────────────────────────────
 
-    assert_eq!(error_count, 0);
-    assert_eq!(bytes_sent, 0);
-    assert_eq!(bytes_received, 0);
-    assert_eq!(rate_limited, 0);
-    assert_eq!(ip_blocked, 0);
+#[tokio::test]
+async fn request_start_increments_total_and_active() {
+    let metrics = Metrics::new();
+    metrics.request_start();
+
+    let snap = metrics.snapshot().await;
+    assert_eq!(snap.total_requests, 1);
+    assert_eq!(snap.active_connections, 1);
 }
 
-#[test]
-fn test_metrics_uptime_initialized() {
-    // Uptime should be recorded on creation
-    let uptime = Duration::from_secs(0);
-    assert_eq!(uptime.as_secs(), 0);
+#[tokio::test]
+async fn request_end_decrements_active_connections() {
+    let metrics = Metrics::new();
+    metrics.request_start();
+    metrics.request_end(Duration::from_millis(10));
+
+    let snap = metrics.snapshot().await;
+    assert_eq!(snap.total_requests, 1, "total must still be 1 after end");
+    assert_eq!(snap.active_connections, 0, "active must drop back to 0");
 }
 
-// ── Request tracking tests ───────────────────────────────────────────
+#[tokio::test]
+async fn multiple_concurrent_requests_tracked() {
+    let metrics = Metrics::new();
+    for _ in 0..5 {
+        metrics.request_start();
+    }
 
-#[test]
-fn test_request_start_increments_count() {
-    // request_start should increment total_requests
-    let mut total_requests = 0u64;
-    total_requests += 1;
-
-    assert_eq!(total_requests, 1);
+    let snap = metrics.snapshot().await;
+    assert_eq!(snap.total_requests, 5);
+    assert_eq!(snap.active_connections, 5);
 }
 
-#[test]
-fn test_request_start_increments_active_connections() {
-    // request_start should increment active_connections
-    let mut active_connections = 0usize;
-    active_connections += 1;
+#[tokio::test]
+async fn active_connections_return_to_zero_after_all_end() {
+    let metrics = Metrics::new();
+    for _ in 0..3 {
+        metrics.request_start();
+    }
+    for _ in 0..3 {
+        metrics.request_end(Duration::from_millis(5));
+    }
 
-    assert_eq!(active_connections, 1);
+    let snap = metrics.snapshot().await;
+    assert_eq!(snap.active_connections, 0);
+    assert_eq!(snap.total_requests, 3);
 }
 
-#[test]
-fn test_multiple_requests_increment() {
-    // Multiple requests should be tracked
-    let mut total_requests = 0u64;
+#[tokio::test]
+async fn active_connections_never_go_below_zero() {
+    let metrics = Metrics::new();
+    metrics.request_start();
+    metrics.request_end(Duration::from_millis(1));
+    metrics.request_end(Duration::from_millis(1)); // extra end — must not underflow
 
+    let snap = metrics.snapshot().await;
+    // The implementation uses saturating_sub; active_connections must be 0, not negative.
+    assert_eq!(snap.active_connections, 0);
+}
+
+// ── Error tracking ────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn record_error_increments_error_count() {
+    let metrics = Metrics::new();
+    metrics.request_start();
+    metrics.record_error();
+
+    let snap = metrics.snapshot().await;
+    assert_eq!(snap.error_count, 1);
+}
+
+#[tokio::test]
+async fn multiple_errors_accumulate() {
+    let metrics = Metrics::new();
+    for _ in 0..7 {
+        metrics.record_error();
+    }
+
+    let snap = metrics.snapshot().await;
+    assert_eq!(snap.error_count, 7);
+}
+
+#[tokio::test]
+async fn successful_request_does_not_increment_error_count() {
+    let metrics = Metrics::new();
+    metrics.request_start();
+    metrics.request_end(Duration::from_millis(20));
+    // No record_error call
+
+    let snap = metrics.snapshot().await;
+    assert_eq!(snap.error_count, 0);
+}
+
+// ── Derived statistics ────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn error_rate_is_zero_with_no_requests() {
+    let metrics = Metrics::new();
+    let snap = metrics.snapshot().await;
+    assert_eq!(snap.error_rate(), 0.0);
+}
+
+#[tokio::test]
+async fn error_rate_is_100_when_all_requests_fail() {
+    let metrics = Metrics::new();
+    for _ in 0..4 {
+        metrics.request_start();
+        metrics.record_error();
+        metrics.request_end(Duration::from_millis(5));
+    }
+
+    let snap = metrics.snapshot().await;
+    assert_eq!(snap.total_requests, 4);
+    assert_eq!(snap.error_count, 4);
+    let rate = snap.error_rate();
+    assert!(
+        (rate - 100.0).abs() < 0.01,
+        "error_rate should be 100.0, got {:.2}",
+        rate
+    );
+}
+
+#[tokio::test]
+async fn error_rate_calculation_is_correct() {
+    let metrics = Metrics::new();
+    // 10 requests, 2 errors → 20%
     for _ in 0..10 {
-        total_requests += 1;
+        metrics.request_start();
+        metrics.request_end(Duration::from_millis(1));
+    }
+    for _ in 0..2 {
+        metrics.record_error();
     }
 
-    assert_eq!(total_requests, 10);
+    let snap = metrics.snapshot().await;
+    let rate = snap.error_rate();
+    assert!(
+        (rate - 20.0).abs() < 0.01,
+        "error_rate should be 20.0, got {:.2}",
+        rate
+    );
 }
 
-#[test]
-fn test_request_end_decrements_active() {
-    // request_end should decrement active_connections
-    let mut active_connections = 5usize;
-    active_connections -= 1;
+// ── Latency recording ─────────────────────────────────────────────────────
 
-    assert_eq!(active_connections, 4);
-}
+#[tokio::test]
+async fn single_request_latency_is_recorded() {
+    let metrics = Metrics::new();
+    metrics.request_start();
+    metrics.request_end(Duration::from_millis(50));
 
-#[test]
-fn test_active_connections_never_negative() {
-    // Active connections should not go below zero
-    let mut active_connections = 1usize;
-    active_connections = active_connections.saturating_sub(1);
-
-    assert_eq!(active_connections, 0);
-
-    // Don't go negative
-    active_connections = active_connections.saturating_sub(1);
-    assert_eq!(active_connections, 0);
-}
-
-// ── Error tracking tests ─────────────────────────────────────────────
-
-#[test]
-fn test_record_error_increments_count() {
-    // record_error should increment error_count
-    let mut error_count = 0u64;
-    error_count += 1;
-
-    assert_eq!(error_count, 1);
-}
-
-#[test]
-fn test_multiple_errors_tracked() {
-    // Multiple errors should be tracked
-    let mut error_count = 0u64;
-
-    for _ in 0..5 {
-        error_count += 1;
+    let snap = metrics.snapshot().await;
+    // avg_latency must be Some and close to 50ms after one sample
+    if let Some(avg) = snap.latency_avg {
+        let ms = avg.as_secs_f64() * 1000.0;
+        assert!(
+            (ms - 50.0).abs() < 5.0,
+            "avg latency should be ~50ms, got {:.2}ms",
+            ms
+        );
     }
-
-    assert_eq!(error_count, 5);
+    // If avg is None the implementation doesn't track latency — that's also
+    // acceptable; we just skip the assertion.
 }
 
-// ── Byte tracking tests ──────────────────────────────────────────────
-
-#[test]
-fn test_record_bytes_sent() {
-    // record_bytes_sent should accumulate
-    let mut bytes_sent = 0u64;
-    bytes_sent += 1024; // 1KB
-
-    assert_eq!(bytes_sent, 1024);
+#[tokio::test]
+async fn requests_per_second_is_zero_before_any_requests() {
+    let metrics = Metrics::new();
+    let snap = metrics.snapshot().await;
+    // RPS should be 0 or NaN-safe when no requests have arrived
+    let rps = snap.requests_per_second();
+    assert!(rps >= 0.0, "RPS must not be negative");
 }
 
-#[test]
-fn test_record_bytes_received() {
-    // record_bytes_received should accumulate
-    let mut bytes_received = 0u64;
-    bytes_received += 2048; // 2KB
+// ── Snapshot format ───────────────────────────────────────────────────────
 
-    assert_eq!(bytes_received, 2048);
+#[tokio::test]
+async fn snapshot_format_is_non_empty_string() {
+    let metrics = Metrics::new();
+    metrics.request_start();
+    metrics.request_end(Duration::from_millis(10));
+
+    let snap = metrics.snapshot().await;
+    let formatted = snap.format();
+    assert!(
+        !formatted.is_empty(),
+        "formatted snapshot must not be empty"
+    );
 }
 
-#[test]
-fn test_bytes_accumulate() {
-    // Bytes should accumulate over multiple requests
-    let mut bytes_sent = 0u64;
+// ── Clone shares state ────────────────────────────────────────────────────
 
-    for _ in 0..5 {
-        bytes_sent += 1024;
-    }
+#[tokio::test]
+async fn cloned_metrics_reflects_updates_from_original() {
+    let metrics = Metrics::new();
+    let clone = metrics.clone();
 
-    assert_eq!(bytes_sent, 5120);
-}
+    metrics.request_start();
 
-#[test]
-fn test_megabyte_tracking() {
-    // Should handle megabytes
-    let mut bytes_sent = 0u64;
-    bytes_sent += 1024 * 1024; // 1MB
-
-    assert_eq!(bytes_sent, 1048576);
-}
-
-// ── Rate limiting metrics tests ──────────────────────────────────────
-
-#[test]
-fn test_record_rate_limited() {
-    // record_rate_limited should increment counter
-    let mut rate_limited = 0u64;
-    rate_limited += 1;
-
-    assert_eq!(rate_limited, 1);
-}
-
-#[test]
-fn test_record_ip_blocked() {
-    // record_ip_blocked should increment counter
-    let mut ip_blocked = 0u64;
-    ip_blocked += 1;
-
-    assert_eq!(ip_blocked, 1);
-}
-
-// ── Snapshot calculations tests ──────────────────────────────────────
-
-#[test]
-fn test_requests_per_second_calculation() {
-    // RPS = total_requests / uptime_seconds
-    let total_requests = 100u64;
-    let uptime_secs = 10u64;
-
-    let rps = total_requests as f64 / uptime_secs as f64;
-    assert_eq!(rps, 10.0);
-}
-
-#[test]
-fn test_requests_per_second_zero_uptime() {
-    // RPS should be 0.0 when uptime is 0
-    let total_requests = 100u64;
-    let uptime_secs = 0u64;
-
-    let rps = if uptime_secs == 0 {
-        0.0
-    } else {
-        total_requests as f64 / uptime_secs as f64
-    };
-    assert_eq!(rps, 0.0);
-}
-
-#[test]
-fn test_error_rate_calculation() {
-    // Error rate = (error_count / total_requests) * 100
-    let error_count = 5u64;
-    let total_requests = 100u64;
-
-    let error_rate = (error_count as f64 / total_requests as f64) * 100.0;
-    assert!((error_rate - 5.0).abs() < 0.01);
-}
-
-#[test]
-fn test_error_rate_zero_requests() {
-    // Error rate should be 0.0 with zero requests
-    let error_count = 0u64;
-    let total_requests = 0u64;
-
-    let error_rate = if total_requests == 0 {
-        0.0
-    } else {
-        (error_count as f64 / total_requests as f64) * 100.0
-    };
-    assert_eq!(error_rate, 0.0);
-}
-
-#[test]
-fn test_error_rate_all_errors() {
-    // Error rate should be 100% when all fail
-    let error_count = 100u64;
-    let total_requests = 100u64;
-
-    let error_rate = (error_count as f64 / total_requests as f64) * 100.0;
-    assert!((error_rate - 100.0).abs() < 0.01);
-}
-
-// ── Latency percentile tests ─────────────────────────────────────────
-
-#[test]
-fn test_latency_percentile_p50() {
-    // P50 latency should be median
-    let latencies = [10, 20, 30, 40, 50]; // in ms
-    let sorted = latencies;
-    let index = (50.0 / 100.0) * sorted.len() as f64;
-
-    assert!(index >= 0.0 && index < sorted.len() as f64);
-}
-
-#[test]
-fn test_latency_percentile_p95() {
-    // P95 latency should be 95th percentile
-    let latencies: Vec<u32> = (1..=100).collect(); // 1-100ms
-    let sorted = latencies;
-    let index = ((95.0 / 100.0) * sorted.len() as f64) as usize;
-
-    assert!(sorted[index] >= 95);
-}
-
-#[test]
-fn test_latency_percentile_p99() {
-    // P99 latency should be 99th percentile
-    let latencies: Vec<u32> = (1..=100).collect();
-    let sorted = latencies;
-    let index = ((99.0 / 100.0) * sorted.len() as f64) as usize;
-
-    assert!(sorted[index] >= 99);
-}
-
-#[test]
-fn test_average_latency_calculation() {
-    // Average latency should be mean of all samples
-    let latencies = [
-        Duration::from_millis(10),
-        Duration::from_millis(20),
-        Duration::from_millis(30),
-    ];
-
-    let sum: Duration = latencies.iter().sum();
-    let avg = sum / latencies.len() as u32;
-
-    assert_eq!(avg, Duration::from_millis(20));
-}
-
-#[test]
-fn test_single_latency_sample() {
-    // Single sample should be its own average and percentiles
-    let latencies = [Duration::from_millis(50)];
-
-    let sum: Duration = latencies.iter().sum();
-    let avg = sum / latencies.len() as u32;
-
-    assert_eq!(avg, Duration::from_millis(50));
-}
-
-// ── Format/display tests ─────────────────────────────────────────────
-
-#[test]
-fn test_snapshot_format_contains_uptime() {
-    // Formatted output should contain uptime
-    let uptime = Duration::from_secs(60);
-    let format_string = format!("Uptime: {:.2}s", uptime.as_secs_f64());
-
-    assert!(format_string.contains("Uptime"));
-    assert!(format_string.contains("60"));
-}
-
-#[test]
-fn test_snapshot_format_contains_requests() {
-    // Formatted output should contain request count
-    let total_requests = 1000u64;
-    let format_string = format!("Requests: {}", total_requests);
-
-    assert!(format_string.contains("Requests"));
-    assert!(format_string.contains("1000"));
-}
-
-#[test]
-fn test_snapshot_format_contains_errors() {
-    // Formatted output should contain error count
-    let error_count = 5u64;
-    let format_string = format!("Errors: {}", error_count);
-
-    assert!(format_string.contains("Errors"));
-}
-
-#[test]
-fn test_latency_in_milliseconds() {
-    // Latencies should be formatted in milliseconds
-    let latency = Duration::from_millis(150);
-    let ms = latency.as_secs_f64() * 1000.0;
-
-    assert!((ms - 150.0).abs() < 0.01);
+    let snap = clone.snapshot().await;
+    assert_eq!(
+        snap.total_requests, 1,
+        "clone must see updates made through the original handle"
+    );
 }

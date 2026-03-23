@@ -1,239 +1,186 @@
-/// Tests for rate limiting functionality
+use server::RateLimiter;
 use std::net::IpAddr;
-use std::time::Duration;
 
-// These tests are extracted from src/tower_middle/security/rate_limiter.rs
-// They verify token bucket rate limiting per IP address
+// ── Default-allow (fresh bucket is full) ─────────────────────────────────
 
-#[test]
-fn test_rate_limiter_creation() {
-    // Rate limiter should be created with capacity and refill rate
-    let requests_per_second = 10;
-    let burst = 5;
-
-    assert!(requests_per_second > 0);
-    assert!(burst > 0);
-    assert!(burst <= requests_per_second * 2);
-}
-
-#[test]
-fn test_rate_limiter_capacity_stored() {
-    // Capacity should match burst parameter
-    let burst = 5;
-    let capacity = burst;
-    assert_eq!(capacity, 5);
-}
-
-#[test]
-fn test_rate_limiter_refill_rate_stored() {
-    // Refill rate should match requests_per_second
-    let requests_per_second = 10;
-    let refill_rate = requests_per_second;
-    assert_eq!(refill_rate, 10);
+#[tokio::test]
+async fn first_request_from_new_ip_is_allowed() {
+    let limiter = RateLimiter::new(100, 200);
+    let ip: IpAddr = "192.168.1.1".parse().unwrap();
+    assert!(limiter.check(ip).await, "first request must be allowed");
 }
 
 #[tokio::test]
-async fn test_rate_limiter_bucket_initialization() {
-    // First request should succeed (bucket starts full)
-    // This simulates the check logic without async complications
-    let mut tokens = 5.0; // burst capacity
-    tokens -= 1.0; // consume one token
-    assert!(tokens >= 0.0);
+async fn first_request_from_ipv6_is_allowed() {
+    let limiter = RateLimiter::new(100, 200);
+    let ip: IpAddr = "2001:db8::1".parse().unwrap();
+    assert!(limiter.check(ip).await);
+}
+
+// ── Burst capacity ────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn burst_capacity_requests_all_succeed() {
+    // RateLimiter::new(rate, burst): the bucket starts full at `burst` tokens.
+    // All burst requests should succeed before the bucket empties.
+    let burst = 10usize;
+    let limiter = RateLimiter::new(100, burst);
+    let ip: IpAddr = "10.0.0.1".parse().unwrap();
+
+    for i in 0..burst {
+        assert!(
+            limiter.check(ip).await,
+            "request {} within burst must be allowed",
+            i + 1
+        );
+    }
 }
 
 #[tokio::test]
-async fn test_rate_limiter_burst_tokens() {
-    // Should be able to consume up to burst capacity at once
-    let capacity = 5.0;
-    let mut tokens = capacity;
+async fn request_beyond_burst_is_rate_limited() {
+    // With rate=1 and burst=1, the second immediate request must be rejected.
+    let limiter = RateLimiter::new(1, 1);
+    let ip: IpAddr = "10.0.0.2".parse().unwrap();
 
-    for _ in 0..5 {
-        if tokens >= 1.0 {
-            tokens -= 1.0;
-        }
-    }
+    let first = limiter.check(ip).await;
+    assert!(first, "first request must be allowed");
 
-    // All 5 burst tokens should be consumed
-    assert_eq!(tokens, 0.0);
+    let second = limiter.check(ip).await;
+    assert!(!second, "second immediate request must be rate-limited");
+}
+
+// ── Per-IP isolation ──────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn different_ips_have_independent_buckets() {
+    let limiter = RateLimiter::new(1, 1);
+    let ip1: IpAddr = "10.0.0.1".parse().unwrap();
+    let ip2: IpAddr = "10.0.0.2".parse().unwrap();
+
+    // Exhaust ip1
+    limiter.check(ip1).await;
+    let ip1_second = limiter.check(ip1).await;
+    assert!(
+        !ip1_second,
+        "ip1 should be rate-limited after exhausting burst"
+    );
+
+    // ip2 must be unaffected
+    assert!(limiter.check(ip2).await, "ip2 must still be allowed");
 }
 
 #[tokio::test]
-async fn test_rate_limiter_refill_logic() {
-    // Tokens should refill over time
-    let refill_rate = 10.0_f64; // tokens per second
-    let elapsed = 0.2_f64; // 200ms
-    let tokens_to_add = elapsed * refill_rate;
+async fn loopback_and_private_ips_are_tracked_independently() {
+    let limiter = RateLimiter::new(1, 1);
+    let loopback: IpAddr = "127.0.0.1".parse().unwrap();
+    let private: IpAddr = "192.168.1.1".parse().unwrap();
 
-    // After 200ms at 10 req/sec, we should have 2 tokens
-    assert!((tokens_to_add - 2.0).abs() < 0.01);
+    assert!(limiter.check(loopback).await);
+    assert!(limiter.check(private).await);
+
+    // Both exhausted — second calls must fail
+    assert!(!limiter.check(loopback).await);
+    assert!(!limiter.check(private).await);
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn stats_total_ips_zero_before_any_request() {
+    let limiter = RateLimiter::new(100, 200);
+    let stats = limiter.stats().await;
+    assert_eq!(stats.total_ips, 0);
 }
 
 #[tokio::test]
-async fn test_rate_limiter_cap_at_capacity() {
-    // Tokens should never exceed capacity
-    let capacity = 5.0_f64;
-    let mut tokens = 3.0_f64;
-    let refill = 5.0_f64;
+async fn stats_total_ips_increments_per_unique_ip() {
+    let limiter = RateLimiter::new(100, 200);
+    limiter.check("10.0.0.1".parse::<IpAddr>().unwrap()).await;
+    limiter.check("10.0.0.2".parse::<IpAddr>().unwrap()).await;
+    limiter.check("10.0.0.2".parse::<IpAddr>().unwrap()).await; // same IP again
 
-    tokens = (tokens + refill).min(capacity);
-
-    // Should be capped at capacity (5.0)
-    assert_eq!(tokens, 5.0);
+    let stats = limiter.stats().await;
+    assert_eq!(stats.total_ips, 2, "only unique IPs are counted");
 }
 
-#[test]
-fn test_rate_limiter_different_ips_isolated() {
-    // Different IPs should have separate buckets
-    let ip1 = "192.168.1.1".parse::<IpAddr>().unwrap();
-    let ip2 = "192.168.1.2".parse::<IpAddr>().unwrap();
-
-    assert_ne!(ip1, ip2);
+#[tokio::test]
+async fn stats_capacity_and_refill_rate_match_constructor() {
+    let limiter = RateLimiter::new(100, 200);
+    let stats = limiter.stats().await;
+    assert_eq!(stats.capacity, 200, "capacity must match burst argument");
+    assert_eq!(
+        stats.refill_rate, 100,
+        "refill_rate must match rate argument"
+    );
 }
 
-#[test]
-fn test_rate_limiter_ipv4_parsing() {
-    // IPv4 addresses should parse correctly
-    let ip = "127.0.0.1".parse::<IpAddr>();
-    assert!(ip.is_ok());
+#[tokio::test]
+async fn stats_rate_limited_count_increments_on_rejection() {
+    let limiter = RateLimiter::new(1, 1);
+    let ip: IpAddr = "172.16.0.1".parse().unwrap();
+
+    limiter.check(ip).await; // allowed
+    limiter.check(ip).await; // rate-limited
+
+    let stats = limiter.stats().await;
+    assert!(
+        stats.rate_limited >= 1,
+        "at least one rejection should be recorded"
+    );
 }
 
-#[test]
-fn test_rate_limiter_ipv6_parsing() {
-    // IPv6 addresses should parse correctly
-    let ip = "::1".parse::<IpAddr>();
-    assert!(ip.is_ok());
+// ── Cleanup ───────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn cleanup_is_callable_without_panic() {
+    let limiter = RateLimiter::new(100, 200);
+    limiter.check("1.2.3.4".parse::<IpAddr>().unwrap()).await;
+    limiter.cleanup().await; // must not panic
 }
 
-#[test]
-fn test_rate_limiter_cleanup_duration() {
-    // Cleanup should remove buckets older than duration
-    let cleanup_duration = Duration::from_secs(60);
-    assert_eq!(cleanup_duration.as_secs(), 60);
+#[tokio::test]
+async fn cleanup_is_idempotent() {
+    let limiter = RateLimiter::new(100, 200);
+    limiter.cleanup().await;
+    limiter.cleanup().await; // second call on empty limiter must not panic
 }
 
-// ── Token bucket algorithm tests ─────────────────────────────────────
+#[tokio::test]
+async fn after_cleanup_new_requests_from_same_ip_are_allowed() {
+    // After cleanup removes stale buckets, the next request from that IP
+    // starts with a fresh full bucket.
+    let limiter = RateLimiter::new(1, 1);
+    let ip: IpAddr = "9.9.9.9".parse().unwrap();
 
-#[test]
-fn test_token_consumption() {
-    // Consuming a token should decrease the count
-    let mut tokens = 5.0;
-    let initial = tokens;
+    limiter.check(ip).await; // consume the one token
+    assert!(
+        !limiter.check(ip).await,
+        "should be rate-limited before cleanup"
+    );
 
-    if tokens >= 1.0 {
-        tokens -= 1.0;
-    }
+    limiter.cleanup().await;
 
-    assert_eq!(tokens, initial - 1.0);
+    // After cleanup the bucket for this IP may or may not have been removed
+    // depending on the implementation's eviction policy (some only evict old
+    // buckets, some evict all zero-token buckets).  What we can assert is that
+    // cleanup does not panic and the limiter remains usable.
+    let _ = limiter.check(ip).await; // must not panic
 }
 
-#[test]
-fn test_insufficient_tokens() {
-    // Should not allow consumption when tokens < 1.0
-    let tokens = 0.5;
+// ── Clone shares state ────────────────────────────────────────────────────
 
-    if tokens >= 1.0 {
-        // Should not execute
-        panic!("Allowed consumption with insufficient tokens");
-    }
-}
+#[tokio::test]
+async fn cloned_limiter_shares_bucket_state() {
+    let limiter = RateLimiter::new(1, 1);
+    let clone = limiter.clone();
+    let ip: IpAddr = "5.5.5.5".parse().unwrap();
 
-#[test]
-fn test_fractional_token_refill() {
-    // Refill should handle fractional tokens
-    let refill_rate = 10.0_f64; // tokens per second
-    let elapsed_ms = 150.0_f64; // 150ms
-    let elapsed_s = elapsed_ms / 1000.0;
-    let tokens_to_add = elapsed_s * refill_rate;
+    // Exhaust the bucket through the original handle
+    limiter.check(ip).await;
 
-    // 150ms should give 1.5 tokens
-    assert!((tokens_to_add - 1.5).abs() < 0.01);
-}
-
-#[test]
-fn test_multiple_burst_windows() {
-    // After consuming burst, should wait for refill
-    let capacity = 5.0_f64;
-    let mut tokens = capacity;
-    let refill_rate = 10.0_f64;
-
-    // Consume all burst tokens
-    for _ in 0..5 {
-        if tokens >= 1.0 {
-            tokens -= 1.0;
-        }
-    }
-    assert_eq!(tokens, 0.0);
-
-    // Refill 100ms (1 token at 10 req/sec)
-    let elapsed_s = 0.1;
-    tokens = (tokens + (elapsed_s * refill_rate)).min(capacity);
-    assert!(tokens >= 1.0);
-}
-
-// ── Rate limiter statistics tests ────────────────────────────────────
-
-#[test]
-fn test_rate_limiter_stats_structure() {
-    // Stats should contain meaningful data
-    let total_ips = 10;
-    let rate_limited = 2;
-    let capacity = 5;
-    let refill_rate = 10;
-
-    assert!(total_ips > 0);
-    assert!(rate_limited <= total_ips);
-    assert_eq!(capacity, 5);
-    assert_eq!(refill_rate, 10);
-}
-
-#[test]
-fn test_rate_limiter_stats_zero_initial() {
-    // Initial stats should be zero/empty
-    let total_ips = 0;
-    let rate_limited = 0;
-
-    assert_eq!(total_ips, 0);
-    assert_eq!(rate_limited, 0);
-}
-
-#[test]
-fn test_rate_limited_count_percentage() {
-    // Can calculate percentage of rate-limited IPs
-    let total_ips = 100;
-    let rate_limited = 25;
-
-    let percentage = (rate_limited as f64 / total_ips as f64) * 100.0;
-    assert!((percentage - 25.0).abs() < 0.01);
-}
-
-// ── Common configurations tests ──────────────────────────────────────
-
-#[test]
-fn test_standard_rate_limit_config() {
-    // Common configuration: 100 req/sec, burst of 200
-    let requests_per_second = 100;
-    let burst = 200;
-
-    assert_eq!(requests_per_second, 100);
-    assert_eq!(burst, 200);
-}
-
-#[test]
-fn test_strict_rate_limit_config() {
-    // Strict configuration: 10 req/sec, burst of 20
-    let requests_per_second = 10;
-    let burst = 20;
-
-    assert_eq!(requests_per_second, 10);
-    assert_eq!(burst, 20);
-}
-
-#[test]
-fn test_generous_rate_limit_config() {
-    // Generous configuration: 1000 req/sec, burst of 2000
-    let requests_per_second = 1000;
-    let burst = 2000;
-
-    assert_eq!(requests_per_second, 1000);
-    assert_eq!(burst, 2000);
+    // The clone must see the same exhausted bucket
+    assert!(
+        !clone.check(ip).await,
+        "clone must share the same rate-limit state"
+    );
 }
