@@ -61,15 +61,7 @@ jobs:
 
     # --- PHASE 2: RUST TESTING ---
     cargo-test:
-        needs:
-            [
-                bacon-and-fmt,
-                ruff-lint,
-                htmlhint,
-                stylelint,
-                black-format-check,
-                prettier-format-check,
-            ]
+        needs: [bacon-and-fmt]
         runs-on: ubuntu-latest
         defaults: { run: { working-directory: ./rust } }
         steps:
@@ -87,7 +79,7 @@ jobs:
 
     # --- PHASE 4: PYTHON GUI BUILD & RUN ---
     python-build:
-        needs: [cargo-build]
+        needs: [ruff-lint, black-format-check]
         runs-on: ubuntu-latest
         defaults: { run: { working-directory: ./python-gui } }
         steps:
