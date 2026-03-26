@@ -436,19 +436,19 @@ async fn deliver_text_returns_ok_status() {
 fn expand_tilde_without_home_env_returns_original() {
     // Without HOME set this returns the path unchanged; with HOME it expands.
     // Just check the function doesn't panic with a non-tilde path.
-    let p = expand_tilde("/absolute/path/file.html");
+    let p = expand_tilde("/absolute/path/file.html").unwrap();
     assert_eq!(p.to_str().unwrap(), "/absolute/path/file.html");
 }
 
 #[test]
 fn expand_tilde_non_tilde_path_unchanged() {
-    let p = expand_tilde("/home/user/documents");
+    let p = expand_tilde("/home/user/documents").unwrap();
     assert_eq!(p.to_str().unwrap(), "/home/user/documents");
 }
 
 #[test]
 fn expand_tilde_relative_path_unchanged() {
-    let p = expand_tilde("./relative/path");
+    let p = expand_tilde("./relative/path").unwrap();
     assert_eq!(p.to_str().unwrap(), "./relative/path");
 }
 

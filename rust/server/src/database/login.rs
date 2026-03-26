@@ -8,7 +8,7 @@ use shared::types::login::*;
 pub async fn get_user_auth(conn: &Connection, username: String) -> Result<Option<UserAuth>> {
     conn.call(move |conn: &mut rusqlite::Connection| {
         let mut stmt = conn.prepare(
-            "SELECT id, username, password_hash, is_banned, ban_reason
+            "SELECT id, username, password_hash, is_banned, ban_reason, is_admin
              FROM users WHERE username = ?1",
         )?;
 
@@ -20,36 +20,12 @@ pub async fn get_user_auth(conn: &Connection, username: String) -> Result<Option
                     password_hash: row.get(2)?,
                     is_banned: row.get::<_, i64>(3)? != 0,
                     ban_reason: row.get(4)?,
+                    is_admin: row.get(5)?,
                 })
             })
             .optional()?;
 
         Ok(user)
-    })
-    .await
-}
-
-/// Get admin authentication data by username — only matches rows where `is_admin = 1`.
-pub async fn get_admin_auth(conn: &Connection, username: String) -> Result<Option<AdminAuth>> {
-    conn.call(move |conn: &mut rusqlite::Connection| {
-        let mut stmt = conn.prepare(
-            "SELECT id, username, password_hash, is_banned, ban_reason
-             FROM users WHERE username = ?1 AND is_admin = 1",
-        )?;
-
-        let admin = stmt
-            .query_row(params![username], |row: &rusqlite::Row| {
-                Ok(AdminAuth {
-                    id: row.get(0)?,
-                    username: row.get(1)?,
-                    password_hash: row.get(2)?,
-                    is_banned: row.get::<_, i64>(3)? != 0,
-                    ban_reason: row.get(4)?,
-                })
-            })
-            .optional()?;
-
-        Ok(admin)
     })
     .await
 }

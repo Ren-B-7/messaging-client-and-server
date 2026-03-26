@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use thiserror::Error;
 
 // ---------------------------------------------------------------------------
 // Login wire types
@@ -49,7 +50,7 @@ pub enum LoginResponse {
 // Login errors
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Error, Debug, Clone, Serialize)]
 pub enum LoginError {
     InvalidCredentials,
     UserBanned,
@@ -112,16 +113,7 @@ pub struct UserAuth {
     pub password_hash: String,
     pub is_banned: bool,
     pub ban_reason: Option<String>,
-}
-
-/// Auth record for admin accounts — same `users` table, filtered by `is_admin = 1`.
-#[derive(Debug, Clone)]
-pub struct AdminAuth {
-    pub id: i64,
-    pub username: String,
-    pub password_hash: String,
-    pub is_banned: bool,
-    pub ban_reason: Option<String>,
+    pub is_admin: bool,
 }
 
 /// Data required to INSERT a new session row.
@@ -168,5 +160,11 @@ impl fmt::Display for Session {
             "id={}, user_id={}, session_id={}, ip={:?}",
             self.id, self.user_id, self.session_id, self.ip_address
         )
+    }
+}
+
+impl fmt::Display for LoginError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "code={}, message={}", self.to_code(), self.to_message())
     }
 }

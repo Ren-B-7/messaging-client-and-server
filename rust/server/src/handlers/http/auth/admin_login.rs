@@ -67,7 +67,7 @@ async fn login_internal(
     let (user_id, username, jwt) = attempt_login(&login_data, &state, ip_address, user_agent)
         .await
         .map_err(|e| {
-            warn!("Admin login failed for user: {:?}", e.to_code());
+            warn!("Admin login failed for user: {:?}", e);
             LoginError::InvalidCredentials
         })?;
 
@@ -91,9 +91,7 @@ async fn login_internal(
 // Parsing / validation
 // ---------------------------------------------------------------------------
 
-async fn parse_body(
-    req: Request<hyper::body::Incoming>,
-) -> std::result::Result<LoginData, LoginError> {
+async fn parse_body(req: Request<hyper::body::Incoming>) -> anyhow::Result<LoginData, LoginError> {
     let body = req
         .collect()
         .await
@@ -106,18 +104,18 @@ async fn parse_body(
     })
 }
 
-fn validate_login(data: &LoginData) -> std::result::Result<(), LoginError> {
+fn validate_login(data: &LoginData) -> anyhow::Result<(), LoginError> {
     if data.username.is_empty() {
-        return Err(LoginError::MissingField("username".to_string()));
+        return Err(LoginError::MissingField("username".to_string()).into());
     }
     if data.username.len() > 32 {
-        return Err(LoginError::MissingField("username".to_string()));
+        return Err(LoginError::MissingField("username".to_string()).into());
     }
     if data.password.is_empty() {
-        return Err(LoginError::MissingField("password".to_string()));
+        return Err(LoginError::MissingField("password".to_string()).into());
     }
     if data.password.len() > 1024 {
-        return Err(LoginError::MissingField("password".to_string()));
+        return Err(LoginError::MissingField("password".to_string()).into());
     }
     Ok(())
 }
@@ -133,10 +131,10 @@ async fn attempt_login(
     state: &AppState,
     ip_address: Option<String>,
     user_agent: String,
-) -> std::result::Result<(i64, String, String), LoginError> {
+) -> anyhow::Result<(i64, String, String)> {
     info!("Attempting admin login for user: {}", data.username);
 
-    let admin_auth = login::get_admin_auth(&state.db, data.username.clone())
+    let admin_auth = login::get_user_auth(&state.db, data.username.clone())
         .await
         .map_err(|e| {
             error!("Database error getting admin auth: {}", e);
@@ -148,8 +146,8 @@ async fn attempt_login(
         })?;
 
     if admin_auth.is_banned {
-        warn!("Banned admin attempted login: {}", data.username);
-        return Err(LoginError::UserBanned);
+        warn!("Banned attempted login on admin: {}", data.username);
+        return Err(LoginError::UserBanned.into());
     }
 
     let password_valid =
@@ -161,7 +159,7 @@ async fn attempt_login(
 
     if !password_valid {
         warn!("Invalid password for admin: {}", data.username);
-        return Err(LoginError::InvalidCredentials);
+        return Err(LoginError::InvalidCredentials.into());
     }
 
     let session_id = crate::database::utils::generate_uuid_token();
