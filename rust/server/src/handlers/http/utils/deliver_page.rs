@@ -49,7 +49,7 @@ pub fn deliver_page_with_status<P: AsRef<Path>>(
     file_path: P,
     status: StatusCode,
     cache: CacheStrategy,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     let expanded_path: PathBuf = expand_tilde(file_path).context("Failed to expand path")?;
 
     debug!(
@@ -93,7 +93,7 @@ pub fn deliver_page_with_etag<P: AsRef<Path>>(
     status: StatusCode,
     cache: CacheStrategy,
     etag: &str,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     let expanded_path: PathBuf = expand_tilde(&file_path).context("Failed to expand path")?;
 
     debug!(
@@ -102,7 +102,8 @@ pub fn deliver_page_with_etag<P: AsRef<Path>>(
         etag
     );
 
-    let response = deliver_page_with_status(file_path, status, cache).unwrap();
+    let response = deliver_page_with_status(file_path, status, cache)
+        .context("Page could not be delivered")?;
     let response_with_etag = headers::add_etag_header(response, etag);
 
     Ok(response_with_etag)
