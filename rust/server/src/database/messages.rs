@@ -41,7 +41,7 @@ pub async fn get_chat_messages(
             "SELECT id, sender_id, chat_id, content, sent_at, delivered_at, read_at, is_encrypted, message_type
              FROM messages
              WHERE chat_id = ?1
-             ORDER BY sent_at DESC
+             ORDER BY sent_at DESC, id DESC
              LIMIT ?2 OFFSET ?3",
         )?;
 

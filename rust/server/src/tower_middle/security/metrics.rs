@@ -105,13 +105,17 @@ impl Metrics {
             .active_connections
             .fetch_add(1, Ordering::Relaxed);
     }
+
     pub fn request_end(&self, duration: Duration) {
+        // Replace fetch_sub with a saturating update
         self.inner
             .active_connections
-            .fetch_sub(1, Ordering::Relaxed);
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |curr| {
+                Some(curr.saturating_sub(1))
+            })
+            .ok();
 
         let latencies = Arc::clone(&self.inner.latencies);
-
         tokio::spawn(async move {
             let mut lat = latencies.write().await;
             lat.record(duration);
