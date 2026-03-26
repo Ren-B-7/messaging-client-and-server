@@ -113,7 +113,7 @@ python:
 
 gui:
 	@echo "Running Python GUI..."
-	cd $(PY_DIR) && uv run python app.py
+	cd $(PY_DIR) && uv run python main.py
 
 frontend:
 	@echo "Serving frontend..."
