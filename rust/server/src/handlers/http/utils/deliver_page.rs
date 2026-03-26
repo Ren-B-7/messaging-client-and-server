@@ -12,7 +12,7 @@ use crate::handlers::http::utils::headers;
 use shared::types::cache::CacheStrategy;
 
 /// Expand tilde (~) in path to home directory
-pub fn expand_tilde<P: AsRef<Path>>(path: P) -> PathBuf {
+pub fn expand_tilde<P: AsRef<Path>>(path: P) -> anyhow::Result<PathBuf> {
     let path_ref: &Path = path.as_ref();
     let path_str: &str = path_ref.to_str().unwrap_or("");
 
@@ -21,10 +21,10 @@ pub fn expand_tilde<P: AsRef<Path>>(path: P) -> PathBuf {
     {
         let mut home_path: PathBuf = PathBuf::from(home);
         home_path.push(s);
-        return home_path;
+        return Ok(home_path);
     }
 
-    path_ref.to_path_buf()
+    Ok(path_ref.to_path_buf())
 }
 
 /// Read an HTML file from disk and deliver it with no-cache headers.
@@ -50,7 +50,7 @@ pub fn deliver_page_with_status<P: AsRef<Path>>(
     status: StatusCode,
     cache: CacheStrategy,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    let expanded_path: PathBuf = expand_tilde(file_path);
+    let expanded_path: PathBuf = expand_tilde(file_path).context("Failed to expand path")?;
 
     debug!(
         "Reading static file from: {} (cache: {})",
@@ -94,7 +94,7 @@ pub fn deliver_page_with_etag<P: AsRef<Path>>(
     cache: CacheStrategy,
     etag: &str,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    let expanded_path: PathBuf = expand_tilde(&file_path);
+    let expanded_path: PathBuf = expand_tilde(&file_path).context("Failed to expand path")?;
 
     debug!(
         "Reading static file with ETag from: {} (etag: {})",
