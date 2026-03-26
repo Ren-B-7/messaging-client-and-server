@@ -14,7 +14,7 @@ jobs:
                   pip install mbake
 
             - name: Lint Makefile
-              run: mbake lint Makefile
+              run: mbake validate Makefile
 
             - name: Format check Makefile
               run: mbake format --check Makefile
