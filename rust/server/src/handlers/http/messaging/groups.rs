@@ -11,7 +11,7 @@
 //     on disk. The message row is now deleted in the same transaction.
 // -----------------------------------------------------------------------
 
-use anyhow::{Context, Result};
+use anyhow::Context;
 use bytes::Bytes;
 use form_urlencoded;
 use http_body_util::{BodyExt, combinators::BoxBody};
@@ -34,7 +34,7 @@ pub async fn handle_get_groups(
     _req: Request<Incoming>,
     state: AppState,
     claims: JwtClaims,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     let user_id = claims.user_id;
     info!("Fetching groups for user {}", user_id);
 
@@ -72,7 +72,7 @@ pub async fn handle_create_group(
     req: Request<Incoming>,
     state: AppState,
     user_id: i64,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("User {} creating a new group", user_id);
 
     let body = req
@@ -158,7 +158,7 @@ pub async fn handle_get_members(
     state: AppState,
     _claims: JwtClaims,
     chat_id: i64,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Fetching members for group {}", chat_id);
 
     // Single query: join group_members with users to get username in one shot.
@@ -211,7 +211,7 @@ pub async fn handle_add_member(
     state: AppState,
     _user_id: i64,
     chat_id: i64,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Adding member to group {}", chat_id);
 
     let body = req
@@ -284,7 +284,7 @@ pub async fn handle_rename_group(
     state: AppState,
     user_id: i64,
     chat_id: i64,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("User {} renaming group {}", user_id, chat_id);
 
     if !groups::is_group_member(&state.db, chat_id, user_id)
@@ -354,7 +354,7 @@ pub async fn handle_delete_group(
     state: AppState,
     user_id: i64,
     chat_id: i64,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("User {} deleting group {}", user_id, chat_id);
 
     let group = match groups::get_group(&state.db, chat_id).await? {
@@ -399,7 +399,7 @@ pub async fn handle_search_users(
     req: Request<Incoming>,
     state: AppState,
     claims: JwtClaims,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     let query_str = req.uri().query().unwrap_or("");
     let q: String = form_urlencoded::parse(query_str.as_bytes())
         .find(|(k, _)| k == "q")
@@ -449,7 +449,7 @@ pub async fn handle_remove_member(
     state: AppState,
     _user_id: i64,
     chat_id: i64,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Removing member from group {}", chat_id);
 
     let body = req

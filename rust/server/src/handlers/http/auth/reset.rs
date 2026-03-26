@@ -18,7 +18,7 @@
 //
 // Both endpoints are Open (no auth required) — the token IS the credential.
 
-use anyhow::Result;
+use anyhow;
 use bytes::Bytes;
 use http_body_util::BodyExt;
 use http_body_util::combinators::BoxBody;
@@ -44,7 +44,7 @@ use crate::handlers::http::utils::{deliver_error_json, deliver_serialized_json};
 pub async fn handle_reset_request(
     req: Request<hyper::body::Incoming>,
     state: AppState,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     let body = req
         .collect()
         .await
@@ -134,7 +134,7 @@ pub async fn handle_reset_request(
 pub async fn handle_reset_confirm(
     req: Request<hyper::body::Incoming>,
     state: AppState,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     let body = req
         .collect()
         .await

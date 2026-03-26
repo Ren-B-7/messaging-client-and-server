@@ -10,7 +10,7 @@
 use std::convert::Infallible;
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
+use anyhow::Context;
 use bytes::Bytes;
 use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full};
@@ -66,7 +66,7 @@ pub async fn handle_upload_file(
     req: Request<hyper::body::Incoming>,
     state: AppState,
     user_id: i64,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("File upload request from user {}", user_id);
 
     // ── 1. Parse Content-Type boundary ──────────────────────────────────────
@@ -309,7 +309,7 @@ pub async fn handle_download_file(
     state: AppState,
     claims: JwtClaims,
     file_id: i64,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     use crate::database::files;
 
     let user_id = claims.user_id;
@@ -382,7 +382,7 @@ pub async fn handle_get_chat_files(
     req: Request<hyper::body::Incoming>,
     state: AppState,
     claims: JwtClaims,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     use crate::database::files;
 
     let user_id = claims.user_id;
@@ -484,7 +484,7 @@ pub async fn handle_delete_file(
     state: AppState,
     user_id: i64,
     file_id: i64,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     use crate::database::files;
 
     info!("Delete file {} requested by user {}", file_id, user_id);

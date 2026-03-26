@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow;
 use bytes::Bytes;
 use http_body_util::BodyExt;
 use http_body_util::combinators::BoxBody;
@@ -21,7 +21,7 @@ use shared::types::login::*;
 pub async fn handle_login_api(
     req: Request<hyper::body::Incoming>,
     state: AppState,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     match login_internal(req, state).await {
         Ok((user_id, cookie)) => deliver_serialized_json_with_cookie(
             &serde_json::json!({ "status": "success", "user_id": user_id }),
@@ -35,7 +35,7 @@ pub async fn handle_login_api(
 pub async fn handle_login(
     req: Request<hyper::body::Incoming>,
     state: AppState,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     match login_internal(req, state).await {
         Ok((_user_id, cookie)) => Ok(deliver_redirect_with_cookie("/chat", cookie)?),
         Err(e) => deliver_serialized_json(&e.to_response(), StatusCode::UNAUTHORIZED),
@@ -45,7 +45,7 @@ pub async fn handle_login(
 async fn login_internal(
     req: Request<hyper::body::Incoming>,
     state: AppState,
-) -> Result<(i64, hyper::header::HeaderValue), LoginError> {
+) -> anyhow::Result<(i64, hyper::header::HeaderValue), LoginError> {
     // Simplified return
     let ip_address = get_client_ip(&req);
     let user_agent = get_user_agent(&req).unwrap_or_default();
@@ -90,7 +90,7 @@ async fn login_internal(
 // Parsing / validation
 // ---------------------------------------------------------------------------
 
-async fn parse_body(req: Request<hyper::body::Incoming>) -> Result<LoginData, LoginError> {
+async fn parse_body(req: Request<hyper::body::Incoming>) -> anyhow::Result<LoginData, LoginError> {
     let body = req
         .collect()
         .await
@@ -103,7 +103,7 @@ async fn parse_body(req: Request<hyper::body::Incoming>) -> Result<LoginData, Lo
     })
 }
 
-pub fn validate_login(data: &LoginData) -> std::result::Result<(), LoginError> {
+pub fn validate_login(data: &LoginData) -> anyhow::Result<(), LoginError> {
     if data.username.is_empty() {
         return Err(LoginError::MissingField("username".to_string()));
     }
@@ -138,7 +138,7 @@ async fn attempt_login(
     state: &AppState,
     ip_address: Option<String>,
     user_agent: String,
-) -> std::result::Result<(i64, String, String), LoginError> {
+) -> anyhow::Result<(i64, String, String), LoginError> {
     info!("Attempting login for user: {}", data.username);
 
     let user_auth = login::get_user_auth(&state.db, data.username.clone())

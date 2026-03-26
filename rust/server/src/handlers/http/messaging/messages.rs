@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::convert::Infallible;
 
-use anyhow::{Context, Result};
+use anyhow::Context;
 use bytes::Bytes;
 use form_urlencoded;
 use http_body_util::{BodyExt, combinators::BoxBody};
@@ -43,7 +43,7 @@ pub async fn handle_get_chats(
     _req: Request<Incoming>,
     state: AppState,
     claims: JwtClaims,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     let user_id = claims.user_id;
     info!("Processing get chats request for user {}", user_id);
 
@@ -155,7 +155,7 @@ pub async fn handle_create_chat(
     req: Request<Incoming>,
     state: AppState,
     user_id: i64,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing create chat request from user {}", user_id);
 
     let body = req
@@ -276,7 +276,7 @@ pub async fn handle_send_message(
     req: Request<Incoming>,
     state: AppState,
     user_id: i64,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing send message request from user {}", user_id);
 
     let message_data = match parse_message_body(req).await {
@@ -329,7 +329,7 @@ pub async fn handle_get_messages(
     req: Request<Incoming>,
     state: AppState,
     claims: JwtClaims,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     let user_id = claims.user_id;
     info!("Processing get messages request for user {}", user_id);
 
@@ -367,7 +367,7 @@ pub async fn handle_mark_read(
     state: AppState,
     user_id: i64,
     message_id: i64,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Marking message {} as read by user {}", message_id, user_id);
 
     let msg = messages::get_message_by_id(&state.db, message_id)
@@ -410,7 +410,7 @@ pub async fn handle_delete_message(
     state: AppState,
     user_id: i64,
     message_id: i64,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     info!(
         "Delete message {} requested by user {}",
         message_id, user_id
@@ -492,7 +492,7 @@ pub async fn handle_get_unread(
     req: Request<Incoming>,
     state: AppState,
     claims: JwtClaims,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     let user_id = claims.user_id;
     info!("Unread count request for user {}", user_id);
 
@@ -580,7 +580,7 @@ pub async fn handle_typing(
     req: Request<Incoming>,
     state: AppState,
     user_id: i64,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     let body = req
         .collect()
         .await
@@ -791,7 +791,7 @@ async fn sse_broadcast_chat_created(
 
 async fn parse_message_body(
     req: Request<Incoming>,
-) -> std::result::Result<SendMessageData, MessageError> {
+) -> anyhow::Result<SendMessageData, MessageError> {
     let body = req
         .collect()
         .await
@@ -818,15 +818,15 @@ async fn parse_message_body(
     })
 }
 
-pub fn validate_message(data: &SendMessageData) -> std::result::Result<(), MessageError> {
+pub fn validate_message(data: &SendMessageData) -> anyhow::Result<(), MessageError> {
     // Trim before the empty check so whitespace-only content ("   ", "\t\n")
     // is treated the same as an empty string — both are semantically empty
     // messages that should never be stored.
     if data.content.trim().is_empty() {
-        return Err(MessageError::EmptyMessage);
+        return Err(MessageError::EmptyMessage.into());
     }
     if data.content.len() > MAX_MESSAGE_LENGTH {
-        return Err(MessageError::MessageTooLong);
+        return Err(MessageError::MessageTooLong.into());
     }
     Ok(())
 }

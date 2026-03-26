@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow;
 use bytes::Bytes;
 use http_body_util::BodyExt;
 use http_body_util::combinators::BoxBody;
@@ -23,7 +23,7 @@ use shared::types::user::*;
 pub async fn handle_register_api(
     req: Request<hyper::body::Incoming>,
     state: AppState,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing api registration request");
 
     match register_internal(req, state).await {
@@ -46,7 +46,7 @@ pub async fn handle_register_api(
 pub async fn handle_register(
     req: Request<hyper::body::Incoming>,
     state: AppState,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Processing web registration request");
 
     match register_internal(req, state).await {
@@ -62,7 +62,7 @@ pub async fn handle_register(
 async fn register_internal(
     req: Request<hyper::body::Incoming>,
     state: AppState,
-) -> Result<(String, i64, bool), RegisterError> {
+) -> anyhow::Result<(String, i64, bool), RegisterError> {
     info!("Processing registration request");
 
     let ip_address = get_client_ip(&req);
@@ -146,7 +146,7 @@ async fn register_internal(
 async fn parse_and_validate_registration(
     req: Request<hyper::body::Incoming>,
     state: &AppState,
-) -> std::result::Result<RegisterData, RegisterError> {
+) -> anyhow::Result<RegisterData, RegisterError> {
     let body = req
         .collect()
         .await
@@ -167,7 +167,7 @@ async fn parse_and_validate_registration(
     Ok(data)
 }
 
-fn validate_registration(data: &RegisterData) -> std::result::Result<(), RegisterError> {
+fn validate_registration(data: &RegisterData) -> anyhow::Result<(), RegisterError> {
     validate_username(&data.username)?;
     validate_password(&data.password)?;
 
@@ -184,7 +184,7 @@ fn validate_registration(data: &RegisterData) -> std::result::Result<(), Registe
     Ok(())
 }
 
-pub fn validate_username(username: &str) -> std::result::Result<(), RegisterError> {
+pub fn validate_username(username: &str) -> anyhow::Result<(), RegisterError> {
     if username.len() < 3 || username.len() > 32 {
         return Err(RegisterError::InvalidUsername);
     }
@@ -197,7 +197,7 @@ pub fn validate_username(username: &str) -> std::result::Result<(), RegisterErro
     Ok(())
 }
 
-pub fn validate_password(password: &str) -> std::result::Result<(), RegisterError> {
+pub fn validate_password(password: &str) -> anyhow::Result<(), RegisterError> {
     if password.len() < 8 || password.len() > 128 {
         return Err(RegisterError::WeakPassword);
     }
@@ -220,7 +220,7 @@ pub fn is_valid_email(email: &str) -> bool {
 async fn check_username_available(
     username: &str,
     state: &AppState,
-) -> std::result::Result<(), RegisterError> {
+) -> anyhow::Result<(), RegisterError> {
     let exists = register::username_exists(&state.db, username.to_string())
         .await
         .map_err(|e| {
@@ -233,10 +233,7 @@ async fn check_username_available(
     Ok(())
 }
 
-async fn check_email_available(
-    email: &str,
-    state: &AppState,
-) -> std::result::Result<(), RegisterError> {
+async fn check_email_available(email: &str, state: &AppState) -> anyhow::Result<(), RegisterError> {
     let exists = register::email_exists(&state.db, email.to_string())
         .await
         .map_err(|e| {
@@ -249,10 +246,7 @@ async fn check_email_available(
     Ok(())
 }
 
-async fn create_user(
-    data: &RegisterData,
-    state: &AppState,
-) -> std::result::Result<i64, RegisterError> {
+async fn create_user(data: &RegisterData, state: &AppState) -> anyhow::Result<i64, RegisterError> {
     let password_hash = hash_password(&data.password).map_err(|e| {
         error!("Password hashing failed: {}", e);
         RegisterError::InternalError
@@ -278,7 +272,7 @@ async fn create_session_for_new_user(
     session_id: &str,
     state: &AppState,
     ip_address: Option<String>,
-) -> std::result::Result<(), RegisterError> {
+) -> anyhow::Result<(), RegisterError> {
     let token_expiry_secs = state.config.read().await.auth.token_expiry_minutes * 60;
     let expires_at = calculate_expiry(token_expiry_secs as i64);
 
