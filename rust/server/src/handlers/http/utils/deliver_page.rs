@@ -1,6 +1,5 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, anyhow};
 use bytes::Bytes;
 use http::HeaderValue;
 use http_body_util::{BodyExt, Empty, Full, combinators::BoxBody};
@@ -10,15 +9,17 @@ use tracing::{debug, info};
 
 use crate::handlers::http::utils::headers;
 use shared::types::cache::CacheStrategy;
+use shared::types::page_error::PageError;
 
-/// Expand tilde (~) in path to home directory
-pub fn expand_tilde<P: AsRef<Path>>(path: P) -> anyhow::Result<PathBuf> {
+/// Expand tilde (~) in path to home directory.
+pub fn expand_tilde<P: AsRef<Path>>(path: P) -> Result<PathBuf, PageError> {
     let path_ref: &Path = path.as_ref();
-    let path_str: &str = path_ref.to_str().unwrap_or("");
+    let path_str: &str = path_ref
+        .to_str()
+        .ok_or_else(|| PageError::InvalidUtf8(path_ref.to_path_buf()))?;
 
-    if let Some(s) = path_str.strip_prefix("~/")
-        && let Some(home) = std::env::var_os("HOME")
-    {
+    if let Some(s) = path_str.strip_prefix("~/") {
+        let home = std::env::var("HOME").map_err(|_| PageError::HomeMissing)?;
         let mut home_path: PathBuf = PathBuf::from(home);
         home_path.push(s);
         return Ok(home_path);
@@ -33,7 +34,7 @@ pub fn expand_tilde<P: AsRef<Path>>(path: P) -> anyhow::Result<PathBuf> {
 /// state and must never be served stale from a proxy or browser cache.
 pub fn deliver_html_page<P: AsRef<Path>>(
     file_path: P,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> Result<Response<BoxBody<Bytes, Infallible>>, PageError> {
     deliver_page_with_status(file_path, StatusCode::OK, CacheStrategy::NoCache)
 }
 
@@ -49,8 +50,8 @@ pub fn deliver_page_with_status<P: AsRef<Path>>(
     file_path: P,
     status: StatusCode,
     cache: CacheStrategy,
-) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
-    let expanded_path: PathBuf = expand_tilde(file_path).context("Failed to expand path")?;
+) -> Result<Response<BoxBody<Bytes, Infallible>>, PageError> {
+    let expanded_path: PathBuf = expand_tilde(file_path)?;
 
     debug!(
         "Reading static file from: {} (cache: {})",
@@ -59,7 +60,7 @@ pub fn deliver_page_with_status<P: AsRef<Path>>(
     );
 
     let content: Vec<u8> = std::fs::read(&expanded_path)
-        .with_context(|| format!("Failed to read static file: {}", expanded_path.display()))?;
+        .map_err(|e| PageError::ReadFailed(expanded_path.clone(), e))?;
 
     let content_bytes: Bytes = Bytes::from(content);
     let mime_type: &str = get_mime_type(&expanded_path);
@@ -76,7 +77,7 @@ pub fn deliver_page_with_status<P: AsRef<Path>>(
         .status(status)
         .header(header::CONTENT_TYPE, mime_type)
         .body(full(content_bytes))
-        .map_err(|e| anyhow!("Failed to build response: {}", e))?;
+        .map_err(PageError::ResponseBuildFailed)?;
 
     let response_with_cache = match cache {
         CacheStrategy::LongTerm => headers::add_cache_headers_with_max_age(response, None),
@@ -93,8 +94,8 @@ pub fn deliver_page_with_etag<P: AsRef<Path>>(
     status: StatusCode,
     cache: CacheStrategy,
     etag: &str,
-) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
-    let expanded_path: PathBuf = expand_tilde(&file_path).context("Failed to expand path")?;
+) -> Result<Response<BoxBody<Bytes, Infallible>>, PageError> {
+    let expanded_path: PathBuf = expand_tilde(&file_path)?;
 
     debug!(
         "Reading static file with ETag from: {} (etag: {})",
@@ -102,8 +103,7 @@ pub fn deliver_page_with_etag<P: AsRef<Path>>(
         etag
     );
 
-    let response = deliver_page_with_status(file_path, status, cache)
-        .context("Page could not be delivered")?;
+    let response = deliver_page_with_status(&expanded_path, status, cache)?;
     let response_with_etag = headers::add_etag_header(response, etag);
 
     Ok(response_with_etag)
@@ -158,21 +158,21 @@ pub fn get_mime_type(path: &Path) -> &'static str {
 }
 
 /// Deliver a redirect response.
-pub fn deliver_redirect(location: &str) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+pub fn deliver_redirect(location: &str) -> Result<Response<BoxBody<Bytes, Infallible>>, PageError> {
     info!("Delivering redirect to: {}", location);
 
     Response::builder()
         .status(StatusCode::FOUND)
         .header(header::LOCATION, location)
         .body(full(Bytes::from("")))
-        .map_err(|e| anyhow!("Failed to build redirect response to {}: {}", location, e))
+        .map_err(PageError::ResponseBuildFailed)
 }
 
 /// Deliver a redirect response with a cookie header.
 pub fn deliver_redirect_with_cookie(
     location: &str,
     cookie: HeaderValue,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> Result<Response<BoxBody<Bytes, Infallible>>, PageError> {
     info!("Delivering redirect to: {}", location);
 
     Response::builder()
@@ -180,11 +180,13 @@ pub fn deliver_redirect_with_cookie(
         .header(header::LOCATION, location)
         .header(header::SET_COOKIE, cookie)
         .body(full(Bytes::from("")))
-        .map_err(|e| anyhow!("Failed to build redirect response to {}: {}", location, e))
+        .map_err(PageError::ResponseBuildFailed)
 }
 
 /// Deliver a plain text response.
-pub fn deliver_text<T: Into<Bytes>>(text: T) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+pub fn deliver_text<T: Into<Bytes>>(
+    text: T,
+) -> Result<Response<BoxBody<Bytes, Infallible>>, PageError> {
     let bytes: Bytes = text.into();
     debug!("Delivering text response, size: {} bytes", bytes.len());
 
@@ -192,7 +194,7 @@ pub fn deliver_text<T: Into<Bytes>>(text: T) -> Result<Response<BoxBody<Bytes, I
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
         .body(full(bytes))
-        .map_err(|e| anyhow!("Failed to build text response: {}", e))
+        .map_err(PageError::ResponseBuildFailed)
 }
 
 /// Build an empty boxed body.

@@ -58,11 +58,6 @@ tower-http = { version = "0.6.8", default-features = false, features = [
 ] }
 
 # Hyper (HTTP + SSE)
-hyper = { version = "1.2", default-features = false, features = [
-    "http1",
-    "server",
-] }
-
 hyper-util = { version = "0.1", default-features = false, features = [
     "tokio",
     "service",
@@ -86,6 +81,7 @@ tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
 bytes = { workspace = true }
 form_urlencoded = { workspace = true }
+hyper = { workspace = true }
 
 # Shared lib
 shared = { path = "../shared" }

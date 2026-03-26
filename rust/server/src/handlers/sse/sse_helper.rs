@@ -1,11 +1,13 @@
+use std::collections::HashMap;
+use std::convert::Infallible;
+use std::time::Duration;
+
 use bytes::Bytes;
 use form_urlencoded;
 use futures_util::StreamExt;
 use http_body_util::{BodyExt, StreamBody, combinators::BoxBody};
 use hyper::{Request, Response, StatusCode, body::Frame, header::HeaderValue};
 use shared::types::sse::{SseError, SseEvent, SseResult};
-use std::collections::HashMap;
-use std::convert::Infallible;
 use tokio::sync::broadcast;
 use tracing::{error, info, warn};
 use uuid::Uuid;
@@ -340,23 +342,37 @@ pub async fn handle_sse_subscribe(
             yield Ok::<Bytes, Infallible>(Bytes::from(frame));
         }
 
+        // Inactivity timeout: close the connection if the client stops reading
+        // for more than 30 seconds to prevent unbounded buffer growth.
+        let mut inactivity = tokio::time::interval(Duration::from_secs(30));
+        inactivity.reset();
+
         loop {
-            match rx.recv().await {
-                Ok(event) => {
-                    let formatted = SseStreamBuilder::format_event(&event);
-                    info!("SSE live event '{}' → user={}", event.event_type, user_id);
-                    yield Ok::<Bytes, Infallible>(Bytes::from(formatted));
+            tokio::select! {
+                result = rx.recv() => {
+                    match result {
+                        Ok(event) => {
+                            inactivity.reset();
+                            let formatted = SseStreamBuilder::format_event(&event);
+                            info!("SSE live event '{}' → user={}", event.event_type, user_id);
+                            yield Ok::<Bytes, Infallible>(Bytes::from(formatted));
+                        }
+                        Err(broadcast::error::RecvError::Lagged(n)) => {
+                            warn!("SSE client lagged by {} messages, sending reconnect hint", n);
+                            let frame = format!(
+                                "event: reconnect\ndata: {}\n\n",
+                                serde_json::json!({ "reason": "lagged", "missed": n })
+                            );
+                            yield Ok::<Bytes, Infallible>(Bytes::from(frame));
+                        }
+                        Err(broadcast::error::RecvError::Closed) => {
+                            info!("SSE channel closed: user={}", user_id);
+                            break;
+                        }
+                    }
                 }
-                Err(broadcast::error::RecvError::Lagged(n)) => {
-                    warn!("SSE client lagged by {} messages, sending reconnect hint", n);
-                    let frame = format!(
-                        "event: reconnect\ndata: {}\n\n",
-                        serde_json::json!({ "reason": "lagged", "missed": n })
-                    );
-                    yield Ok::<Bytes, Infallible>(Bytes::from(frame));
-                }
-                Err(broadcast::error::RecvError::Closed) => {
-                    info!("SSE channel closed: user={}", user_id);
+                _ = inactivity.tick() => {
+                    info!("SSE inactivity timeout: closing connection for user={}", user_id);
                     break;
                 }
             }

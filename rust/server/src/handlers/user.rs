@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
+use anyhow::Context;
 use bytes::Bytes;
 use http_body_util::BodyExt;
 use http_body_util::combinators::BoxBody;
@@ -43,9 +43,9 @@ impl UserService {
 impl Service<Request<IncomingBody>> for UserService {
     type Response = Response<BoxBody<Bytes, Infallible>>;
     type Error = Infallible;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+    type Future = Pin<Box<dyn Future<Output = anyhow::Result<Self::Response, Self::Error>> + Send>>;
 
-    fn poll_ready(&mut self, _cx: &mut taskContext<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(&mut self, _cx: &mut taskContext<'_>) -> Poll<anyhow::Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
@@ -94,7 +94,7 @@ async fn user_conn(
     addr: SocketAddr,
     state: AppState,
     router: &Router,
-) -> Result<Response<BoxBody<Bytes, Infallible>>> {
+) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("User request from {}: {} {}", addr, req.method(), req.uri());
 
     let blocked_paths: HashSet<String> = state.config.read().await.paths.blocked_paths.clone();
