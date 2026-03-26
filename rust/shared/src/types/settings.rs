@@ -1,4 +1,7 @@
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 /// Change password request
 #[derive(Debug, Deserialize)]
@@ -17,6 +20,7 @@ pub enum SettingsResponse {
 }
 
 /// Settings error codes
+#[derive(Error, Debug, Clone, Serialize)]
 pub enum SettingsError {
     Unauthorized,
     InvalidCurrentPassword,
@@ -68,5 +72,11 @@ impl SettingsError {
             code: self.to_code().to_string(),
             message: self.to_message(),
         }
+    }
+}
+
+impl fmt::Display for SettingsError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "code={}, message={}", self.to_code(), self.to_message())
     }
 }

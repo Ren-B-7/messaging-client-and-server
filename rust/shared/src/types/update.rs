@@ -1,4 +1,7 @@
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 /// Profile data
 #[derive(Debug, Deserialize, Serialize)]
@@ -40,6 +43,7 @@ pub enum UpdateResponse {
 }
 
 /// Profile error codes
+#[derive(Error, Debug, Clone, Serialize)]
 pub enum ProfileError {
     Unauthorized,
     UserNotFound,
@@ -96,5 +100,11 @@ impl ProfileError {
             code: self.to_code().to_string(),
             message: self.to_message(),
         }
+    }
+}
+
+impl fmt::Display for ProfileError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "code={}, message={}", self.to_code(), self.to_message())
     }
 }

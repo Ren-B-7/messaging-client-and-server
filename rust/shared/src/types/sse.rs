@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 /// A live event pushed over an SSE stream to a connected client.
 ///
@@ -17,7 +18,7 @@ pub struct SseEvent {
     pub timestamp: i64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Error, Clone, Debug)]
 pub enum SseError {
     ChannelSendFailed(String),
     ChannelClosed,
@@ -31,7 +32,5 @@ impl std::fmt::Display for SseError {
         }
     }
 }
-
-impl std::error::Error for SseError {}
 
 pub type SseResult<T> = Result<T, SseError>;

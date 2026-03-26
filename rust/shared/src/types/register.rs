@@ -1,4 +1,7 @@
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 /// Request body for POST /api/register and POST /register.
 ///
@@ -39,6 +42,7 @@ pub enum RegisterResponse {
 }
 
 /// Error codes for registration
+#[derive(Error, Clone, Debug)]
 pub enum RegisterError {
     UsernameTaken,
     EmailTaken,
@@ -97,5 +101,11 @@ impl RegisterError {
             code: self.to_code().to_string(),
             message: self.to_message(),
         }
+    }
+}
+
+impl fmt::Display for RegisterError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "code={}, message={}", self.to_code(), self.to_message())
     }
 }
