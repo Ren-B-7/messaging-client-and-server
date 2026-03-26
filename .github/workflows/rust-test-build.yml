@@ -4,6 +4,20 @@ on: [push, pull_request]
 
 jobs:
     # --- PHASE 1: LINTING & FORMATTING (All run in parallel) ---
+    makefile-lint:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Install mbake
+              run: |
+                  pip install mbake
+
+            - name: Lint Makefile
+              run: mbake lint Makefile
+
+            - name: Format check Makefile
+              run: mbake format --check Makefile
 
     rust-lint:
         runs-on: ubuntu-latest

@@ -15,9 +15,9 @@ all: format lint build
 # FORMAT
 # =========================
 
-.PHONY: format format-rust format-python format-frontend
+.PHONY: format format-rust format-python format-frontend format-makefile
 
-format: format-rust format-python format-frontend
+format: format-rust format-python format-frontend format-makefile
 
 format-rust:
 	@echo "Formatting Rust..."
@@ -41,9 +41,9 @@ format-makefile:
 # LINT
 # =========================
 
-.PHONY: lint lint-rust lint-python lint-frontend
+.PHONY: lint lint-rust lint-python lint-frontend lint-makefile
 
-lint: lint-rust lint-python lint-frontend
+lint: lint-rust lint-python lint-frontend lint-makefile
 
 lint-rust:
 	@echo "Linting Rust..."
@@ -66,7 +66,7 @@ lint-makefile:
 # BUILD
 # =========================
 
-.PHONY: build build-rust build-python build-frontend
+.PHONY: build build-rust build-python build-frontend build-backend build-shared build-tui
 
 build: build-rust build-python build-frontend
 
@@ -97,7 +97,7 @@ build-frontend:
 # RUN TARGETS
 # =========================
 
-.PHONY: backend tui python gui frontend
+.PHONY: backend tui gui frontend
 
 backend:
 	@echo "Running Rust backend..."
@@ -106,10 +106,6 @@ backend:
 tui:
 	@echo "Running Rust TUI..."
 	cd $(RUST_DIR)/tui && cargo run --bin tui
-
-python:
-	@echo "Running Python main..."
-	cd $(PY_DIR) && uv run python main.py
 
 gui:
 	@echo "Running Python GUI..."
