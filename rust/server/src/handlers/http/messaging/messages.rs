@@ -823,10 +823,10 @@ pub fn validate_message(data: &SendMessageData) -> anyhow::Result<(), MessageErr
     // is treated the same as an empty string — both are semantically empty
     // messages that should never be stored.
     if data.content.trim().is_empty() {
-        return Err(MessageError::EmptyMessage.into());
+        return Err(MessageError::EmptyMessage);
     }
     if data.content.len() > MAX_MESSAGE_LENGTH {
-        return Err(MessageError::MessageTooLong.into());
+        return Err(MessageError::MessageTooLong);
     }
     Ok(())
 }

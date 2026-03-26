@@ -106,16 +106,16 @@ async fn parse_body(req: Request<hyper::body::Incoming>) -> anyhow::Result<Login
 
 fn validate_login(data: &LoginData) -> anyhow::Result<(), LoginError> {
     if data.username.is_empty() {
-        return Err(LoginError::MissingField("username".to_string()).into());
+        return Err(LoginError::MissingField("username".to_string()));
     }
     if data.username.len() > 32 {
-        return Err(LoginError::MissingField("username".to_string()).into());
+        return Err(LoginError::MissingField("username".to_string()));
     }
     if data.password.is_empty() {
-        return Err(LoginError::MissingField("password".to_string()).into());
+        return Err(LoginError::MissingField("password".to_string()));
     }
     if data.password.len() > 1024 {
-        return Err(LoginError::MissingField("password".to_string()).into());
+        return Err(LoginError::MissingField("password".to_string()));
     }
     Ok(())
 }
