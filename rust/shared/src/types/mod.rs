@@ -4,6 +4,7 @@ pub mod json_error;
 pub mod jwt;
 pub mod login;
 pub mod message;
+pub mod password;
 pub mod register;
 pub mod server_config;
 pub mod server_stats;
