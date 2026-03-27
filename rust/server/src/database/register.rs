@@ -95,6 +95,19 @@ pub async fn update_username(conn: &Connection, user_id: i64, new_username: Stri
     .await
 }
 
+/// Update a user's username.
+pub async fn update_email(conn: &Connection, user_id: i64, new_email: String) -> Result<()> {
+    conn.call(move |conn: &mut rusqlite::Connection| {
+        conn.execute(
+            "UPDATE users SET email = ?1 WHERE id = ?2",
+            params![new_email, user_id],
+        )?;
+        info!("Email updated! email:{} userid:{}", new_email, user_id);
+        Ok(())
+    })
+    .await
+}
+
 // ---------------------------------------------------------------------------
 // Avatar
 // ---------------------------------------------------------------------------

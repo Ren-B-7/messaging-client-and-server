@@ -3,7 +3,7 @@ use tracing::{info, warn};
 
 /// Current schema version.  Bump this whenever the schema changes and add a
 /// corresponding migration arm in `run_migrations`.
-const SCHEMA_VERSION: u32 = 6;
+const SCHEMA_VERSION: u32 = 7;
 
 /// Initialize the database schema and run any pending migrations.
 pub async fn create_tables(conn: &Connection) -> Result<()> {
@@ -22,6 +22,8 @@ async fn create_schema(conn: &Connection) -> Result<()> {
                 username      TEXT    NOT NULL UNIQUE,
                 password_hash TEXT    NOT NULL,
                 email         TEXT    UNIQUE,
+                first_name    TEXT,
+                last_name     TEXT,
                 created_at    INTEGER NOT NULL,
                 last_login    INTEGER,
                 is_admin      INTEGER NOT NULL DEFAULT 0,
@@ -526,6 +528,50 @@ async fn run_migrations(conn: &Connection) -> Result<()> {
         info!("Schema version set to 6.");
     }
     // if current_version < 7 { ... }
+
+    // ── v6 → v7: add first_name and last_name columns to users ───────────────
+    if current_version < 7 {
+        let needs_migration: bool = conn
+            .call(|conn| {
+                let mut stmt = conn.prepare("PRAGMA table_info(users)")?;
+                let col_missing = stmt
+                    .query_map([], |row| {
+                        let col_name: String = row.get(1)?;
+                        Ok(col_name)
+                    })?
+                    .flatten()
+                    .all(|name| name != "first_name");
+                Ok::<_, rusqlite::Error>(col_missing)
+            })
+            .await?;
+
+        if needs_migration {
+            warn!("Migrating users table from v6 to v7 (add first_name, last_name)…");
+
+            conn.call(|conn| {
+                conn.execute_batch(
+                    "
+                    BEGIN;
+                    ALTER TABLE users ADD COLUMN first_name TEXT;
+                    ALTER TABLE users ADD COLUMN last_name  TEXT;
+                    COMMIT;
+                ",
+                )?;
+                Ok::<_, rusqlite::Error>(())
+            })
+            .await?;
+
+            info!("users table migration complete (first_name, last_name columns added).");
+        }
+
+        conn.call(|conn| {
+            conn.execute_batch("PRAGMA user_version = 7")?;
+            Ok::<_, rusqlite::Error>(())
+        })
+        .await?;
+
+        info!("Schema version set to 7.");
+    }
 
     Ok(())
 }

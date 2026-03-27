@@ -78,7 +78,7 @@ pub fn is_valid_email(email: &str) -> bool {
 }
 
 /// Validate username (alphanumeric, underscore, 3-20 chars)
-pub fn is_valid_username(username: &str) -> bool {
+pub fn is_valid_name(username: &str) -> bool {
     if username.len() < 3 || username.len() > 32 {
         return false;
     }
@@ -109,7 +109,7 @@ pub fn calculate_expiry(duration_secs: i64) -> i64 {
 pub async fn get_user_by_id(conn: &Connection, user_id: i64) -> Result<Option<User>> {
     conn.call(move |conn: &mut rusqlite::Connection| {
         let mut stmt = conn.prepare(
-            "SELECT id, username, email, created_at, is_banned FROM users WHERE id = ?1",
+            "SELECT id, username, email, created_at, is_banned, first_name, last_name FROM users WHERE id = ?1",
         )?;
         let user = stmt
             .query_row(params![user_id], |row: &rusqlite::Row| {
@@ -119,6 +119,7 @@ pub async fn get_user_by_id(conn: &Connection, user_id: i64) -> Result<Option<Us
                     email: row.get(2)?,
                     created_at: row.get(3)?,
                     is_banned: row.get::<_, i64>(4)? != 0,
+                    name: Some(NameSurname{first_name: row.get(5)?, last_name: row.get(6)?}),
                 })
             })
             .optional()?;
@@ -131,7 +132,7 @@ pub async fn get_user_by_id(conn: &Connection, user_id: i64) -> Result<Option<Us
 pub async fn get_user_by_username(conn: &Connection, username: String) -> Result<Option<User>> {
     conn.call(move |conn: &mut rusqlite::Connection| {
         let mut stmt = conn.prepare(
-            "SELECT id, username, email, created_at, is_banned FROM users WHERE username = ?1",
+            "SELECT id, username, email, created_at, is_banned, first_name, last_name FROM users WHERE username = ?1",
         )?;
         let user = stmt
             .query_row(params![username], |row: &rusqlite::Row| {
@@ -141,6 +142,7 @@ pub async fn get_user_by_username(conn: &Connection, username: String) -> Result
                     email: row.get(2)?,
                     created_at: row.get(3)?,
                     is_banned: row.get::<_, i64>(4)? != 0,
+                    name: Some(NameSurname{first_name: row.get(5)?, last_name: row.get(6)?}),
                 })
             })
             .optional()?;
@@ -170,7 +172,7 @@ pub async fn search_users_by_username(
     let pattern = format!("{}%", prefix.to_lowercase());
     conn.call(move |conn: &mut rusqlite::Connection| {
         let mut stmt = conn.prepare(
-            "SELECT id, username, email, created_at, is_banned
+            "SELECT id, username, email, created_at, is_banned, first_name, last_name
              FROM users
              WHERE lower(username) LIKE ?1
              ORDER BY username ASC
@@ -184,10 +186,30 @@ pub async fn search_users_by_username(
                     email: row.get(2)?,
                     created_at: row.get(3)?,
                     is_banned: row.get::<_, i64>(4)? != 0,
+                    name: Some(NameSurname {
+                        first_name: row.get(5)?,
+                        last_name: row.get(6)?,
+                    }),
                 })
             })?
             .collect::<std::result::Result<Vec<User>, rusqlite::Error>>()?;
         Ok(users)
+    })
+    .await
+}
+
+/// Update `first_name` and `last_name` for a user.
+pub async fn update_user_names(conn: &Connection, user_id: i64, name: NameSurname) -> Result<()> {
+    conn.call(move |conn: &mut rusqlite::Connection| {
+        conn.execute(
+            "UPDATE users SET first_name = ?1, last_name = ?2 WHERE id = ?3",
+            params![
+                name.first_name.unwrap_or_default(),
+                name.last_name.unwrap_or_default(),
+                user_id
+            ],
+        )?;
+        Ok(())
     })
     .await
 }

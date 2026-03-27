@@ -18,6 +18,7 @@ async fn register_user_returns_valid_id() {
             username: "alice".into(),
             password_hash: "hash_alice".into(),
             email: Some("alice@example.com".into()),
+            name: None,
         },
     )
     .await
@@ -35,6 +36,7 @@ async fn first_registered_user_is_auto_promoted_to_admin() {
             username: "first_user".into(),
             password_hash: "hash".into(),
             email: None,
+            name: None,
         },
     )
     .await
@@ -63,6 +65,7 @@ async fn second_registered_user_is_not_admin() {
             username: "first".into(),
             password_hash: "h".into(),
             email: None,
+            name: None,
         },
     )
     .await
@@ -74,6 +77,7 @@ async fn second_registered_user_is_not_admin() {
             username: "second".into(),
             password_hash: "h".into(),
             email: None,
+            name: None,
         },
     )
     .await
@@ -100,6 +104,7 @@ async fn register_user_with_email() {
             username: "carol".into(),
             password_hash: "hash_carol".into(),
             email: Some("carol@example.com".into()),
+            name: None,
         },
     )
     .await
@@ -122,6 +127,7 @@ async fn register_user_without_email() {
             username: "dave".into(),
             password_hash: "hash_dave".into(),
             email: None,
+            name: None,
         },
     )
     .await
@@ -155,6 +161,7 @@ async fn username_exists_true_after_registration() {
             username: "existing".into(),
             password_hash: "h".into(),
             email: None,
+            name: None,
         },
     )
     .await
@@ -185,6 +192,7 @@ async fn email_exists_true_after_registration() {
             username: "frank".into(),
             password_hash: "h".into(),
             email: Some("frank@example.com".into()),
+            name: None,
         },
     )
     .await
@@ -210,6 +218,7 @@ async fn promote_user_sets_is_admin_flag() {
             username: "root".into(),
             password_hash: "h".into(),
             email: None,
+            name: None,
         },
     )
     .await
@@ -221,6 +230,7 @@ async fn promote_user_sets_is_admin_flag() {
             username: "promoted".into(),
             password_hash: "h".into(),
             email: None,
+            name: None,
         },
     )
     .await
@@ -250,6 +260,7 @@ async fn demote_user_clears_is_admin_flag() {
             username: "will_be_demoted".into(),
             password_hash: "h".into(),
             email: None,
+            name: None,
         },
     )
     .await
@@ -281,6 +292,7 @@ async fn update_username_persists_new_name() {
             username: "old_name".into(),
             password_hash: "h".into(),
             email: None,
+            name: None,
         },
     )
     .await

@@ -22,7 +22,9 @@ const SettingsProfile = {
         const profileEmail = document.getElementById("profileEmail");
         const profileAvatar = document.getElementById("profileAvatar");
 
-        const displayName = user.username || user.name || "User";
+        const displayName = user.firstName
+            ? `${user.firstName} ${user.lastName || ""}`.trim()
+            : user.username || "User";
         if (profileName) profileName.textContent = displayName;
         if (profileEmail) profileEmail.textContent = user.email || "";
 
@@ -40,21 +42,16 @@ const SettingsProfile = {
         }
 
         // ── Form fields ──────────────────────────────────────────────────────────
-        // The API only stores username and email; first/last name fields are kept
-        // for UI consistency but map back to username on save.
-        const fullName = user.name || "";
-        const names = fullName.split(" ");
-
         const firstName = document.getElementById("firstName");
         const lastName = document.getElementById("lastName");
         const username = document.getElementById("username");
-        if (firstName) firstName.value = names[0] || "";
-        if (lastName) lastName.value = names.slice(1).join(" ") || "";
+        if (firstName) firstName.value = user.firstName || "";
+        if (lastName) lastName.value = user.lastName || "";
         if (username) username.value = user.username || "";
 
         this._original = {
-            firstName: names[0] || "",
-            lastName: names.slice(1).join(" ") || "",
+            firstName: user.firstName || "",
+            lastName: user.lastName || "",
             username: user.username || "",
         };
     },
@@ -204,7 +201,7 @@ const SettingsProfile = {
             const res = await fetch("/api/profile", {
                 method: "PUT",
                 headers: { "content-type": "application/json" },
-                body: JSON.stringify({ username }),
+                body: JSON.stringify({ username, first_name: firstName, last_name: lastName }),
             });
 
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -214,7 +211,8 @@ const SettingsProfile = {
                 const fullName = `${firstName} ${lastName}`.trim();
 
                 const user = Utils.getStorage("user") || {};
-                user.name = fullName;
+                user.firstName = firstName;
+                user.lastName = lastName;
                 user.username = username;
                 Utils.setStorage("user", user);
 

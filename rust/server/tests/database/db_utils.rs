@@ -11,9 +11,9 @@ fn test_password_hashing_cycle() {
 
 #[test]
 fn test_username_validation_logic() {
-    assert!(utils::is_valid_username("renier_7"));
-    assert!(!utils::is_valid_username("a")); // too short
-    assert!(!utils::is_valid_username("user!name")); // invalid chars
+    assert!(utils::is_valid_name("renier_7"));
+    assert!(!utils::is_valid_name("a")); // too short
+    assert!(!utils::is_valid_name("user!name")); // invalid chars
 }
 
 #[test]
@@ -65,13 +65,13 @@ fn test_email_validation() {
 
 #[test]
 fn test_username_validation() {
-    assert!(utils::is_valid_username("alice"));
-    assert!(utils::is_valid_username("user_123"));
-    assert!(utils::is_valid_username("bob-smith")); // hyphen now valid
-    assert!(utils::is_valid_username(&"a".repeat(32))); // max length
-    assert!(!utils::is_valid_username("ab")); // too short
-    assert!(!utils::is_valid_username(&"a".repeat(33))); // too long
-    assert!(!utils::is_valid_username("user@name")); // invalid char
+    assert!(utils::is_valid_name("alice"));
+    assert!(utils::is_valid_name("user_123"));
+    assert!(utils::is_valid_name("bob-smith")); // hyphen now valid
+    assert!(utils::is_valid_name(&"a".repeat(32))); // max length
+    assert!(!utils::is_valid_name("ab")); // too short
+    assert!(!utils::is_valid_name(&"a".repeat(33))); // too long
+    assert!(!utils::is_valid_name("user@name")); // invalid char
 }
 
 #[test]

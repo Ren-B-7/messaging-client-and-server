@@ -27,6 +27,7 @@ use tracing::{error, info, warn};
 use shared::types::jwt::JwtClaims;
 use shared::types::settings::*;
 use shared::types::update::*;
+use shared::types::user::NameSurname;
 
 use crate::AppState;
 use crate::database::{login, password, register, utils};
@@ -71,6 +72,8 @@ pub async fn handle_get_profile(
             "user_id":    user.id,
             "username":   user.username,
             "email":      user.email,
+            "first_name": user.name.clone().unwrap_or_default().first_name.unwrap_or_default(),
+            "last_name":  user.name.clone().unwrap_or_default().last_name.unwrap_or_default(),
             "is_admin":   claims.is_admin,
             "created_at": user.created_at,
             "avatar_url": avatar_url,
@@ -133,14 +136,49 @@ async fn parse_update_body(
         ProfileError::InternalError
     })
 }
-
 async fn update_user_profile(
     user_id: i64,
     data: &UpdateProfileData,
     state: &AppState,
 ) -> std::result::Result<(), ProfileError> {
-    if let Some(ref new_username) = data.username {
-        if !utils::is_valid_username(new_username) {
+    // ── first_name / last_name ──────────────────────────────────────────────
+    if let Some(name_full) = &data.name {
+        let first = name_full.first_name.as_deref().unwrap_or("").trim();
+
+        let last = name_full.last_name.as_deref().unwrap_or("").trim();
+
+        if !first.is_empty() && !utils::is_valid_name(first) {
+            return Err(ProfileError::InvalidFirstname);
+        }
+
+        if !last.is_empty() && !utils::is_valid_name(last) {
+            return Err(ProfileError::InvalidLastname);
+        }
+
+        let updated_name = NameSurname {
+            first_name: if first.is_empty() {
+                None
+            } else {
+                Some(first.to_string())
+            },
+            last_name: if last.is_empty() {
+                None
+            } else {
+                Some(last.to_string())
+            },
+        };
+
+        utils::update_user_names(&state.db, user_id, updated_name)
+            .await
+            .map_err(|e| {
+                error!("Database error updating name: {}", e);
+                ProfileError::DatabaseError
+            })?;
+    }
+
+    // ── username ────────────────────────────────────────────────────────────
+    if let Some(new_username) = &data.username {
+        if new_username.is_empty() || !utils::is_valid_name(new_username) {
             return Err(ProfileError::InvalidUsername);
         }
 
@@ -157,7 +195,7 @@ async fn update_user_profile(
                 .map_err(|_| ProfileError::DatabaseError)?
                 .ok_or(ProfileError::UserNotFound)?;
 
-            if &current_user.username != new_username {
+            if current_user.username != *new_username {
                 return Err(ProfileError::UsernameTaken);
             }
         } else {
@@ -170,7 +208,8 @@ async fn update_user_profile(
         }
     }
 
-    if let Some(ref new_email) = data.email {
+    // ── email ───────────────────────────────────────────────────────────────
+    if let Some(new_email) = &data.email {
         if !utils::is_valid_email(new_email) {
             return Err(ProfileError::InvalidEmail);
         }
@@ -186,16 +225,7 @@ async fn update_user_profile(
             return Err(ProfileError::EmailTaken);
         }
 
-        let email_to_set = new_email.clone();
-        state
-            .db
-            .call(move |conn| {
-                conn.execute(
-                    "UPDATE users SET email = ?1 WHERE id = ?2",
-                    rusqlite::params![email_to_set, user_id],
-                )?;
-                Ok::<_, rusqlite::Error>(())
-            })
+        register::update_email(&state.db, user_id, new_email.clone())
             .await
             .map_err(|e| {
                 error!("Database error updating email: {}", e);

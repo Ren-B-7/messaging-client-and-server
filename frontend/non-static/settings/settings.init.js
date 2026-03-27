@@ -34,6 +34,8 @@ document.addEventListener("DOMContentLoaded", async () => {
                 id: Number(profile.user_id),
                 username: profile.username ?? user.username ?? "",
                 email: profile.email ?? user.email ?? "",
+                firstName: profile.first_name ?? user.firstName ?? "",
+                lastName: profile.last_name ?? user.lastName ?? "",
                 isAdmin: profile.is_admin ?? user.isAdmin ?? false,
                 avatarUrl: profile.avatar_url ?? null,
             };
@@ -52,7 +54,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         userAvatarEl.style.display = "block";
         if (initialsEl) initialsEl.style.display = "none";
     } else if (initialsEl) {
-        initialsEl.textContent = Utils.getInitials(user.username || user.email || "?");
+        const displayName = user.firstName
+            ? `${user.firstName} ${user.lastName || ""}`.trim()
+            : user.username || user.email || "?";
+        initialsEl.textContent = Utils.getInitials(displayName);
         initialsEl.style.display = "";
     }
 

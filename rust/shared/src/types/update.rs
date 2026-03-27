@@ -3,6 +3,8 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::types::user::NameSurname;
+
 /// Profile data
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ProfileData {
@@ -11,6 +13,8 @@ pub struct ProfileData {
     pub email: Option<String>,
     pub created_at: i64,
     pub last_login: Option<i64>,
+    #[serde(default)]
+    pub name: Option<NameSurname>,
 }
 
 /// Update profile request
@@ -18,6 +22,8 @@ pub struct ProfileData {
 pub struct UpdateProfileData {
     pub username: Option<String>,
     pub email: Option<String>,
+    #[serde(default)]
+    pub name: Option<NameSurname>,
 }
 
 /// Profile response
@@ -48,6 +54,8 @@ pub enum ProfileError {
     Unauthorized,
     UserNotFound,
     InvalidUsername,
+    InvalidFirstname,
+    InvalidLastname,
     InvalidEmail,
     UsernameTaken,
     EmailTaken,
@@ -62,6 +70,8 @@ impl ProfileError {
             Self::Unauthorized => "UNAUTHORIZED",
             Self::UserNotFound => "USER_NOT_FOUND",
             Self::InvalidUsername => "INVALID_USERNAME",
+            Self::InvalidFirstname => "INVALID_FIRSTNAME",
+            Self::InvalidLastname => "INVALID_LASTNAME",
             Self::InvalidEmail => "INVALID_EMAIL",
             Self::UsernameTaken => "USERNAME_TAKEN",
             Self::EmailTaken => "EMAIL_TAKEN",
@@ -77,6 +87,14 @@ impl ProfileError {
             Self::UserNotFound => "User not found".to_string(),
             Self::InvalidUsername => {
                 "Username must be 3-32 characters, alphanumeric, underscores, or hyphens only"
+                    .to_string()
+            }
+            Self::InvalidFirstname => {
+                "First name must be 3-32 characters, alphanumeric, underscores, or hyphens only"
+                    .to_string()
+            }
+            Self::InvalidLastname => {
+                "Last name must be 3-32 characters, alphanumeric, underscores, or hyphens only"
                     .to_string()
             }
             Self::InvalidEmail => "Invalid email format".to_string(),

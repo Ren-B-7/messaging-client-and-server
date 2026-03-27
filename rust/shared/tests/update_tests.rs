@@ -20,6 +20,7 @@ fn profile_response_success_has_profile_data() {
             email: None,
             created_at: 0,
             last_login: None,
+            name: None,
         },
         message: "ok".into(),
     };

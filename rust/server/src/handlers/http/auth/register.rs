@@ -258,6 +258,7 @@ async fn create_user(data: &RegisterData, state: &AppState) -> anyhow::Result<i6
             username: data.username.clone(),
             password_hash,
             email: data.email.clone(),
+            name: None,
         },
     )
     .await
