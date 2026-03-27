@@ -32,11 +32,11 @@ document.addEventListener("DOMContentLoaded", async () => {
             user = {
                 ...user,
                 id: Number(profile.user_id),
-                username: profile.username ?? user.username ?? "",
-                email: profile.email ?? user.email ?? "",
-                firstName: profile.first_name ?? user.firstName ?? "",
-                lastName: profile.last_name ?? user.lastName ?? "",
-                isAdmin: profile.is_admin ?? user.isAdmin ?? false,
+                username: profile.username ?? "",
+                email: profile.email ?? "",
+                firstName: profile.first_name ?? "",
+                lastName: profile.last_name ?? "",
+                isAdmin: profile.is_admin ?? false,
                 avatarUrl: profile.avatar_url ?? null,
             };
             Utils.setStorage("user", user);

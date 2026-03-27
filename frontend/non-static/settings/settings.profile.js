@@ -45,14 +45,17 @@ const SettingsProfile = {
         const firstName = document.getElementById("firstName");
         const lastName = document.getElementById("lastName");
         const username = document.getElementById("username");
+        const emailEl = document.getElementById("email");
         if (firstName) firstName.value = user.firstName || "";
         if (lastName) lastName.value = user.lastName || "";
-        if (username) username.value = user.username || "";
+        if (username) username.value = user.username;
+        if (emailEl) emailEl.value = user.email || "";
 
         this._original = {
             firstName: user.firstName || "",
             lastName: user.lastName || "",
             username: user.username || "",
+            email: user.email || "",
         };
     },
 
@@ -172,7 +175,8 @@ const SettingsProfile = {
         const changed =
             (document.getElementById("firstName")?.value || "") !== this._original.firstName ||
             (document.getElementById("lastName")?.value || "") !== this._original.lastName ||
-            (document.getElementById("username")?.value || "") !== this._original.username;
+            (document.getElementById("username")?.value || "") !== this._original.username ||
+            (document.getElementById("email")?.value || "") !== this._original.email;
         if (saveBtn) saveBtn.disabled = !changed;
     },
 
@@ -180,20 +184,30 @@ const SettingsProfile = {
         const firstName = document.getElementById("firstName");
         const lastName = document.getElementById("lastName");
         const username = document.getElementById("username");
+        const emailEl = document.getElementById("email");
         if (firstName) firstName.value = this._original.firstName;
         if (lastName) lastName.value = this._original.lastName;
         if (username) username.value = this._original.username;
+        if (emailEl) emailEl.value = this._original.email;
     },
 
     async _save(saveBtn) {
-        const firstName = document.getElementById("firstName")?.value.trim();
+        const firstName = document.getElementById("firstName")?.value.trim() || "";
         const lastName = document.getElementById("lastName")?.value.trim() || "";
         const username = document.getElementById("username")?.value.trim() || "";
+        const email = document.getElementById("email")?.value.trim() || "";
 
-        if (!firstName) {
-            this._feedback("First name is required.", "error");
-            return;
+        // 1. Identify what actually changed
+        const updates = {};
+        if (firstName !== this._original.firstName || lastName !== this._original.lastName) {
+            updates.name = { ...updates.name, first_name: firstName };
+            updates.name = { ...updates.name, last_name: lastName };
         }
+        if (username !== this._original.username) updates.username = username;
+        if (email !== this._original.email) updates.email = email;
+
+        // 2. Only proceed if there is something to save
+        if (Object.keys(updates).length === 0) return;
 
         this._setLoading(saveBtn, true);
 
@@ -201,9 +215,8 @@ const SettingsProfile = {
             const res = await fetch("/api/profile", {
                 method: "PUT",
                 headers: { "content-type": "application/json" },
-                body: JSON.stringify({ username, first_name: firstName, last_name: lastName }),
+                body: JSON.stringify(updates),
             });
-
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
 
@@ -214,12 +227,15 @@ const SettingsProfile = {
                 user.firstName = firstName;
                 user.lastName = lastName;
                 user.username = username;
+                if (email) user.email = email;
                 Utils.setStorage("user", user);
 
                 const profileName = document.getElementById("profileName");
+                const profileEmailEl = document.getElementById("profileEmail");
                 const profileAvatar = document.getElementById("profileAvatar");
                 const userInitials = document.getElementById("userInitials");
                 if (profileName) profileName.textContent = fullName || username;
+                if (profileEmailEl && email) profileEmailEl.textContent = email;
                 // Only reset to initials if no avatar is currently shown.
                 if (profileAvatar && !profileAvatar.querySelector("img")) {
                     profileAvatar.textContent = Utils.getInitials(fullName || username);
@@ -228,7 +244,7 @@ const SettingsProfile = {
                     userInitials.textContent = Utils.getInitials(fullName || username);
                 }
 
-                this._original = { firstName, lastName, username };
+                this._original = { firstName, lastName, username, email };
                 if (saveBtn) saveBtn.disabled = true;
                 this._feedback("Profile updated successfully.", "success");
             } else {
@@ -237,9 +253,9 @@ const SettingsProfile = {
         } catch (e) {
             this._feedback("Request failed — check your connection.", "error");
             console.error("[settings] saveProfile:", e);
+        } finally {
+            this._setLoading(saveBtn, false);
         }
-
-        this._setLoading(saveBtn, false);
     },
 
     // ── Helpers ───────────────────────────────────────────────────────────────

@@ -67,13 +67,22 @@ pub async fn handle_get_profile(
         .flatten()
         .map(|_| format!("/api/avatar/{}", claims.user_id));
 
+    let (first_name, last_name) = if let Some(name) = &user.name {
+        (
+            name.first_name.as_deref().unwrap_or(""),
+            name.last_name.as_deref().unwrap_or(""),
+        )
+    } else {
+        ("", "")
+    };
+
     deliver_success_json(
         Some(serde_json::json!({
             "user_id":    user.id,
             "username":   user.username,
             "email":      user.email,
-            "first_name": user.name.clone().unwrap_or_default().first_name.unwrap_or_default(),
-            "last_name":  user.name.clone().unwrap_or_default().last_name.unwrap_or_default(),
+            "first_name": first_name,
+            "last_name":  last_name,
             "is_admin":   claims.is_admin,
             "created_at": user.created_at,
             "avatar_url": avatar_url,
@@ -174,10 +183,12 @@ async fn update_user_profile(
                 error!("Database error updating name: {}", e);
                 ProfileError::DatabaseError
             })?;
+        info!("Updated! first: {}, last; {}", first, last);
     }
 
     // ── username ────────────────────────────────────────────────────────────
     if let Some(new_username) = &data.username {
+        info!("Updated! username: {}", new_username);
         if new_username.is_empty() || !utils::is_valid_name(new_username) {
             return Err(ProfileError::InvalidUsername);
         }
@@ -210,7 +221,8 @@ async fn update_user_profile(
 
     // ── email ───────────────────────────────────────────────────────────────
     if let Some(new_email) = &data.email {
-        if !utils::is_valid_email(new_email) {
+        info!("Updated! email: {}", new_email);
+        if new_email.is_empty() || !utils::is_valid_email(new_email) {
             return Err(ProfileError::InvalidEmail);
         }
 

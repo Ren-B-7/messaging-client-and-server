@@ -22,7 +22,6 @@ pub struct ProfileData {
 pub struct UpdateProfileData {
     pub username: Option<String>,
     pub email: Option<String>,
-    #[serde(default)]
     pub name: Option<NameSurname>,
 }
 
