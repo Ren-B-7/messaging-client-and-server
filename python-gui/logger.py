@@ -71,7 +71,10 @@ class Logger:
 
         # Setup log file
         if log_file is None:
-            log_dir = os.path.expanduser("~/.chat_client_logs")
+            xdg_data = os.environ.get(
+                "XDG_DATA_HOME", os.path.expanduser("~/.local/share")
+            )
+            log_dir = os.path.join(xdg_data, "chat-client", "logs")
             os.makedirs(log_dir, exist_ok=True)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             self.log_file = os.path.join(log_dir, f"chat_{timestamp}.log")

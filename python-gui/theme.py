@@ -22,11 +22,18 @@ class ThemeManager:
         logger.info("ThemeManager initialized")
         self.load_theme()
 
+    def _config_path(self):
+        """Return the path to the theme config file (XDG-compliant)."""
+        xdg_config = os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+        config_dir = os.path.join(xdg_config, "chat-client")
+        os.makedirs(config_dir, exist_ok=True)
+        return os.path.join(config_dir, "config.json")
+
     def load_theme(self):
         """Load saved theme from config"""
         logger.debug("Loading theme preference from config file")
 
-        config_file = os.path.expanduser("~/.chat_client_config")
+        config_file = self._config_path()
 
         if os.path.exists(config_file):
             logger.debug(f"Config file found: {config_file}")
@@ -53,7 +60,7 @@ class ThemeManager:
         """Save theme preference"""
         logger.debug("Saving theme preference to config file")
 
-        config_file = os.path.expanduser("~/.chat_client_config")
+        config_file = self._config_path()
         config = {"theme": self.theme}
 
         try:

@@ -177,7 +177,7 @@ class ChatAPIClient:
             },
         )
 
-    def register(self, email, username, password, fullname=""):
+    def register(self, email, username, password, fullname="", confirm_password=""):
         """POST /api/register"""
         logger.info("Attempting registration", extra_info=f"Username: {username}")
         return self._make_request(
@@ -187,6 +187,7 @@ class ChatAPIClient:
                 "username": username,
                 "email": email,
                 "password": password,
+                "confirm_password": confirm_password,
                 "full_name": fullname,
             },
         )

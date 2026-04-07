@@ -435,7 +435,10 @@ class ChatClientApp:
     # ── Favicon ───────────────────────────────────────────────────────────────
 
     def load_favicon(self):
-        favicon_path = os.path.expanduser("~/.chat_client_favicon.png")
+        xdg_cache = os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache"))
+        cache_dir = os.path.join(xdg_cache, "chat-client")
+        os.makedirs(cache_dir, exist_ok=True)
+        favicon_path = os.path.join(cache_dir, "favicon-32x32.png")
         favicon_url = f"{self.api.server_url}/static/icons/favicons/favicon-32x32.png"
         if os.path.exists(favicon_path):
             try:
@@ -697,6 +700,7 @@ class ChatClientApp:
             ("Full Name", False),
             ("Username", False),
             ("Password", True),
+            ("Confirm Password", True),
         ]
         entries = {}
         for label, is_pw in fields:
@@ -721,6 +725,7 @@ class ChatClientApp:
                 entries["Username"].get(),
                 entries["Password"].get(),
                 entries["Full Name"].get(),
+                entries["Confirm Password"].get(),
             )
 
         make_btn(
@@ -809,14 +814,17 @@ class ChatClientApp:
         if self.is_admin and not was_admin:
             self.tab_bar.set_enabled("Admin", True)
 
-    def handle_register(self, email, username, password, fullname):
-        if not all([email, username, password, fullname]):
+    def handle_register(self, email, username, password, fullname, confirm_password=""):
+        if not all([email, username, password, fullname, confirm_password]):
             messagebox.showerror("Error", "All fields are required")
+            return
+        if password != confirm_password:
+            messagebox.showerror("Error", "Passwords do not match")
             return
 
         def t():
             try:
-                r = self.api.register(email, username, password, fullname)
+                r = self.api.register(email, username, password, fullname, confirm_password)
                 self.root.after(0, lambda: self._handle_register_response(r, email))
             except Exception as e:
                 self.root.after(
