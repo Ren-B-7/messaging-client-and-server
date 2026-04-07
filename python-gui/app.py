@@ -44,10 +44,17 @@ def make_scrollable(parent, bg):
     canvas = tk.Canvas(parent, bg=bg, highlightthickness=0)
     sb = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
     inner = tk.Frame(canvas, bg=bg)
-    inner.bind(
-        "<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-    )
-    canvas.create_window((0, 0), window=inner, anchor="nw")
+    win_id = canvas.create_window((0, 0), window=inner, anchor="nw")
+
+    def _on_frame_configure(e):
+        canvas.configure(scrollregion=canvas.bbox("all"))
+
+    def _on_canvas_configure(e):
+        # Keep inner frame exactly as wide as the canvas so fill=X works
+        canvas.itemconfig(win_id, width=e.width)
+
+    inner.bind("<Configure>", _on_frame_configure)
+    canvas.bind("<Configure>", _on_canvas_configure)
     canvas.configure(yscrollcommand=sb.set)
     canvas.pack(side="left", fill="both", expand=True)
     sb.pack(side="right", fill="y")
@@ -1269,19 +1276,22 @@ class ChatClientApp:
             self.select_conversation(cv)
             self.chat_title_label.configure(text=cv.get("name", "Chat"))
 
-        for w in [item, inner, avatar, info]:
+        all_widgets = [item, inner, avatar, info] + list(info.winfo_children())
+        for w in all_widgets:
             w.bind("<Button-1>", on_click)
-        for lbl in info.winfo_children():
-            lbl.bind("<Button-1>", on_click)
 
-        def on_enter(e, w=item):
-            w.configure(bg=c("bg_tertiary"))
+        def _set_bg(bg, w=item, i=inner, inf=info):
+            w.configure(bg=bg)
+            i.configure(bg=bg)
+            inf.configure(bg=bg)
+            for child in inf.winfo_children():
+                try:
+                    child.configure(bg=bg)
+                except Exception:
+                    pass
 
-        def on_leave(e, w=item):
-            w.configure(bg=c("bg_secondary"))
-
-        item.bind("<Enter>", on_enter)
-        item.bind("<Leave>", on_leave)
+        item.bind("<Enter>", lambda e: _set_bg(c("bg_tertiary")))
+        item.bind("<Leave>", lambda e: _set_bg(c("bg_secondary")))
 
     def select_conversation(self, conversation):
         chat_id = conversation.get("id")
@@ -1542,21 +1552,74 @@ class ChatClientApp:
         POST /api/chats  {user_id: <id>}
         GET  /api/users/search?q=<query>
         """
-        modal, content = self._make_modal("New Direct Message", width=420, height=360)
         c = self.get_color
 
+        modal = tk.Toplevel(self.root)
+        modal.title("New Direct Message")
+        modal.configure(bg=c("bg_primary"))
+        modal.resizable(False, False)
+        modal.transient(self.root)
+        modal.grab_set()
+
+        width, height = 440, 460
+        self.root.update_idletasks()
+        rx, ry = self.root.winfo_rootx(), self.root.winfo_rooty()
+        rw, rh = self.root.winfo_width(), self.root.winfo_height()
+        modal.geometry(
+            f"{width}x{height}+{rx + (rw - width)//2}+{ry + (rh - height)//2}"
+        )
+
+        # ── Outer border card ─────────────────────────────────────────────────
+        bdr = tk.Frame(modal, bg=c("border"))
+        bdr.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
+        card = tk.Frame(bdr, bg=c("bg_primary"))
+        card.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
+
+        # ── Header ───────────────────────────────────────────────────────────
+        hdr = tk.Frame(card, bg=c("bg_secondary"))
+        hdr.pack(fill=tk.X)
         make_label(
-            content,
+            hdr,
+            "New Direct Message",
+            self,
+            style="primary",
+            size="base",
+            bold=True,
+            bg=c("bg_secondary"),
+        ).pack(side=tk.LEFT, padx=SP[5], pady=SP[4])
+        tk.Button(
+            hdr,
+            text="✕",
+            command=modal.destroy,
+            bg=c("bg_secondary"),
+            fg=c("fg_tertiary"),
+            relief=tk.FLAT,
+            bd=0,
+            highlightthickness=0,
+            font=(FONT_SANS, FS["base"]),
+            cursor="hand2",
+            activebackground=c("bg_tertiary"),
+            padx=SP[3],
+            pady=SP[2],
+        ).pack(side=tk.RIGHT, padx=SP[2], pady=SP[2])
+        Separator(card, c("border"))
+
+        # ── Body (scrollable content) ─────────────────────────────────────────
+        body = tk.Frame(card, bg=c("bg_primary"), padx=SP[5], pady=SP[4])
+        body.pack(fill=tk.BOTH, expand=True)
+
+        make_label(
+            body,
             "Search for a user",
             self,
             style="secondary",
             size="sm",
             bold=True,
             bg=c("bg_primary"),
-        ).pack(anchor=tk.W, pady=(0, SP[1]))
+        ).pack(anchor=tk.W, pady=(0, SP[2]))
 
         # Search row
-        search_row = tk.Frame(content, bg=c("bg_primary"))
+        search_row = tk.Frame(body, bg=c("bg_primary"))
         search_row.pack(fill=tk.X, pady=(0, SP[3]))
 
         search_bdr = tk.Frame(search_row, bg=c("input_border"), padx=1, pady=1)
@@ -1574,42 +1637,43 @@ class ChatClientApp:
         search_entry.pack(fill=tk.X, ipady=SP[2], ipadx=SP[3])
         search_entry.focus_set()
 
-        # Results list frame
-        results_outer = tk.Frame(content, bg=c("border"))
-        results_outer.pack(fill=tk.BOTH, expand=True, pady=(0, SP[3]))
-        results_inner = tk.Frame(results_outer, bg=c("bg_secondary"))
-        results_inner.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
+        # Results list
+        make_label(
+            body, "Results", self, style="tertiary", size="xs", bg=c("bg_primary")
+        ).pack(anchor=tk.W, pady=(0, SP[1]))
+        res_bdr = tk.Frame(body, bg=c("border"))
+        res_bdr.pack(fill=tk.BOTH, expand=True, pady=(0, SP[3]))
+        res_inner = tk.Frame(res_bdr, bg=c("bg_secondary"))
+        res_inner.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
 
-        # Scrollable results
-        results_canvas = tk.Canvas(
-            results_inner, bg=c("bg_secondary"), highlightthickness=0, height=140
-        )
-        results_sb = ttk.Scrollbar(
-            results_inner, orient="vertical", command=results_canvas.yview
-        )
-        results_frame = tk.Frame(results_canvas, bg=c("bg_secondary"))
-        results_frame.bind(
+        res_canvas = tk.Canvas(res_inner, bg=c("bg_secondary"), highlightthickness=0)
+        res_sb = ttk.Scrollbar(res_inner, orient="vertical", command=res_canvas.yview)
+        res_frame = tk.Frame(res_canvas, bg=c("bg_secondary"))
+        win_id = res_canvas.create_window((0, 0), window=res_frame, anchor="nw")
+        res_frame.bind(
             "<Configure>",
-            lambda e: results_canvas.configure(scrollregion=results_canvas.bbox("all")),
+            lambda e: res_canvas.configure(scrollregion=res_canvas.bbox("all")),
         )
-        results_canvas.create_window((0, 0), window=results_frame, anchor="nw")
-        results_canvas.configure(yscrollcommand=results_sb.set)
-        results_sb.pack(side=tk.RIGHT, fill=tk.Y)
-        results_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        res_canvas.bind(
+            "<Configure>", lambda e: res_canvas.itemconfig(win_id, width=e.width)
+        )
+        res_canvas.configure(yscrollcommand=res_sb.set)
+        res_sb.pack(side=tk.RIGHT, fill=tk.Y)
+        res_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         status_lbl = make_label(
-            content, "", self, style="tertiary", size="xs", bg=c("bg_primary")
+            body, "", self, style="tertiary", size="xs", bg=c("bg_primary")
         )
-        status_lbl.pack(anchor=tk.W)
+        status_lbl.pack(anchor=tk.W, pady=(0, SP[2]))
 
         selected_user = {"id": None, "username": None}
 
         def _render_results(users):
-            for w in results_frame.winfo_children():
+            for w in res_frame.winfo_children():
                 w.destroy()
             if not users:
                 make_label(
-                    results_frame,
+                    res_frame,
                     "No users found",
                     self,
                     style="tertiary",
@@ -1620,11 +1684,10 @@ class ChatClientApp:
             for u in users:
                 uid = u.get("id")
                 uname = u.get("username") or u.get("name") or str(uid)
-                row = tk.Frame(results_frame, bg=c("bg_secondary"), cursor="hand2")
+                row = tk.Frame(res_frame, bg=c("bg_secondary"), cursor="hand2")
                 row.pack(fill=tk.X)
                 inner = tk.Frame(row, bg=c("bg_secondary"))
                 inner.pack(fill=tk.X, padx=SP[3], pady=SP[2])
-                # Avatar
                 av = tk.Label(
                     inner,
                     text=uname[0].upper(),
@@ -1638,32 +1701,38 @@ class ChatClientApp:
                     inner, uname, self, style="primary", size="sm", bg=c("bg_secondary")
                 )
                 nm.pack(side=tk.LEFT, anchor=tk.W)
-                Separator(results_frame, c("border_light"))
+                # Show email/id as secondary text if available
+                if u.get("email"):
+                    make_label(
+                        inner,
+                        u["email"],
+                        self,
+                        style="tertiary",
+                        size="xs",
+                        bg=c("bg_secondary"),
+                    ).pack(side=tk.LEFT, padx=(SP[2], 0))
+                Separator(res_frame, c("border_light"))
 
-                def _select(e=None, u_id=uid, u_name=uname):
+                def _select(e=None, u_id=uid, u_name=uname, r=row):
                     selected_user["id"] = u_id
                     selected_user["username"] = u_name
-                    status_lbl.configure(
-                        text=f"Selected: @{u_name}",
-                        fg=c("accent"),
-                    )
-                    # Highlight selected
-                    for child in results_frame.winfo_children():
+                    status_lbl.configure(text=f"✓ Selected: @{u_name}", fg=c("accent"))
+                    for child in res_frame.winfo_children():
                         if isinstance(child, tk.Frame):
                             child.configure(bg=c("bg_secondary"))
-                    row.configure(bg=c("accent_light"))
+                            for gc in child.winfo_children():
+                                if isinstance(gc, tk.Frame):
+                                    gc.configure(bg=c("bg_secondary"))
+                    r.configure(bg=c("accent_light"))
+                    for gc in r.winfo_children():
+                        if isinstance(gc, tk.Frame):
+                            gc.configure(bg=c("accent_light"))
 
                 for w2 in [row, inner, av, nm]:
                     w2.bind("<Button-1>", _select)
 
-                def _enter(e, r=row):
-                    r.configure(bg=c("bg_tertiary"))
-
-                def _leave(e, r=row):
-                    r.configure(bg=c("bg_secondary"))
-
-                row.bind("<Enter>", _enter)
-                row.bind("<Leave>", _leave)
+                row.bind("<Enter>", lambda e, r=row: r.configure(bg=c("bg_tertiary")))
+                row.bind("<Leave>", lambda e, r=row: r.configure(bg=c("bg_secondary")))
 
         def _do_search(*_):
             q = search_entry.get().strip()
@@ -1695,18 +1764,14 @@ class ChatClientApp:
 
         search_entry.bind("<Return>", _do_search)
         search_entry.bind("<KP_Enter>", _do_search)
-
-        search_btn = make_btn(
+        make_btn(
             search_row, "Search", _do_search, self, variant="primary", size="sm"
-        )
-        search_btn.pack(side=tk.LEFT)
+        ).pack(side=tk.LEFT)
 
-        # Footer
-        Separator(modal.winfo_children()[0].winfo_children()[0], c("border"))
-        footer = tk.Frame(
-            modal.winfo_children()[0].winfo_children()[0], bg=c("bg_secondary")
-        )
-        footer.pack(fill=tk.X, padx=1, pady=1, side=tk.BOTTOM)
+        # ── Footer ────────────────────────────────────────────────────────────
+        Separator(card, c("border"))
+        footer = tk.Frame(card, bg=c("bg_secondary"))
+        footer.pack(fill=tk.X)
         footer_inner = tk.Frame(footer, bg=c("bg_secondary"))
         footer_inner.pack(fill=tk.X, padx=SP[5], pady=SP[4])
 
@@ -1714,7 +1779,7 @@ class ChatClientApp:
             uid = selected_user["id"]
             if not uid:
                 status_lbl.configure(
-                    text="Please select a user first.", fg=c("warning")
+                    text="⚠ Please select a user first.", fg=c("warning")
                 )
                 return
             status_lbl.configure(text="Creating chat…", fg=c("fg_tertiary"))
@@ -1756,7 +1821,12 @@ class ChatClientApp:
             footer_inner, "Cancel", modal.destroy, self, variant="ghost", size="sm"
         ).pack(side=tk.RIGHT, padx=(SP[2], 0))
         make_btn(
-            footer_inner, "Start Chat", _start_chat, self, variant="primary", size="sm"
+            footer_inner,
+            "💬  Start Chat",
+            _start_chat,
+            self,
+            variant="primary",
+            size="sm",
         ).pack(side=tk.RIGHT)
 
     def _show_new_group_modal(self):
@@ -1766,12 +1836,65 @@ class ChatClientApp:
         POST /api/groups  {name: str, member_ids: [int, ...]}
         GET  /api/users/search?q=<query>
         """
-        modal, content = self._make_modal("New Group Chat", width=460, height=480)
         c = self.get_color
+
+        modal = tk.Toplevel(self.root)
+        modal.title("New Group Chat")
+        modal.configure(bg=c("bg_primary"))
+        modal.resizable(False, False)
+        modal.transient(self.root)
+        modal.grab_set()
+
+        width, height = 460, 540
+        self.root.update_idletasks()
+        rx, ry = self.root.winfo_rootx(), self.root.winfo_rooty()
+        rw, rh = self.root.winfo_width(), self.root.winfo_height()
+        modal.geometry(
+            f"{width}x{height}+{rx + (rw - width)//2}+{ry + (rh - height)//2}"
+        )
+
+        # ── Outer border card ─────────────────────────────────────────────────
+        bdr = tk.Frame(modal, bg=c("border"))
+        bdr.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
+        card = tk.Frame(bdr, bg=c("bg_primary"))
+        card.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
+
+        # ── Header ───────────────────────────────────────────────────────────
+        hdr = tk.Frame(card, bg=c("bg_secondary"))
+        hdr.pack(fill=tk.X)
+        make_label(
+            hdr,
+            "New Group Chat",
+            self,
+            style="primary",
+            size="base",
+            bold=True,
+            bg=c("bg_secondary"),
+        ).pack(side=tk.LEFT, padx=SP[5], pady=SP[4])
+        tk.Button(
+            hdr,
+            text="✕",
+            command=modal.destroy,
+            bg=c("bg_secondary"),
+            fg=c("fg_tertiary"),
+            relief=tk.FLAT,
+            bd=0,
+            highlightthickness=0,
+            font=(FONT_SANS, FS["base"]),
+            cursor="hand2",
+            activebackground=c("bg_tertiary"),
+            padx=SP[3],
+            pady=SP[2],
+        ).pack(side=tk.RIGHT, padx=SP[2], pady=SP[2])
+        Separator(card, c("border"))
+
+        # ── Body ─────────────────────────────────────────────────────────────
+        body = tk.Frame(card, bg=c("bg_primary"), padx=SP[5], pady=SP[4])
+        body.pack(fill=tk.BOTH, expand=True)
 
         # Group name
         make_label(
-            content,
+            body,
             "Group Name",
             self,
             style="secondary",
@@ -1779,7 +1902,7 @@ class ChatClientApp:
             bold=True,
             bg=c("bg_primary"),
         ).pack(anchor=tk.W, pady=(0, SP[1]))
-        name_bdr = tk.Frame(content, bg=c("input_border"), padx=1, pady=1)
+        name_bdr = tk.Frame(body, bg=c("input_border"), padx=1, pady=1)
         name_bdr.pack(fill=tk.X, pady=(0, SP[4]))
         name_entry = tk.Entry(
             name_bdr,
@@ -1796,7 +1919,7 @@ class ChatClientApp:
 
         # Member search
         make_label(
-            content,
+            body,
             "Add Members",
             self,
             style="secondary",
@@ -1804,8 +1927,7 @@ class ChatClientApp:
             bold=True,
             bg=c("bg_primary"),
         ).pack(anchor=tk.W, pady=(0, SP[1]))
-
-        search_row = tk.Frame(content, bg=c("bg_primary"))
+        search_row = tk.Frame(body, bg=c("bg_primary"))
         search_row.pack(fill=tk.X, pady=(0, SP[2]))
         search_bdr = tk.Frame(search_row, bg=c("input_border"), padx=1, pady=1)
         search_bdr.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, SP[2]))
@@ -1821,45 +1943,49 @@ class ChatClientApp:
         )
         search_entry.pack(fill=tk.X, ipady=SP[2], ipadx=SP[3])
 
-        # Search results (compact)
-        res_outer = tk.Frame(content, bg=c("border"))
-        res_outer.pack(fill=tk.X, pady=(0, SP[3]))
-        res_inner = tk.Frame(res_outer, bg=c("bg_secondary"))
+        # Search results
+        make_label(
+            body, "Results", self, style="tertiary", size="xs", bg=c("bg_primary")
+        ).pack(anchor=tk.W, pady=(0, SP[1]))
+        res_bdr = tk.Frame(body, bg=c("border"))
+        res_bdr.pack(fill=tk.X, pady=(0, SP[3]))
+        res_inner = tk.Frame(res_bdr, bg=c("bg_secondary"))
         res_inner.pack(fill=tk.X, padx=1, pady=1)
         res_canvas = tk.Canvas(
-            res_inner, bg=c("bg_secondary"), highlightthickness=0, height=90
+            res_inner, bg=c("bg_secondary"), highlightthickness=0, height=100
         )
         res_sb = ttk.Scrollbar(res_inner, orient="vertical", command=res_canvas.yview)
         res_frame = tk.Frame(res_canvas, bg=c("bg_secondary"))
+        res_win = res_canvas.create_window((0, 0), window=res_frame, anchor="nw")
         res_frame.bind(
             "<Configure>",
             lambda e: res_canvas.configure(scrollregion=res_canvas.bbox("all")),
         )
-        res_canvas.create_window((0, 0), window=res_frame, anchor="nw")
+        res_canvas.bind(
+            "<Configure>", lambda e: res_canvas.itemconfig(res_win, width=e.width)
+        )
         res_canvas.configure(yscrollcommand=res_sb.set)
         res_sb.pack(side=tk.RIGHT, fill=tk.Y)
         res_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        # Selected members chips area
+        # Selected members chips
         make_label(
-            content,
+            body,
             "Selected Members",
             self,
             style="secondary",
             size="xs",
             bg=c("bg_primary"),
         ).pack(anchor=tk.W, pady=(0, SP[1]))
-        chips_outer = tk.Frame(content, bg=c("border"))
-        chips_outer.pack(fill=tk.X, pady=(0, SP[3]))
-        chips_inner = tk.Frame(
-            chips_outer, bg=c("bg_secondary"), pady=SP[2], padx=SP[2]
-        )
+        chips_bdr = tk.Frame(body, bg=c("border"))
+        chips_bdr.pack(fill=tk.X, pady=(0, SP[3]))
+        chips_inner = tk.Frame(chips_bdr, bg=c("bg_secondary"), pady=SP[2], padx=SP[2])
         chips_inner.pack(fill=tk.X, padx=1, pady=1)
 
         status_lbl = make_label(
-            content, "", self, style="tertiary", size="xs", bg=c("bg_primary")
+            body, "", self, style="tertiary", size="xs", bg=c("bg_primary")
         )
-        status_lbl.pack(anchor=tk.W)
+        status_lbl.pack(anchor=tk.W, pady=(0, SP[2]))
 
         selected_members = {}  # id -> username
 
@@ -1888,11 +2014,6 @@ class ChatClientApp:
                     padx=SP[2],
                     pady=1,
                 ).pack(side=tk.LEFT)
-
-                def _remove(e=None, u=uid):
-                    selected_members.pop(u, None)
-                    _refresh_chips()
-
                 tk.Button(
                     chip,
                     text="✕",
@@ -1959,20 +2080,12 @@ class ChatClientApp:
                     else:
                         selected_members[u_id] = u_name
                     _refresh_chips()
-                    # Re-render results to update checkmarks
                     _render_search_results(users)
 
                 for w2 in [row, inner]:
                     w2.bind("<Button-1>", _toggle)
-
-                def _e(e, r=row):
-                    r.configure(bg=c("bg_tertiary"))
-
-                def _l(e, r=row):
-                    r.configure(bg=c("bg_secondary"))
-
-                row.bind("<Enter>", _e)
-                row.bind("<Leave>", _l)
+                row.bind("<Enter>", lambda e, r=row: r.configure(bg=c("bg_tertiary")))
+                row.bind("<Leave>", lambda e, r=row: r.configure(bg=c("bg_secondary")))
 
         def _do_search(*_):
             q = search_entry.get().strip()
@@ -2006,18 +2119,19 @@ class ChatClientApp:
             search_row, "Search", _do_search, self, variant="primary", size="sm"
         ).pack(side=tk.LEFT)
 
-        # Footer
-        card_widget = modal.winfo_children()[0].winfo_children()[0]
-        Separator(card_widget, c("border"))
-        footer = tk.Frame(card_widget, bg=c("bg_secondary"))
-        footer.pack(fill=tk.X, padx=1, pady=1, side=tk.BOTTOM)
+        # ── Footer ────────────────────────────────────────────────────────────
+        Separator(card, c("border"))
+        footer = tk.Frame(card, bg=c("bg_secondary"))
+        footer.pack(fill=tk.X)
         footer_inner = tk.Frame(footer, bg=c("bg_secondary"))
         footer_inner.pack(fill=tk.X, padx=SP[5], pady=SP[4])
 
         def _create_group():
             gname = name_entry.get().strip()
             if not gname:
-                status_lbl.configure(text="Please enter a group name.", fg=c("warning"))
+                status_lbl.configure(
+                    text="⚠ Please enter a group name.", fg=c("warning")
+                )
                 return
             member_ids = list(selected_members.keys())
             status_lbl.configure(text="Creating group…", fg=c("fg_tertiary"))
@@ -2060,7 +2174,7 @@ class ChatClientApp:
         ).pack(side=tk.RIGHT, padx=(SP[2], 0))
         make_btn(
             footer_inner,
-            "Create Group",
+            "👥  Create Group",
             _create_group,
             self,
             variant="primary",
