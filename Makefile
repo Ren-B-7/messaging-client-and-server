@@ -160,6 +160,7 @@ clean-python:
 	rm -rf $(PY_DIR)/.venv
 	rm -rf $(PY_DIR)/__pycache__
 	rm -rf $(PY_DIR)/.ruff_cache
+	cd $(PY_DIR) && uv run python main.py --clean
 
 clean-frontend:
 	find $(FRONTEND_DIR) -name "*.cache" -type d -exec rm -rf {} +
