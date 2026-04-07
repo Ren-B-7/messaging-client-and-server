@@ -824,7 +824,9 @@ class ChatClientApp:
 
         def t():
             try:
-                r = self.api.register(email, username, password, fullname, confirm_password)
+                r = self.api.register(
+                    email, username, password, fullname, confirm_password
+                )
                 self.root.after(0, lambda: self._handle_register_response(r, email))
             except Exception as e:
                 self.root.after(
