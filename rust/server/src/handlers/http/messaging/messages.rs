@@ -212,6 +212,15 @@ pub async fn handle_create_chat(
     if let Some(existing_chat_id) =
         groups::find_existing_dm(&state.db, user_id, other_user_id).await?
     {
+        // Re-verify membership in case find_existing_dm matched a chat the
+        // caller was removed from.
+        if !groups::is_group_member(&state.db, existing_chat_id, user_id).await? {
+            // Re-add the creator to the existing DM if they are missing.
+            groups::add_group_member(&state.db, existing_chat_id, user_id, "admin".to_string())
+                .await
+                .context("Failed to rejoin existing DM")?;
+        }
+
         let chat = groups::get_group(&state.db, existing_chat_id)
             .await?
             .context("Failed to retrieve existing chat")?;

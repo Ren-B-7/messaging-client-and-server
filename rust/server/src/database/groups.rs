@@ -187,13 +187,18 @@ pub async fn find_existing_dm(
     user2_id: i64,
 ) -> Result<Option<i64>> {
     conn.call(move |conn: &mut rusqlite::Connection| {
+        // Find a 'direct' chat where:
+        // 1. Both user1 and user2 are members.
+        // 2. The total member count is exactly 2.
+        // This ensures we find the unique DM between these two users.
         let mut stmt = conn.prepare(
             "SELECT g.id
              FROM groups g
+             JOIN group_members gm1 ON g.id = gm1.chat_id AND gm1.user_id = ?1
+             JOIN group_members gm2 ON g.id = gm2.chat_id AND gm2.user_id = ?2
              WHERE g.chat_type = 'direct'
-             AND g.id IN (SELECT chat_id FROM group_members WHERE user_id = ?1)
-             AND g.id IN (SELECT chat_id FROM group_members WHERE user_id = ?2)
-             AND (SELECT COUNT(*) FROM group_members WHERE chat_id = g.id) = 2",
+             AND (SELECT COUNT(*) FROM group_members WHERE chat_id = g.id) = 2
+             LIMIT 1",
         )?;
 
         let chat_id = stmt
