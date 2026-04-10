@@ -7,7 +7,7 @@ proptest! {
     #[test]
     fn prop_username_negative_cases(s in "\\PC{0,32}") {
         // Test patterns that MUST fail
-        let invalid_patterns = vec![
+        let invalid_patterns = [
             "!!", "@@", "  ", "..", "/", "\\", "a!", "user name",
         ];
 
