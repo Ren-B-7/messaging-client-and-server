@@ -17,6 +17,7 @@ import os
 import threading
 import time
 from collections import defaultdict
+import queue
 
 import config
 from api import ChatAPIClient
@@ -383,6 +384,137 @@ class TabBar(tk.Frame):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  SSE class
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class SSEManager:
+    """Manages Server-Sent Events (SSE) connections for real-time updates."""
+
+    def __init__(
+        self, api_client, message_callback, typing_callback, status_callback, logger
+    ):
+        self.api = api_client
+        self.on_message = message_callback
+        self.on_typing = typing_callback
+        self.on_status = status_callback
+        self.active_streams = {}
+        self.connection_status = {}
+        self._shutdown = threading.Event()
+        self.logger = logger
+
+    def start_stream(self, chat_id):
+        """Start SSE stream for a specific chat."""
+        if chat_id in self.active_streams and self.active_streams[chat_id].is_alive():
+            return
+
+        self.connection_status[chat_id] = "connecting"
+        self.on_status(chat_id, "connecting")
+
+        def handle_message(event_type, data):
+            try:
+                if event_type == "message":
+                    self.on_message(chat_id, data)
+                elif event_type == "typing":
+                    self.on_typing(chat_id, data)
+            except Exception as e:
+                self.logger.exception("Error handling SSE event", str(e))
+
+        def handle_error(error_msg):
+            self.logger.warning(f"SSE error for chat {chat_id}", extra_info=error_msg)
+            self.connection_status[chat_id] = "error"
+            self.on_status(chat_id, "error")
+
+        def handle_connect():
+            self.connection_status[chat_id] = "connected"
+            self.on_status(chat_id, "connected")
+
+        thread = self.api.stream_messages(
+            chat_id=chat_id,
+            on_message=handle_message,
+            on_error=handle_error,
+            on_connect=handle_connect,
+            limit=50,
+            offset=0,
+        )
+
+        self.active_streams[chat_id] = thread
+
+    def stop_stream(self, chat_id):
+        """Stop SSE stream for a specific chat."""
+        if chat_id in self.active_streams:
+            self.connection_status[chat_id] = "disconnected"
+            self.on_status(chat_id, "disconnected")
+            del self.active_streams[chat_id]
+
+    def stop_all(self):
+        """Stop all SSE streams."""
+        self._shutdown.set()
+        for chat_id in list(self.active_streams.keys()):
+            self.stop_stream(chat_id)
+
+
+class TypingIndicator:
+    """Shows 'User is typing...' with animated dots."""
+
+    def __init__(self, parent_frame, app):
+        self.parent = parent_frame
+        self.app = app
+        self.active_indicators = {}
+        self.typing_timeout = 3000  # ms
+
+    def show(self, chat_id, username):
+        """Show typing indicator for a user."""
+        if chat_id in self.active_indicators:
+            widget, timeout_id = self.active_indicators[chat_id]
+            self.parent.after_cancel(timeout_id)
+            widget.destroy()
+
+        c = self.app.get_color
+        indicator = tk.Frame(self.parent, bg=c("bg_secondary"), padx=8, pady=4)
+        indicator.pack(fill=tk.X, side=tk.BOTTOM)
+
+        dots_label = tk.Label(
+            indicator,
+            text="● ● ●",
+            font=(FONT_SANS, 10),
+            bg=c("bg_secondary"),
+            fg=c("accent"),
+        )
+        dots_label.pack(side=tk.LEFT)
+
+        text_label = tk.Label(
+            indicator,
+            text=f"{username} is typing...",
+            font=(FONT_SANS, 11, "italic"),
+            bg=c("bg_secondary"),
+            fg=c("fg_secondary"),
+        )
+        text_label.pack(side=tk.LEFT, padx=(8, 0))
+
+        # Animate dots
+        def animate(count=0):
+            if indicator.winfo_exists():
+                dots = "● " * (count % 3 + 1) + "○ " * (2 - count % 3)
+                dots_label.config(text=dots.strip())
+                indicator.after(500, lambda: animate(count + 1))
+
+        animate()
+
+        # Auto-hide
+        timeout_id = self.parent.after(self.typing_timeout, lambda: self.hide(chat_id))
+        self.active_indicators[chat_id] = (indicator, timeout_id)
+
+    def hide(self, chat_id):
+        """Hide typing indicator."""
+        if chat_id in self.active_indicators:
+            widget, _ = self.active_indicators[chat_id]
+            if widget.winfo_exists():
+                widget.destroy()
+            del self.active_indicators[chat_id]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  Main Application
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -418,6 +550,9 @@ class ChatClientApp:
         except Exception as e:
             self.logger.exception("Failed to initialize Cache", str(e), stop=True)
             raise
+
+        # Setup SSE for real-time updates
+        self.setup_sse()
 
         # State
         self.current_user = None
@@ -496,6 +631,96 @@ class ChatClientApp:
     • Evictions: {stats['evictions']}
         """
         messagebox.showinfo("Cache Statistics", msg)
+
+    def setup_sse(self):
+        """Initialize SSE manager for real-time updates."""
+        self.sse_manager = SSEManager(
+            api_client=self.api,
+            message_callback=self._handle_live_message,
+            typing_callback=self._handle_typing_indicator,
+            status_callback=self._handle_connection_status,
+            logger=self.logger,
+        )
+        self.unread_counts = defaultdict(int)
+        self.logger.info("SSE manager initialized")
+
+    def _handle_live_message(self, chat_id, message_data):
+        """Handle incoming live message."""
+
+        def update_ui():
+            try:
+                if self.current_chat_id == chat_id:
+                    msg = self._normalise_message(message_data)
+                    own_username = (self.current_user or {}).get("username", "")
+                    is_own = msg["sender"] == own_username
+
+                    self._render_message(msg["sender"], msg["content"], is_own)
+                    self.messages_frame.update_idletasks()
+                    self._msg_canvas.yview_moveto(1.0)
+
+                    if not is_own and msg.get("id"):
+                        self.api.mark_message_read(msg["id"])
+                else:
+                    # Increment unread for other chats
+                    self.unread_counts[chat_id] += 1
+                    self._refresh_sidebar_item(chat_id)
+            except Exception as e:
+                self.logger.exception("Error handling live message", str(e))
+
+        self.root.after(0, update_ui)
+
+    def _handle_typing_indicator(self, chat_id, data):
+        """Handle typing indicator event."""
+
+        def update_ui():
+            if self.current_chat_id == chat_id and hasattr(self, "typing_indicator"):
+                username = data.get("username", "Someone")
+                self.typing_indicator.show(chat_id, username)
+
+        self.root.after(0, update_ui)
+
+    def _handle_connection_status(self, chat_id, status):
+        """Update connection status in UI."""
+
+        def update_ui():
+            # Update status indicator in chat header
+            status_text = {
+                "connected": "🟢 Live",
+                "connecting": "🟡 Connecting...",
+                "error": "🔴 Error",
+                "disconnected": "⚪ Offline",
+            }.get(status, "⚪")
+
+            if hasattr(self, "chat_title_label"):
+                current = self.chat_title_label.cget("text").split(" | ")[0]
+                self.chat_title_label.config(text=f"{current} | {status_text}")
+
+        self.root.after(0, update_ui)
+
+    def _refresh_sidebar_item(self, chat_id):
+        """Refresh a specific sidebar item to show unread count."""
+        # Find and update the conversation item
+        for widget in self.chats_frame.winfo_children():
+            if hasattr(widget, "_chat_id") and widget._chat_id == chat_id:
+                count = self.unread_counts.get(chat_id, 0)
+                # Update badge if exists or create one
+                # (implementation depends on your _make_conv_item structure)
+                break
+
+    def send_typing_notification(self):
+        """Send typing indicator to server (debounced)."""
+        if self.current_chat_id:
+            now = time.time()
+            if (
+                not hasattr(self, "_last_typing_sent")
+                or now - self._last_typing_sent > 3
+            ):
+                threading.Thread(
+                    target=self.api.send_typing_indicator,
+                    args=(self.current_chat_id,),
+                    daemon=True,
+                ).start()
+                self._last_typing_sent = now
 
     # ── Favicon ───────────────────────────────────────────────────────────────
 
@@ -1086,6 +1311,11 @@ class ChatClientApp:
         )
         self.message_input.pack(fill=tk.BOTH, expand=True, ipady=SP[2], ipadx=SP[3])
         self.message_input.bind("<Control-Return>", lambda e: self.send_message())
+        # Initialize typing indicator
+        self.typing_indicator = TypingIndicator(self.messages_frame, self)
+
+        # Bind typing detection
+        self.message_input.bind("<KeyPress>", lambda e: self.send_typing_notification())
 
         send_btn = make_btn(
             input_inner, "Send ↑", self.send_message, self, variant="primary", size="md"
@@ -1350,22 +1580,56 @@ class ChatClientApp:
 
         item.bind("<Enter>", lambda e: _set_bg(c("bg_tertiary")))
         item.bind("<Leave>", lambda e: _set_bg(c("bg_secondary")))
+        # Store chat_id for updates
+        item._chat_id = conv.get("id")
+
+        # Add unread badge (initially hidden)
+        badge = tk.Label(
+            inner,
+            text="",
+            font=(FONT_SANS, 9, "bold"),
+            bg=c("accent"),
+            fg="#ffffff",
+            padx=6,
+            pady=1,
+        )
+        badge.pack(side=tk.RIGHT, padx=(0, 8))
+        badge.pack_forget()
+        item._badge_label = badge
 
     def select_conversation(self, conversation):
+        """Select a conversation and start real-time streaming."""
         chat_id = conversation.get("id")
         if not chat_id:
             self.logger.warning(
                 "select_conversation called with no id", extra_info=str(conversation)
             )
             return
+
+        # Stop previous stream if different chat
+        if self.current_chat_id and self.current_chat_id != chat_id:
+            self.sse_manager.stop_stream(self.current_chat_id)
+            if hasattr(self, "typing_indicator"):
+                self.typing_indicator.hide(self.current_chat_id)
+
         self.current_chat_id = chat_id
+        self.unread_counts[chat_id] = 0  # Clear unread
+        self._refresh_sidebar_item(chat_id)
+
+        # Update header
+        self.chat_title_label.config(text=conversation.get("name", "Chat"))
 
         def t():
             try:
+                # Load initial messages
                 r = self.api.get_messages(self.current_chat_id)
                 self.root.after(0, lambda: self._display_messages(r))
+
+                # Start real-time stream
+                self.root.after(100, lambda: self.sse_manager.start_stream(chat_id))
+
             except Exception as e:
-                self.logger.exception("Error loading messages", str(e), stop=False)
+                self.logger.exception("Error loading conversation", str(e), stop=False)
 
         threading.Thread(target=t, daemon=True).start()
 
@@ -2768,6 +3032,9 @@ class ChatClientApp:
     # ─────────────────────────────────────────────────────────────────────────
 
     def logout(self):
+        # Stop all SSE connections
+        if hasattr(self, "sse_manager"):
+            self.sse_manager.stop_all()
         self.current_user = None
         self.is_admin = False
         self.current_chat_id = None
