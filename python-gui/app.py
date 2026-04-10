@@ -760,11 +760,11 @@ class ChatClientApp:
         stats = self.api.http_cache.get_stats()
         msg = f"""
     HTTP Cache Statistics:
-    • Entries: {stats['size']} / {stats['max_size']}
-    • Hits: {stats['hits']}
-    • Misses: {stats['misses']}
-    • Hit Rate: {stats['hit_rate']}
-    • Evictions: {stats['evictions']}
+    • Entries: {stats["size"]} / {stats["max_size"]}
+    • Hits: {stats["hits"]}
+    • Misses: {stats["misses"]}
+    • Hit Rate: {stats["hit_rate"]}
+    • Evictions: {stats["evictions"]}
         """
         messagebox.showinfo("Cache Statistics", msg)
 
@@ -2105,7 +2105,7 @@ class ChatClientApp:
         rx, ry = self.root.winfo_rootx(), self.root.winfo_rooty()
         rw, rh = self.root.winfo_width(), self.root.winfo_height()
         modal.geometry(
-            f"{width}x{height}+{rx + (rw - width)//2}+{ry + (rh - height)//2}"
+            f"{width}x{height}+{rx + (rw - width) // 2}+{ry + (rh - height) // 2}"
         )
 
         # ── Outer border card ─────────────────────────────────────────────────
@@ -2389,7 +2389,7 @@ class ChatClientApp:
         rx, ry = self.root.winfo_rootx(), self.root.winfo_rooty()
         rw, rh = self.root.winfo_width(), self.root.winfo_height()
         modal.geometry(
-            f"{width}x{height}+{rx + (rw - width)//2}+{ry + (rh - height)//2}"
+            f"{width}x{height}+{rx + (rw - width) // 2}+{ry + (rh - height) // 2}"
         )
 
         # ── Outer border card ─────────────────────────────────────────────────
