@@ -534,21 +534,140 @@ class ChatAPIClient:
             "GET", f"/api/files/{file_id}", use_cache=use_cache, cache_ttl=60
         )
 
-    def upload_file(self, file_path, chat_id, compress=False):
+    def upload_file(self, file_path, chat_id, compress=False, progress_callback=None):
+        """
+        Upload file with optional progress tracking.
+
+        Args:
+            progress_callback: Callable(current_bytes, total_bytes) -> bool
+                              Return False to cancel upload
+        """
+
         logger.info("Uploading file", extra_info=f"Chat: {chat_id}, File: {file_path}")
-        r = self._make_multipart_request(
-            "/api/files/upload",
-            file_path,
-            field_name="file",
-            extra_fields={"chat_id": str(chat_id)},
-            compress_upload=compress,
+
+        url = f"{self.server_url}/api/files/upload"
+        boundary = uuid.uuid4().hex
+        filename = os.path.basename(file_path)
+
+        # Read file
+        with open(file_path, "rb") as fh:
+            file_data = fh.read()
+
+        original_size = len(file_data)
+
+        # Compress if requested and beneficial
+        if compress and len(file_data) > 1024:
+            file_data = gzip.compress(file_data)
+            filename += ".gz"
+            logger.debug(
+                f"Compressed file from {original_size} to {len(file_data)} bytes"
+            )
+
+        # Build multipart body
+        fields = {"chat_id": str(chat_id)}
+        parts = []
+
+        for name, value in fields.items():
+            parts.append(
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
+                f"{value}\r\n"
+            )
+
+        mime_type = mimetypes.guess_type(file_path)[0] or "application/octet-stream"
+        header = (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
+            f"Content-Type: {mime_type}\r\n"
         )
-        if r.get("success"):
-            logger.info("File uploaded", extra_info=f"Chat: {chat_id}")
+        if compress:
+            header += "Content-Encoding: gzip\r\n"
+        header += "\r\n"
+
+        footer = f"\r\n--{boundary}--\r\n"
+
+        # Build full body
+        body_prefix = "".join(parts).encode() + header.encode()
+        body_suffix = footer.encode()
+        total_size = len(body_prefix) + len(file_data) + len(body_suffix)
+        full_body = body_prefix + file_data + body_suffix
+
+        # Wrap in progress-tracking reader if callback provided
+        if progress_callback:
+
+            class ProgressReader(io.BytesIO):
+                def __init__(self, data, callback, total):
+                    super().__init__(data)
+                    self.callback = callback
+                    self.total = total
+                    self.read_so_far = 0
+
+                def read(self, size=-1):
+                    chunk = super().read(size)
+                    if chunk:
+                        self.read_so_far += len(chunk)
+                        # Report every 64KB or on completion
+                        if self.read_so_far % 65536 < len(chunk) or not chunk:
+                            if not self.callback(self.read_so_far, self.total):
+                                raise Exception("Upload cancelled")
+                    return chunk
+
+            body_stream = ProgressReader(full_body, progress_callback, total_size)
         else:
-            info = r.get("error") or ""
-            logger.warning("File upload failed", extra_info=info)
-        return r
+            body_stream = io.BytesIO(full_body)
+
+        req = urllib.request.Request(
+            url,
+            data=body_stream,
+            method="POST",
+            headers={
+                "User-Agent": self.user_agent,
+                "Content-Type": f"multipart/form-data; boundary={boundary}",
+                "Accept-Encoding": (
+                    "gzip, deflate" if ENABLE_COMPRESSION else "identity"
+                ),
+                "Content-Length": str(total_size),
+            },
+        )
+
+        try:
+            self.rate_limiter.acquire()
+            # Longer timeout for large uploads
+            response = self.opener.open(req, timeout=CONNECTION_TIMEOUT * 5)
+            body = response.read()
+
+            result = {
+                "status": response.status,
+                "data": body.decode("utf-8"),
+                "headers": dict(response.headers),
+                "success": True,
+            }
+
+            if result.get("success"):
+                logger.info(
+                    "File uploaded",
+                    extra_info=f"Chat: {chat_id}, Size: {original_size} bytes",
+                )
+            else:
+                info = result.get("error") or ""
+                logger.warning("File upload failed", extra_info=info)
+
+            return result
+
+        except HTTPError as e:
+            body = e.read().decode("utf-8")
+            logger.warning(f"HTTP {e.code}", extra_info=f"{url} — {body[:100]}")
+            return {"status": e.code, "data": body, "error": str(e), "success": False}
+        except Exception as e:
+            if "cancelled" in str(e).lower():
+                return {
+                    "status": 0,
+                    "error": "Upload cancelled",
+                    "success": False,
+                    "cancelled": True,
+                }
+            logger.exception("Upload error", error_detail=str(e))
+            return {"status": 0, "error": str(e), "success": False}
 
     def delete_file(self, file_id):
         return self._make_request(

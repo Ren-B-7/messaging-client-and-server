@@ -10,14 +10,13 @@ Redesigned to exactly match the web frontend's design system:
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 import json
 import subprocess
 import os
 import threading
 import time
 from collections import defaultdict
-import queue
 
 import config
 from api import ChatAPIClient
@@ -84,6 +83,143 @@ class Separator(tk.Frame):
     def __init__(self, parent, color, **kw):
         super().__init__(parent, height=1, bg=color, **kw)
         self.pack(fill=tk.X)
+
+
+class UploadProgressDialog(tk.Toplevel):
+    """Modal dialog showing file upload progress with cancel option."""
+
+    def __init__(self, parent, app, filename, total_bytes):
+        super().__init__(parent)
+        self.app = app
+        self.total_bytes = total_bytes
+        self.cancelled = False
+        self._animation_id = None
+
+        self.title("Uploading")
+        self.transient(parent)
+        self.grab_set()
+        self.resizable(False, False)
+
+        # Center on parent window
+        parent.update_idletasks()
+        x = parent.winfo_rootx() + (parent.winfo_width() - 400) // 2
+        y = parent.winfo_rooty() + (parent.winfo_height() - 180) // 2
+        self.geometry(f"400x180+{x}+{y}")
+
+        c = app.get_color
+
+        # Main container
+        container = tk.Frame(self, bg=c("bg_primary"), padx=SP[6], pady=SP[6])
+        container.pack(fill=tk.BOTH, expand=True)
+
+        # Title
+        tk.Label(
+            container,
+            text="Uploading File",
+            font=(FONT_SANS, FS["lg"], "bold"),
+            bg=c("bg_primary"),
+            fg=c("fg_primary"),
+        ).pack(anchor=tk.W, pady=(0, SP[2]))
+
+        # Filename
+        display_name = filename if len(filename) < 40 else filename[:37] + "..."
+        tk.Label(
+            container,
+            text=display_name,
+            font=(FONT_SANS, FS["sm"]),
+            bg=c("bg_primary"),
+            fg=c("fg_secondary"),
+            wraplength=360,
+        ).pack(anchor=tk.W, pady=(0, SP[4]))
+
+        # Progress bar background (border)
+        bar_bg = tk.Frame(container, bg=c("border"), padx=1, pady=1)
+        bar_bg.pack(fill=tk.X, pady=(0, SP[2]))
+
+        # Progress bar fill
+        self.bar_fill = tk.Frame(bar_bg, bg=c("accent"), height=16, width=0)
+        self.bar_fill.pack(side=tk.LEFT)
+        self.bar_fill.pack_propagate(False)
+
+        # Progress text
+        self.progress_text = tk.Label(
+            container,
+            text="0%",
+            font=(FONT_MONO, FS["sm"]),
+            bg=c("bg_primary"),
+            fg=c("fg_secondary"),
+        )
+        self.progress_text.pack(anchor=tk.E)
+
+        # Cancel button
+        self.cancel_btn = tk.Button(
+            container,
+            text="Cancel",
+            command=self._on_cancel,
+            bg=c("bg_tertiary"),
+            fg=c("fg_primary"),
+            relief=tk.FLAT,
+            cursor="hand2",
+            font=(FONT_SANS, FS["base"]),
+            padx=SP[6],
+            pady=SP[2],
+        )
+        self.cancel_btn.pack(pady=(SP[4], 0))
+
+        # Animate ellipsis
+        self._dots = 0
+        self._animate()
+
+    def _animate(self):
+        """Animate the title dots."""
+        if not self.winfo_exists():
+            return
+        dots = "." * (self._dots % 3 + 1)
+        self.title(f"Uploading{dots}")
+        self._dots += 1
+        self._animation_id = self.after(500, self._animate)
+
+    def update_progress(self, current, total):
+        """Update progress bar. Returns False if cancelled."""
+        if self.cancelled:
+            return False
+
+        percentage = min(100, (current / total) * 100) if total > 0 else 0
+
+        # Update bar width
+        bar_width = int(368 * (percentage / 100))  # 400 - 2*16 padding
+        self.bar_fill.config(width=bar_width)
+
+        # Update text
+        self.progress_text.config(text=f"{percentage:.1f}%")
+        self.update()
+
+        return True
+
+    def _on_cancel(self):
+        """Handle cancel button."""
+        self.cancelled = True
+        self.cancel_btn.config(state=tk.DISABLED, text="Cancelling...")
+
+    def complete(self, success=True, error_msg=None):
+        """Show completion state."""
+        if self._animation_id:
+            self.after_cancel(self._animation_id)
+
+        if success:
+            self.title("Upload Complete")
+            self.bar_fill.config(bg=self.app.get_color("success"))
+            self.progress_text.config(
+                text="Complete!", fg=self.app.get_color("success")
+            )
+            self.cancel_btn.config(text="Close", state=tk.NORMAL, command=self.destroy)
+            self.after(1000, self.destroy)
+        else:
+            self.title("Upload Failed")
+            self.bar_fill.config(bg=self.app.get_color("danger"))
+            error_text = error_msg if error_msg else "Failed"
+            self.progress_text.config(text=error_text, fg=self.app.get_color("danger"))
+            self.cancel_btn.config(text="Close", command=self.destroy)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -702,7 +838,7 @@ class ChatClientApp:
         # Find and update the conversation item
         for widget in self.chats_frame.winfo_children():
             if hasattr(widget, "_chat_id") and widget._chat_id == chat_id:
-                count = self.unread_counts.get(chat_id, 0)
+                # count = self.unread_counts.get(chat_id, 0)
                 # Update badge if exists or create one
                 # (implementation depends on your _make_conv_item structure)
                 break
@@ -1317,6 +1453,17 @@ class ChatClientApp:
         # Bind typing detection
         self.message_input.bind("<KeyPress>", lambda e: self.send_typing_notification())
 
+        # Attach file button - uses make_btn with ghost variant
+        attach_btn = make_btn(
+            input_inner,
+            "📎",
+            self.upload_file_with_progress,
+            self,
+            variant="ghost",
+            size="md",
+        )
+        attach_btn.pack(side=tk.LEFT, padx=(0, SP[3]))
+
         send_btn = make_btn(
             input_inner, "Send ↑", self.send_message, self, variant="primary", size="md"
         )
@@ -1334,6 +1481,76 @@ class ChatClientApp:
         hint.pack(side=tk.BOTTOM, padx=SP[4], pady=(0, SP[1]))
 
         self.load_chats()
+
+    def upload_file_with_progress(self):
+        """Open file dialog and upload with progress tracking."""
+        if not self.current_chat_id:
+            messagebox.showwarning("Upload", "Please select a conversation first")
+            return
+
+        file_path = filedialog.askopenfilename(
+            title="Select file to upload",
+            filetypes=[
+                ("All files", "*.*"),
+                ("Images", "*.png *.jpg *.jpeg *.gif *.bmp *.webp"),
+                ("Documents", "*.pdf *.doc *.docx *.txt *.md"),
+                ("Archives", "*.zip *.rar *.7z *.gz"),
+            ],
+        )
+
+        if not file_path:
+            return
+
+        filename = os.path.basename(file_path)
+        file_size = os.path.getsize(file_path)
+
+        # Check size (e.g., 50MB limit)
+        if file_size > 50 * 1024 * 1024:
+            messagebox.showerror("Upload", "File too large (max 50MB)")
+            return
+
+        # Create progress dialog
+        dialog = UploadProgressDialog(self.root, self, filename, file_size)
+
+        def do_upload():
+            try:
+                # Auto-compress if > 1MB and text-based
+                should_compress = file_size > 1024 * 1024
+
+                result = self.api.upload_file(
+                    file_path=file_path,
+                    chat_id=self.current_chat_id,
+                    compress=should_compress,
+                    progress_callback=lambda cur, tot: dialog.update_progress(cur, tot),
+                )
+
+                def on_complete():
+                    if result.get("cancelled"):
+                        dialog.destroy()
+                    elif result.get("success"):
+                        dialog.complete(success=True)
+                        # Refresh messages to show new file
+                        self.select_conversation(
+                            {
+                                "id": self.current_chat_id,
+                                "name": self.chat_title_label.cget("text").split(" | ")[
+                                    0
+                                ],
+                            }
+                        )
+                    else:
+                        error = result.get("error", "Unknown error")
+                        dialog.complete(success=False, error_msg=error)
+
+                self.root.after(0, on_complete)
+
+            except Exception as e:
+                self.logger.exception("Upload failed", str(e))
+                self.root.after(
+                    0, lambda e=e: dialog.complete(success=False, error_msg=str(e))
+                )
+
+        threading.Thread(target=do_upload, daemon=True).start()
 
     # ── Response parsing helpers ──────────────────────────────────────────────
 
