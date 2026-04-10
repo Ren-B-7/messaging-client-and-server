@@ -21,7 +21,7 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::database::{groups, utils};
+use crate::database::{files, groups, utils};
 use crate::handlers::http::utils::{deliver_error_json, deliver_serialized_json};
 use shared::types::jwt::JwtClaims;
 use shared::types::sse::SseEvent;
@@ -310,8 +310,6 @@ pub async fn handle_download_file(
     claims: JwtClaims,
     file_id: i64,
 ) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
-    use crate::database::files;
-
     let user_id = claims.user_id;
     info!("File download: file={} user={}", file_id, user_id);
 
@@ -383,8 +381,6 @@ pub async fn handle_get_chat_files(
     state: AppState,
     claims: JwtClaims,
 ) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
-    use crate::database::files;
-
     let user_id = claims.user_id;
 
     let params: std::collections::HashMap<String, String> =
@@ -485,8 +481,6 @@ pub async fn handle_delete_file(
     user_id: i64,
     file_id: i64,
 ) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
-    use crate::database::files;
-
     info!("Delete file {} requested by user {}", file_id, user_id);
 
     let rec = match files::get_file(&state.db, file_id).await? {

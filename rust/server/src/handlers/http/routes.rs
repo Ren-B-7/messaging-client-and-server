@@ -13,7 +13,7 @@ use tracing::{info, warn};
 
 use crate::AppState;
 use crate::handlers::http::utils::headers::{decode_jwt_claims, validate_jwt_secure};
-use crate::handlers::http::{messaging, profile, utils::*};
+use crate::handlers::http::{auth, messaging, profile, utils};
 
 use shared::types::cache::*;
 use shared::types::jwt::JwtClaims;
@@ -460,15 +460,19 @@ impl Router {
             "/" | "/index.html" => {
                 let file_path = format!("{}/index.html", web_dir);
                 Ok(Some(
-                    deliver_html_page(&file_path).context("Failed to deliver HTML page")?,
+                    utils::deliver_html_page(&file_path).context("Failed to deliver HTML page")?,
                 ))
             }
 
             path if path.starts_with("/static/") => {
                 let file_path = format!("{}{}", web_dir, path);
                 Ok(Some(
-                    deliver_page_with_status(&file_path, StatusCode::OK, CacheStrategy::LongTerm)
-                        .context("Failed to deliver static file")?,
+                    utils::deliver_page_with_status(
+                        &file_path,
+                        StatusCode::OK,
+                        CacheStrategy::LongTerm,
+                    )
+                    .context("Failed to deliver static file")?,
                 ))
             }
 
@@ -484,16 +488,24 @@ impl Router {
                 info!("icons: {}", icons);
                 let file_path = format!("{}/{}{}", web_dir, icons, path);
                 Ok(Some(
-                    deliver_page_with_status(&file_path, StatusCode::OK, CacheStrategy::LongTerm)
-                        .context("Failed to deliver browser icon")?,
+                    utils::deliver_page_with_status(
+                        &file_path,
+                        StatusCode::OK,
+                        CacheStrategy::LongTerm,
+                    )
+                    .context("Failed to deliver browser icon")?,
                 ))
             }
 
             path if path.starts_with("/non-static/") => {
                 let file_path = format!("{}{}", web_dir, path);
                 Ok(Some(
-                    deliver_page_with_status(&file_path, StatusCode::OK, CacheStrategy::ShortTerm)
-                        .context("Failed to deliver non-static file")?,
+                    utils::deliver_page_with_status(
+                        &file_path,
+                        StatusCode::OK,
+                        CacheStrategy::ShortTerm,
+                    )
+                    .context("Failed to deliver non-static file")?,
                 ))
             }
 
@@ -510,7 +522,7 @@ impl Router {
             "/error" => {
                 let file_path = format!("{}/error.html", web_dir);
                 Ok(Some(
-                    deliver_html_page(&file_path).context("Failed to deliver error page")?,
+                    utils::deliver_html_page(&file_path).context("Failed to deliver error page")?,
                 ))
             }
 
@@ -524,14 +536,14 @@ impl Router {
                 // reads window.location.pathname to extract it client-side.
                 let file_path = format!("{}/error.html", web_dir);
                 Ok(Some(
-                    deliver_html_page(&file_path).context("Failed to deliver error page")?,
+                    utils::deliver_html_page(&file_path).context("Failed to deliver error page")?,
                 ))
             }
 
             path if path.ends_with(".html") => {
                 let file_path = format!("{}{}", web_dir, path);
                 Ok(Some(
-                    deliver_html_page(&file_path).context("Failed to deliver HTML file")?,
+                    utils::deliver_html_page(&file_path).context("Failed to deliver HTML file")?,
                 ))
             }
 
@@ -628,10 +640,10 @@ pub fn unauthorized(
             "Sign In",
             "/login",
         );
-        return deliver_redirect(&location).context("Failed to build 401 redirect response");
+        return utils::deliver_redirect(&location).context("Failed to build 401 redirect response");
     }
 
-    deliver_error_json(
+    utils::deliver_error_json(
         "UNAUTHORIZED",
         "Authentication required",
         StatusCode::UNAUTHORIZED,
@@ -651,10 +663,10 @@ pub fn forbidden(
             "Go Home",
             "/",
         );
-        return deliver_redirect(&location).context("Failed to build 403 redirect response");
+        return utils::deliver_redirect(&location).context("Failed to build 403 redirect response");
     }
 
-    deliver_error_json(
+    utils::deliver_error_json(
         "FORBIDDEN",
         "Insufficient privileges",
         StatusCode::FORBIDDEN,
@@ -682,10 +694,10 @@ pub fn not_found(
             "Go Home",
             "/",
         );
-        return deliver_redirect(&location).context("Failed to build 404 redirect response");
+        return utils::deliver_redirect(&location).context("Failed to build 404 redirect response");
     }
 
-    deliver_error_json("NOT_FOUND", "Endpoint not found", StatusCode::NOT_FOUND)
+    utils::deliver_error_json("NOT_FOUND", "Endpoint not found", StatusCode::NOT_FOUND)
         .context("Failed to deliver 404 response")
 }
 
@@ -717,10 +729,10 @@ pub fn build_base_router(web_dir: Option<String>, icons_dir: Option<String>) -> 
                 "email_required":       state.config.read().await.auth.email_required,
                 "token_expiry_minutes": state.config.read().await.auth.token_expiry_minutes,
             });
-            deliver_success_json(Some(data), None, StatusCode::OK)
+            utils::deliver_success_json(Some(data), None, StatusCode::OK)
         })
         .get("/health", |_req, _state| async move {
-            deliver_success_json(
+            utils::deliver_success_json(
                 Some(serde_json::json!({"health":"ok"})),
                 None,
                 StatusCode::IM_A_TEAPOT,
@@ -728,12 +740,12 @@ pub fn build_base_router(web_dir: Option<String>, icons_dir: Option<String>) -> 
         })
         // ── Password reset (Public) ──────────────────────────────────────────
         .post("/api/auth/reset-request", |req, state| async move {
-            crate::handlers::http::auth::reset::handle_reset_request(req, state)
+            auth::reset::handle_reset_request(req, state)
                 .await
                 .context("Reset request failed")
         })
         .post("/api/auth/reset-confirm", |req, state| async move {
-            crate::handlers::http::auth::reset::handle_reset_confirm(req, state)
+            auth::reset::handle_reset_confirm(req, state)
                 .await
                 .context("Reset confirm failed")
         })
@@ -771,7 +783,7 @@ pub fn build_user_api_routes(router: Router) -> Router {
                 Some(id) => messaging::handle_get_members(req, state, claims, id)
                     .await
                     .context("Get members failed"),
-                None => json_response::deliver_error_json(
+                None => utils::json_response::deliver_error_json(
                     "BAD_REQUEST",
                     "Invalid group id",
                     StatusCode::BAD_REQUEST,
@@ -799,7 +811,7 @@ pub fn build_user_api_routes(router: Router) -> Router {
                     Some(id) => messaging::handle_mark_read(req, state, user_id, id)
                         .await
                         .context("Mark read failed"),
-                    None => json_response::deliver_error_json(
+                    None => utils::json_response::deliver_error_json(
                         "BAD_REQUEST",
                         "Invalid message id",
                         StatusCode::BAD_REQUEST,
@@ -824,7 +836,7 @@ pub fn build_user_api_routes(router: Router) -> Router {
                     Some(id) => messaging::handle_delete_message(req, state, user_id, id)
                         .await
                         .context("Message delete failed"),
-                    None => json_response::deliver_error_json(
+                    None => utils::json_response::deliver_error_json(
                         "BAD_REQUEST",
                         "Invalid message id",
                         StatusCode::BAD_REQUEST,
@@ -860,7 +872,7 @@ pub fn build_user_api_routes(router: Router) -> Router {
                     Some(id) => messaging::handle_add_member(req, state, user_id, id)
                         .await
                         .context("Add member failed"),
-                    None => json_response::deliver_error_json(
+                    None => utils::json_response::deliver_error_json(
                         "BAD_REQUEST",
                         "Invalid group id",
                         StatusCode::BAD_REQUEST,
@@ -880,7 +892,7 @@ pub fn build_user_api_routes(router: Router) -> Router {
                     Some(id) => messaging::handle_remove_member(req, state, user_id, id)
                         .await
                         .context("Remove member failed"),
-                    None => json_response::deliver_error_json(
+                    None => utils::json_response::deliver_error_json(
                         "BAD_REQUEST",
                         "Invalid group id",
                         StatusCode::BAD_REQUEST,
@@ -900,7 +912,7 @@ pub fn build_user_api_routes(router: Router) -> Router {
                     Some(id) => messaging::handle_rename_group(req, state, user_id, id)
                         .await
                         .context("Rename group failed"),
-                    None => json_response::deliver_error_json(
+                    None => utils::json_response::deliver_error_json(
                         "BAD_REQUEST",
                         "Invalid group id",
                         StatusCode::BAD_REQUEST,
@@ -920,7 +932,7 @@ pub fn build_user_api_routes(router: Router) -> Router {
                     Some(id) => messaging::handle_delete_group(req, state, user_id, id)
                         .await
                         .context("Delete group failed"),
-                    None => json_response::deliver_error_json(
+                    None => utils::json_response::deliver_error_json(
                         "BAD_REQUEST",
                         "Invalid group id",
                         StatusCode::BAD_REQUEST,

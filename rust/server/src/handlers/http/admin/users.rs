@@ -10,6 +10,7 @@ use tracing::info;
 
 use crate::AppState;
 use crate::database::{ban, register, utils};
+use crate::handlers::http::routes::PathParams;
 use crate::handlers::http::utils::json_response::*;
 
 /// GET /admin/api/users — list all users.
@@ -187,6 +188,8 @@ pub async fn handle_unban_user(
     )
 }
 
+// ... (previous functions handle_get_users, handle_ban_user, handle_unban_user)
+
 /// DELETE /admin/api/users/:id — permanently delete a user.
 ///
 /// Hard-auth + is_admin guard applied by the router.
@@ -195,14 +198,10 @@ pub async fn handle_delete_user(
     state: AppState,
     admin_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    let path = req.uri().path().to_string();
-
-    let user_id: i64 = path
-        .trim_end_matches('/')
-        .split('/')
-        .next_back()
-        .filter(|s| *s != ":id")
-        .and_then(|s| s.parse::<i64>().ok())
+    let user_id: i64 = req
+        .extensions()
+        .get::<PathParams>()
+        .and_then(|p| p.get_i64("id"))
         .ok_or_else(|| anyhow::anyhow!("Invalid or missing user ID in path"))?;
 
     if user_id == admin_id {

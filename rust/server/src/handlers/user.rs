@@ -19,7 +19,7 @@ use crate::AppState;
 use crate::handlers::http::routes::{
     PathParams, Router, build_base_router, build_user_api_routes, forbidden, unauthorized,
 };
-use crate::handlers::http::{auth, utils::*};
+use crate::handlers::http::{auth, messaging, profile, utils};
 use crate::handlers::sse::sse_helper;
 
 /// User service implementation
@@ -61,7 +61,7 @@ impl Service<Request<IncomingBody>> for UserService {
                 Err(e) => {
                     error!("User handler error: {:?}", e);
 
-                    let fallback = deliver_error_json(
+                    let fallback = utils::deliver_error_json(
                         "INTERNAL_ERROR",
                         "Internal Server Error",
                         StatusCode::INTERNAL_SERVER_ERROR,
@@ -148,7 +148,7 @@ pub fn build_user_router_with_config(
                 let web_dir = web_dir.clone();
                 async move {
                     let path = format!("{}/index.html", web_dir);
-                    deliver_html_page(path).context("failed to deliver login page")
+                    utils::deliver_html_page(path).context("failed to deliver login page")
                 }
             }
         })
@@ -158,7 +158,7 @@ pub fn build_user_router_with_config(
                 let web_dir = web_dir.clone();
                 async move {
                     let path = format!("{}/index.html", web_dir);
-                    deliver_html_page(path).context("failed to deliver home page")
+                    utils::deliver_html_page(path).context("failed to deliver home page")
                 }
             }
         })
@@ -168,7 +168,7 @@ pub fn build_user_router_with_config(
                 let web_dir = web_dir.clone();
                 async move {
                     let path = format!("{}/index.html", web_dir);
-                    deliver_html_page(path).context("failed to deliver index page")
+                    utils::deliver_html_page(path).context("failed to deliver index page")
                 }
             }
         })
@@ -178,7 +178,7 @@ pub fn build_user_router_with_config(
                 let web_dir = web_dir.clone();
                 async move {
                     let path = format!("{}/register.html", web_dir);
-                    deliver_html_page(path).context("failed to deliver register page")
+                    utils::deliver_html_page(path).context("failed to deliver register page")
                 }
             }
         })
@@ -188,7 +188,7 @@ pub fn build_user_router_with_config(
                 let web_dir = web_dir.clone();
                 async move {
                     let path = format!("{}/settings.html", web_dir);
-                    deliver_html_page(path).context("failed to deliver settings page")
+                    utils::deliver_html_page(path).context("failed to deliver settings page")
                 }
             }
         })
@@ -198,7 +198,7 @@ pub fn build_user_router_with_config(
                 let web_dir = web_dir.clone();
                 async move {
                     let path = format!("{}/chat.html", web_dir);
-                    deliver_html_page(path).context("failed to deliver chat page")
+                    utils::deliver_html_page(path).context("failed to deliver chat page")
                 }
             }
         })
@@ -227,14 +227,14 @@ pub fn build_user_router_with_config(
         .post_hard(
             "/api/files/upload",
             |req, state, user_id, _claims| async move {
-                crate::handlers::http::messaging::files::handle_upload_file(req, state, user_id)
+                messaging::files::handle_upload_file(req, state, user_id)
                     .await
                     .context("File upload failed")
             },
         )
         // GET /api/files?chat_id=N — list files in a chat (light auth)
         .get_light("/api/files", |req, state, claims| async move {
-            crate::handlers::http::messaging::files::handle_get_chat_files(req, state, claims)
+            messaging::files::handle_get_chat_files(req, state, claims)
                 .await
                 .context("Get chat files failed")
         })
@@ -245,12 +245,10 @@ pub fn build_user_router_with_config(
                 .get::<PathParams>()
                 .and_then(|p| p.get_i64("id"));
             match file_id {
-                Some(id) => crate::handlers::http::messaging::files::handle_download_file(
-                    req, state, claims, id,
-                )
-                .await
-                .context("File download failed"),
-                None => json_response::deliver_error_json(
+                Some(id) => messaging::files::handle_download_file(req, state, claims, id)
+                    .await
+                    .context("File download failed"),
+                None => utils::json_response::deliver_error_json(
                     "BAD_REQUEST",
                     "Invalid file id",
                     StatusCode::BAD_REQUEST,
@@ -267,12 +265,10 @@ pub fn build_user_router_with_config(
                     .get::<PathParams>()
                     .and_then(|p| p.get_i64("id"));
                 match file_id {
-                    Some(id) => crate::handlers::http::messaging::files::handle_delete_file(
-                        req, state, user_id, id,
-                    )
-                    .await
-                    .context("File delete failed"),
-                    None => json_response::deliver_error_json(
+                    Some(id) => messaging::files::handle_delete_file(req, state, user_id, id)
+                        .await
+                        .context("File delete failed"),
+                    None => utils::json_response::deliver_error_json(
                         "BAD_REQUEST",
                         "Invalid file id",
                         StatusCode::BAD_REQUEST,
@@ -285,7 +281,7 @@ pub fn build_user_router_with_config(
         .post_hard(
             "/api/profile/avatar",
             |req, state, user_id, _claims| async move {
-                crate::handlers::http::profile::handle_upload_avatar(req, state, user_id)
+                profile::handle_upload_avatar(req, state, user_id)
                     .await
                     .context("Avatar upload failed")
             },
@@ -297,12 +293,10 @@ pub fn build_user_router_with_config(
                 .get::<PathParams>()
                 .and_then(|p| p.get_i64("user_id"));
             match target_user_id {
-                Some(uid) => {
-                    crate::handlers::http::profile::handle_get_avatar(req, state, claims, uid)
-                        .await
-                        .context("Avatar fetch failed")
-                }
-                None => crate::handlers::http::utils::json_response::deliver_error_json(
+                Some(uid) => profile::handle_get_avatar(req, state, claims, uid)
+                    .await
+                    .context("Avatar fetch failed"),
+                None => utils::json_response::deliver_error_json(
                     "BAD_REQUEST",
                     "Invalid user id",
                     hyper::StatusCode::BAD_REQUEST,

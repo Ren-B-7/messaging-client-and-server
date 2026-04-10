@@ -67,8 +67,7 @@ pub async fn handle_reset_request(
     info!("Password reset requested for username: {}", username);
 
     // Look up the user — but do not reveal whether they exist.
-    let user = match crate::database::utils::get_user_by_username(&state.db, username.clone()).await
-    {
+    let user = match utils::get_user_by_username(&state.db, username.clone()).await {
         Ok(Some(u)) => u,
         Ok(None) => {
             // Return the same shape but with token: null to avoid enumeration.
@@ -179,7 +178,7 @@ pub async fn handle_reset_confirm(
         );
     }
 
-    if !crate::database::utils::is_strong_password(&new_password) {
+    if !utils::is_strong_password(&new_password) {
         return deliver_error_json(
             "WEAK_PASSWORD",
             "Password must be at least 8 characters with at least one letter and one number",

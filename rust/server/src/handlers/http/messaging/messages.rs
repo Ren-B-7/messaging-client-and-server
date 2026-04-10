@@ -269,7 +269,7 @@ pub async fn handle_create_chat(
             "chat_id":    chat_id,
             "name":       other_username,
             "chat_type":  "direct",
-            "created_at": crate::database::utils::get_timestamp(),
+            "created_at": utils::get_timestamp(),
             "avatar_url": other_avatar_url,
         })),
         Some("DM created successfully"),
@@ -633,7 +633,7 @@ pub async fn handle_typing(
                 "user_id":   user_id,
                 "is_typing": is_typing,
             }),
-            timestamp: crate::database::utils::get_timestamp(),
+            timestamp: utils::get_timestamp(),
         };
 
         if let Err(e) = state
@@ -714,7 +714,7 @@ async fn sse_broadcast_message_read(
     chat_id: i64,
     sender_id: i64,
 ) {
-    let now = crate::database::utils::get_timestamp();
+    let now = utils::get_timestamp();
 
     let members = match groups::get_group_members(&state.db, chat_id).await {
         Ok(m) => m,
@@ -773,7 +773,7 @@ async fn sse_broadcast_chat_created(
     other_user_id: i64,
     chat_type: &str,
 ) {
-    let now = crate::database::utils::get_timestamp();
+    let now = utils::get_timestamp();
     let event = SseEvent {
         user_id: 0,
         event_type: "chat_created".to_string(),
@@ -861,11 +861,10 @@ async fn persist_message(
         return Err(MessageError::NotMemberOfChat);
     }
 
-    let compressed =
-        crate::database::utils::compress_data(data.content.as_bytes()).map_err(|e| {
-            error!("Failed to compress message: {}", e);
-            MessageError::InternalError
-        })?;
+    let compressed = utils::compress_data(data.content.as_bytes()).map_err(|e| {
+        error!("Failed to compress message: {}", e);
+        MessageError::InternalError
+    })?;
 
     let message_id = messages::send_message(
         &state.db,
@@ -886,7 +885,7 @@ async fn persist_message(
         MessageError::DatabaseError
     })?;
 
-    Ok((message_id, crate::database::utils::get_timestamp()))
+    Ok((message_id, utils::get_timestamp()))
 }
 
 fn parse_query_params(req: &Request<Incoming>) -> GetMessagesQuery {
@@ -932,11 +931,10 @@ async fn retrieve_messages(
         })?
         .into_iter()
         .map(|msg| {
-            let content_bytes =
-                crate::database::utils::decompress_data(&msg.content).map_err(|e| {
-                    error!("Failed to decompress message {}: {}", msg.id, e);
-                    MessageError::InternalError
-                })?;
+            let content_bytes = utils::decompress_data(&msg.content).map_err(|e| {
+                error!("Failed to decompress message {}: {}", msg.id, e);
+                MessageError::InternalError
+            })?;
             let content = String::from_utf8(content_bytes).map_err(|e| {
                 error!("Failed to decode message {} as UTF-8: {}", msg.id, e);
                 MessageError::InternalError

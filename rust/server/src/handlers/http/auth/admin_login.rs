@@ -7,7 +7,10 @@ use std::convert::Infallible;
 use tracing::{error, info, warn};
 
 use crate::AppState;
-use crate::database::login;
+use crate::database::{
+    login,
+    utils::{calculate_expiry, generate_uuid_token, verify_password},
+};
 use crate::handlers::http::utils::{
     create_persistent_cookie, create_session_cookie, deliver_redirect_with_cookie,
     deliver_serialized_json, deliver_serialized_json_with_cookie, encode_jwt, get_client_ip,
@@ -151,20 +154,19 @@ async fn attempt_login(
     }
 
     let password_valid =
-        crate::database::utils::verify_password(&admin_auth.password_hash, &data.password)
-            .map_err(|e| {
-                error!("Password verification error: {}", e);
-                LoginError::InternalError
-            })?;
+        verify_password(&admin_auth.password_hash, &data.password).map_err(|e| {
+            error!("Password verification error: {}", e);
+            LoginError::InternalError
+        })?;
 
     if !password_valid {
         warn!("Invalid password for admin: {}", data.username);
         return Err(LoginError::InvalidCredentials.into());
     }
 
-    let session_id = crate::database::utils::generate_uuid_token();
+    let session_id = generate_uuid_token();
     let token_expiry_secs = state.config.read().await.auth.token_expiry_minutes * 60;
-    let expires_at = crate::database::utils::calculate_expiry(token_expiry_secs as i64);
+    let expires_at = calculate_expiry(token_expiry_secs as i64);
 
     login::create_admin_session(
         &state.db,

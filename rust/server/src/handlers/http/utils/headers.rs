@@ -7,6 +7,7 @@ use tracing::{debug, warn};
 
 use shared::types::jwt::JwtClaims;
 
+use crate::AppState;
 use crate::database::login;
 
 // ---------------------------------------------------------------------------
@@ -233,7 +234,7 @@ pub fn decode_jwt_claims(
 /// rejection reason on any failure.
 pub async fn validate_jwt_secure(
     req: &Request<hyper::body::Incoming>,
-    state: &crate::AppState,
+    state: &AppState,
 ) -> std::result::Result<(i64, JwtClaims), String> {
     // Step 1 — cryptographic JWT verification (no DB).
     let claims = decode_jwt_claims(req, &state.jwt_secret)?;

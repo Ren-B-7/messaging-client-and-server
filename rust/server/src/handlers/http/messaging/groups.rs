@@ -22,7 +22,7 @@ use tracing::info;
 
 use crate::AppState;
 use crate::database::{groups, utils};
-use crate::handlers::http::utils::{deliver_error_json, deliver_success_json};
+use crate::handlers::http;
 use shared::types::groups::*;
 use shared::types::jwt::JwtClaims;
 
@@ -57,7 +57,7 @@ pub async fn handle_get_groups(
         })
         .collect();
 
-    deliver_success_json(
+    http::utils::deliver_success_json(
         Some(serde_json::json!({ "groups": groups_json })),
         None,
         StatusCode::OK,
@@ -91,7 +91,7 @@ pub async fn handle_create_group(
         .replace('\0', "");
 
     if name.trim().is_empty() {
-        return deliver_error_json(
+        return http::utils::deliver_error_json(
             "INVALID_INPUT",
             "Group name cannot be empty",
             StatusCode::BAD_REQUEST,
@@ -99,7 +99,7 @@ pub async fn handle_create_group(
     }
 
     if name.len() > 100 {
-        return deliver_error_json(
+        return http::utils::deliver_error_json(
             "INVALID_INPUT",
             "Group name cannot exceed 100 characters",
             StatusCode::BAD_REQUEST,
@@ -129,7 +129,7 @@ pub async fn handle_create_group(
 
     info!("Group {} created by user {}", chat_id, user_id);
 
-    deliver_success_json(
+    http::utils::deliver_success_json(
         Some(serde_json::json!({
             "chat_id":    chat_id,
             "name":        name,
@@ -192,7 +192,7 @@ pub async fn handle_get_members(
         .await
         .context("Failed to fetch group members")?;
 
-    deliver_success_json(
+    http::utils::deliver_success_json(
         Some(serde_json::json!({
             "chat_id": chat_id,
             "members":  members_json,
@@ -228,7 +228,7 @@ pub async fn handle_add_member(
         match utils::get_user_by_username(&state.db, username.to_string()).await? {
             Some(user) => user.id,
             None => {
-                return deliver_error_json(
+                return http::utils::deliver_error_json(
                     "NOT_FOUND",
                     &format!("User '{}' not found", username),
                     StatusCode::NOT_FOUND,
@@ -236,7 +236,7 @@ pub async fn handle_add_member(
             }
         }
     } else {
-        return deliver_error_json(
+        return http::utils::deliver_error_json(
             "INVALID_INPUT",
             "Request must include either 'username' or 'user_id'",
             StatusCode::BAD_REQUEST,
@@ -247,7 +247,7 @@ pub async fn handle_add_member(
         .await
         .unwrap_or(false)
     {
-        return deliver_error_json(
+        return http::utils::deliver_error_json(
             "CONFLICT",
             "User is already a member of this group",
             StatusCode::CONFLICT,
@@ -268,7 +268,7 @@ pub async fn handle_add_member(
         .await
         .context("Failed to add group member")?;
 
-    deliver_success_json(
+    http::utils::deliver_success_json(
         Some(serde_json::json!({ "chat_id": chat_id, "user_id": target_user_id })),
         Some("Member added successfully"),
         StatusCode::OK,
@@ -291,7 +291,7 @@ pub async fn handle_rename_group(
         .await
         .unwrap_or(false)
     {
-        return deliver_error_json(
+        return http::utils::deliver_error_json(
             "FORBIDDEN",
             "You are not a member of this group",
             StatusCode::FORBIDDEN,
@@ -315,14 +315,14 @@ pub async fn handle_rename_group(
         .to_string();
 
     if new_name.is_empty() {
-        return deliver_error_json(
+        return http::utils::deliver_error_json(
             "INVALID_INPUT",
             "Group name cannot be empty",
             StatusCode::BAD_REQUEST,
         );
     }
     if new_name.len() > 100 {
-        return deliver_error_json(
+        return http::utils::deliver_error_json(
             "INVALID_INPUT",
             "Group name cannot exceed 100 characters",
             StatusCode::BAD_REQUEST,
@@ -338,7 +338,7 @@ pub async fn handle_rename_group(
         chat_id, new_name, user_id
     );
 
-    deliver_success_json(
+    http::utils::deliver_success_json(
         Some(serde_json::json!({ "chat_id": chat_id, "name": new_name })),
         Some("Group renamed successfully"),
         StatusCode::OK,
@@ -359,11 +359,17 @@ pub async fn handle_delete_group(
 
     let group = match groups::get_group(&state.db, chat_id).await? {
         Some(g) => g,
-        None => return deliver_error_json("NOT_FOUND", "Group not found", StatusCode::NOT_FOUND),
+        None => {
+            return http::utils::deliver_error_json(
+                "NOT_FOUND",
+                "Group not found",
+                StatusCode::NOT_FOUND,
+            );
+        }
     };
 
     if group.chat_type != "group" {
-        return deliver_error_json(
+        return http::utils::deliver_error_json(
             "INVALID_INPUT",
             "Cannot delete a direct message conversation",
             StatusCode::BAD_REQUEST,
@@ -371,7 +377,7 @@ pub async fn handle_delete_group(
     }
 
     if group.created_by != user_id {
-        return deliver_error_json(
+        return http::utils::deliver_error_json(
             "FORBIDDEN",
             "Only the group creator can delete this group",
             StatusCode::FORBIDDEN,
@@ -384,7 +390,7 @@ pub async fn handle_delete_group(
 
     info!("Group {} deleted by user {}", chat_id, user_id);
 
-    deliver_success_json(
+    http::utils::deliver_success_json(
         Some(serde_json::json!({ "chat_id": chat_id })),
         Some("Group deleted successfully"),
         StatusCode::OK,
@@ -409,14 +415,14 @@ pub async fn handle_search_users(
         .to_string();
 
     if q.is_empty() {
-        return deliver_success_json(
+        return http::utils::deliver_success_json(
             Some(serde_json::json!({ "users": [] })),
             None,
             StatusCode::OK,
         );
     }
     if q.len() > 50 {
-        return deliver_error_json(
+        return http::utils::deliver_error_json(
             "INVALID_INPUT",
             "Search query too long",
             StatusCode::BAD_REQUEST,
@@ -433,7 +439,7 @@ pub async fn handle_search_users(
         .map(|u| serde_json::json!({ "user_id": u.id, "username": u.username }))
         .collect();
 
-    deliver_success_json(
+    http::utils::deliver_success_json(
         Some(serde_json::json!({ "users": users_json })),
         None,
         StatusCode::OK,
@@ -470,14 +476,14 @@ pub async fn handle_remove_member(
         .context("Failed to remove group member")?;
 
     if !removed {
-        return deliver_error_json(
+        return http::utils::deliver_error_json(
             "NOT_FOUND",
             "User is not a member of this group",
             StatusCode::NOT_FOUND,
         );
     }
 
-    deliver_success_json(
+    http::utils::deliver_success_json(
         Some(serde_json::json!({ "chat_id": chat_id, "user_id": target_user_id })),
         Some("Member removed successfully"),
         StatusCode::OK,
