@@ -1,5 +1,5 @@
 /// Tests for file upload and sharing handlers
-use server::handlers::http::messaging::files::*;
+use server::database::utils::{build_storage_path, sanitize_filename};
 
 // ── Filename sanitization ──────────────────────────────────────────────────
 
