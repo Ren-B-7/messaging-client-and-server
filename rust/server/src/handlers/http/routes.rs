@@ -7,7 +7,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use base64::prelude::{BASE64_STANDARD, Engine as _};
 use bytes::Bytes;
-use http_body_util::{BodyExt, combinators::BoxBody};
+use http_body_util::combinators::BoxBody;
 use hyper::{Method, Request, Response, StatusCode};
 use tracing::{info, warn};
 

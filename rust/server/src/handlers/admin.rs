@@ -439,12 +439,17 @@ pub fn build_admin_api_routes(router: Router) -> Router {
                         StatusCode::FORBIDDEN,
                     );
                 }
-                let target_id = req.extensions().get::<PathParams>().and_then(|p| p.get_i64("id"));
+                let target_id = req
+                    .extensions()
+                    .get::<PathParams>()
+                    .and_then(|p| p.get_i64("id"));
                 match target_id {
                     Some(id) => admin::handle_delete_user(req, state, id)
                         .await
                         .context("Delete user failed"),
-                    None => deliver_error_json("BAD_REQUEST", "Invalid id", StatusCode::BAD_REQUEST),
+                    None => {
+                        deliver_error_json("BAD_REQUEST", "Invalid id", StatusCode::BAD_REQUEST)
+                    }
                 }
             },
         )
@@ -458,12 +463,17 @@ pub fn build_admin_api_routes(router: Router) -> Router {
                         StatusCode::FORBIDDEN,
                     );
                 }
-                let target_id = req.extensions().get::<PathParams>().and_then(|p| p.get_i64("id"));
+                let target_id = req
+                    .extensions()
+                    .get::<PathParams>()
+                    .and_then(|p| p.get_i64("id"));
                 match target_id {
                     Some(id) => admin::handle_delete_user(req, state, id)
                         .await
                         .context("Delete user failed"),
-                    None => deliver_error_json("BAD_REQUEST", "Invalid id", StatusCode::BAD_REQUEST),
+                    None => {
+                        deliver_error_json("BAD_REQUEST", "Invalid id", StatusCode::BAD_REQUEST)
+                    }
                 }
             },
         )

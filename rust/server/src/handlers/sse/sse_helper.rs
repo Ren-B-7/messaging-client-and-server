@@ -182,7 +182,7 @@ impl SseStreamBuilder {
     /// Comments are ignored by browsers but keep the TCP connection alive
     /// and prevent intermediate proxies from timing out.
     pub fn format_ping() -> String {
-        format!(": ping\n\n")
+        ": ping\n\n".to_string()
     }
 }
 
@@ -355,11 +355,11 @@ pub async fn handle_sse_subscribe(
 
         // Heartbeat: send a ping every 15 seconds to keep the connection alive.
         let mut heartbeat = tokio::time::interval(Duration::from_secs(15));
-        
-        // Inactivity timeout: close the connection if no events (including pings) 
+
+        // Inactivity timeout: close the connection if no events (including pings)
         // are sent for 60 seconds.
         let mut inactivity = tokio::time::interval(Duration::from_secs(60));
-        
+
         // Ensure intervals start from now.
         heartbeat.reset();
         inactivity.reset();

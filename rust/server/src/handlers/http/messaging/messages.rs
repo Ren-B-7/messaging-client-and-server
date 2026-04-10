@@ -923,10 +923,11 @@ async fn retrieve_messages(
         })?
         .into_iter()
         .map(|msg| {
-            let content_bytes = crate::database::utils::decompress_data(&msg.content).map_err(|e| {
-                error!("Failed to decompress message {}: {}", msg.id, e);
-                MessageError::InternalError
-            })?;
+            let content_bytes =
+                crate::database::utils::decompress_data(&msg.content).map_err(|e| {
+                    error!("Failed to decompress message {}: {}", msg.id, e);
+                    MessageError::InternalError
+                })?;
             let content = String::from_utf8(content_bytes).map_err(|e| {
                 error!("Failed to decode message {} as UTF-8: {}", msg.id, e);
                 MessageError::InternalError

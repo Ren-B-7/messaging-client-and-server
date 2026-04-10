@@ -240,7 +240,10 @@ pub fn build_user_router_with_config(
         })
         // GET /api/files/:id — download a file (light auth)
         .get_light("/api/files/:id", |req, state, claims| async move {
-            let file_id = req.extensions().get::<PathParams>().and_then(|p| p.get_i64("id"));
+            let file_id = req
+                .extensions()
+                .get::<PathParams>()
+                .and_then(|p| p.get_i64("id"));
             match file_id {
                 Some(id) => crate::handlers::http::messaging::files::handle_download_file(
                     req, state, claims, id,
@@ -259,7 +262,10 @@ pub fn build_user_router_with_config(
         .delete_hard(
             "/api/files/:id",
             |req, state, user_id, _claims| async move {
-                let file_id = req.extensions().get::<PathParams>().and_then(|p| p.get_i64("id"));
+                let file_id = req
+                    .extensions()
+                    .get::<PathParams>()
+                    .and_then(|p| p.get_i64("id"));
                 match file_id {
                     Some(id) => crate::handlers::http::messaging::files::handle_delete_file(
                         req, state, user_id, id,
@@ -286,7 +292,10 @@ pub fn build_user_router_with_config(
         )
         // GET /api/avatar/:user_id — serve any user's avatar image (light auth)
         .get_light("/api/avatar/:user_id", |req, state, claims| async move {
-            let target_user_id = req.extensions().get::<PathParams>().and_then(|p| p.get_i64("user_id"));
+            let target_user_id = req
+                .extensions()
+                .get::<PathParams>()
+                .and_then(|p| p.get_i64("user_id"));
             match target_user_id {
                 Some(uid) => {
                     crate::handlers::http::profile::handle_get_avatar(req, state, claims, uid)
