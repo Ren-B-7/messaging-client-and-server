@@ -274,8 +274,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             info!("User server listening on http://{}", user_sock);
 
             loop {
-                let permit = tokio::select! {
-                    p = user_sem.clone().acquire_owned() => p.expect("semaphore closed"),
+                let (stream, addr) = tokio::select! {
+                    res = listener.accept() => {
+                        match res {
+                            Ok(res) => res,
+                            Err(e) => {
+                                error!("User server accept error: {}", e);
+                                tokio::time::sleep(Duration::from_millis(100)).await;
+                                continue;
+                            }
+                        }
+                    }
                     _ = user_shutdown_rx.recv() => {
                         info!("User server shutting down loop");
                         return;
@@ -286,13 +295,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     }
                 };
 
-                let (stream, addr) = match listener.accept().await {
-                    Ok(res) => res,
-                    Err(e) => {
-                        error!("User server accept error: {}", e);
-                        tokio::time::sleep(Duration::from_millis(100)).await;
-                        continue;
-                    }
+                let permit = match user_sem.clone().acquire_owned().await {
+                    Ok(p) => p,
+                    Err(_) => break,
                 };
 
                 let user_tower_service = UserService::new(
@@ -419,8 +424,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             info!("Admin server listening on http://{}", admin_sock);
 
             loop {
-                let permit = tokio::select! {
-                    p = admin_sem.clone().acquire_owned() => p.expect("semaphore closed"),
+                let (stream, addr) = tokio::select! {
+                    res = listener.accept() => {
+                        match res {
+                            Ok(res) => res,
+                            Err(e) => {
+                                error!("Admin server accept error: {}", e);
+                                tokio::time::sleep(Duration::from_millis(100)).await;
+                                continue;
+                            }
+                        }
+                    }
                     _ = admin_shutdown_rx.recv() => {
                         info!("Admin server shutting down loop");
                         return;
@@ -431,13 +445,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     }
                 };
 
-                let (stream, addr) = match listener.accept().await {
-                    Ok(res) => res,
-                    Err(e) => {
-                        error!("Admin server accept error: {}", e);
-                        tokio::time::sleep(Duration::from_millis(100)).await;
-                        continue;
-                    }
+                let permit = match admin_sem.clone().acquire_owned().await {
+                    Ok(p) => p,
+                    Err(_) => break,
                 };
 
                 let admin_tower_service = AdminService::new(
