@@ -429,7 +429,7 @@ class ChatAPIClient:
 
     def get_messages(self, chat_id, limit=50, offset=0, use_cache=True):
         logger.debug("Loading messages", extra_info=f"Chat: {chat_id}")
-        url = ff"{self.api_base}/messages?chat_id={chat_id}&limit={limit}&offset={offset}"
+        url = f"{self.api_base}/messages?chat_id={chat_id}&limit={limit}&offset={offset}"
         return self._make_request("GET", url, use_cache=use_cache, cache_ttl=10)
 
     def send_message(self, chat_id, content, message_type="text"):
@@ -444,7 +444,7 @@ class ChatAPIClient:
     def mark_message_read(self, message_id):
         logger.debug("Marking message read", extra_info=f"Message ID: {message_id}")
         return self._make_request(
-            "POST", ff"{self.api_base}/messages/{message_id}/read", {}, use_cache=False
+            "POST", f"{self.api_base}/messages/{message_id}/read", {}, use_cache=False
         )
 
     def send_typing_indicator(self, chat_id):
@@ -462,13 +462,13 @@ class ChatAPIClient:
     def get_group_info(self, group_id, use_cache=True):
         logger.debug("Loading group info", extra_info=f"Group: {group_id}")
         return self._make_request(
-            "GET", ff"{self.api_base}/groups/{group_id}", use_cache=use_cache, cache_ttl=60
+            "GET", f"{self.api_base}/groups/{group_id}", use_cache=use_cache, cache_ttl=60
         )
 
     def get_group_members(self, group_id, use_cache=True):
         logger.debug("Loading group members", extra_info=f"Group: {group_id}")
         return self._make_request(
-            "GET", ff"{self.api_base}/groups/{group_id}/members", use_cache=use_cache, cache_ttl=60
+            "GET", f"{self.api_base}/groups/{group_id}/members", use_cache=use_cache, cache_ttl=60
         )
 
     def create_group(self, name, member_ids=None, description=""):
@@ -481,13 +481,13 @@ class ChatAPIClient:
     def update_group(self, group_id, **kwargs):
         logger.info("Updating group", extra_info=f"Group: {group_id}")
         return self._make_request(
-            "PATCH", ff"{self.api_base}/groups/{group_id}", kwargs, use_cache=False
+            "PATCH", f"{self.api_base}/groups/{group_id}", kwargs, use_cache=False
         )
 
     def delete_group(self, group_id):
         logger.warning("Deleting group", extra_info=f"Group: {group_id}")
         return self._make_request(
-            "DELETE", ff"{self.api_base}/groups/{group_id}", {}, use_cache=False
+            "DELETE", f"{self.api_base}/groups/{group_id}", {}, use_cache=False
         )
 
     def add_group_member(self, group_id, user_id):
@@ -496,7 +496,7 @@ class ChatAPIClient:
         )
         return self._make_request(
             "POST",
-            ff"{self.api_base}/groups/{group_id}/members",
+            f"{self.api_base}/groups/{group_id}/members",
             {"user_id": user_id},
             use_cache=False,
         )
@@ -507,20 +507,20 @@ class ChatAPIClient:
         )
         return self._make_request(
             "DELETE",
-            ff"{self.api_base}/groups/{group_id}/members",
+            f"{self.api_base}/groups/{group_id}/members",
             {"user_id": user_id},
             use_cache=False,
         )
 
     def search_users(self, query):
         logger.debug("Searching users", extra_info=f"Query: {query}")
-        url = ff"{self.api_base}/users/search?q={urllib.parse.quote(query)}"
+        url = f"{self.api_base}/users/search?q={urllib.parse.quote(query)}"
         return self._make_request("GET", url, use_cache=False)  # Don't cache search
 
     def get_avatar(self, user_id, use_cache=True):
         logger.debug("Loading avatar", extra_info=f"User: {user_id}")
         return self._make_request(
-            "GET", ff"{self.api_base}/avatar/{user_id}", use_cache=use_cache, cache_ttl=300
+            "GET", f"{self.api_base}/avatar/{user_id}", use_cache=use_cache, cache_ttl=300
         )
 
     def get_files(self, chat_id=None, use_cache=True):
@@ -528,7 +528,7 @@ class ChatAPIClient:
             logger.debug("Loading files", extra_info=f"Chat: {chat_id}")
             return self._make_request(
                 "GET",
-                ff"{self.api_base}/files?chat_id={chat_id}",
+                f"{self.api_base}/files?chat_id={chat_id}",
                 use_cache=use_cache,
                 cache_ttl=60,
             )
@@ -541,7 +541,7 @@ class ChatAPIClient:
     def get_file(self, file_id, use_cache=True):
         logger.debug("Loading file", extra_info=f"File ID: {file_id}")
         return self._make_request(
-            "GET", ff"{self.api_base}/files/{file_id}", use_cache=use_cache, cache_ttl=60
+            "GET", f"{self.api_base}/files/{file_id}", use_cache=use_cache, cache_ttl=60
         )
 
     def upload_file(self, file_path, chat_id, compress=False, progress_callback=None):
@@ -555,7 +555,7 @@ class ChatAPIClient:
 
         logger.info("Uploading file", extra_info=f"Chat: {chat_id}, File: {file_path}")
 
-        url = ff"{self.api_base}/files/upload"
+        url = f"{self.api_base}/files/upload"
         boundary = uuid.uuid4().hex
         filename = os.path.basename(file_path)
 
@@ -681,7 +681,7 @@ class ChatAPIClient:
 
     def delete_file(self, file_id):
         return self._make_request(
-            "DELETE", ff"{self.api_base}/files/{file_id}", {}, use_cache=False
+            "DELETE", f"{self.api_base}/files/{file_id}", {}, use_cache=False
         )
 
     def stream_messages(
@@ -689,7 +689,7 @@ class ChatAPIClient:
     ):
         """Open a persistent SSE stream for chat_id."""
         logger.info("Starting SSE stream", extra_info=f"Chat: {chat_id}")
-        url = ff"{self.api_base}/stream?chat_id={chat_id}&limit={limit}&offset={offset}"
+        url = f"{self.api_base}/stream?chat_id={chat_id}&limit={limit}&offset={offset}"
 
         def _run():
             reconnect_count = 0
@@ -810,7 +810,7 @@ class ChatAPIClient:
     def admin_delete_user(self, user_id):
         logger.info("Deleting user (admin)", extra_info=f"User ID: {user_id}")
         return self._make_request(
-            "DELETE", ff"{self.api_base}/admin/users/{user_id}", {}, use_cache=False
+            "DELETE", f"{self.api_base}/admin/users/{user_id}", {}, use_cache=False
         )
 
     def shutdown(self):
