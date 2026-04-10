@@ -182,6 +182,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 
     let (shutdown_tx, _) = tokio::sync::broadcast::channel::<()>(1);
+    let (restart_tx, _) = tokio::sync::broadcast::channel::<()>(1);
 
     // ── Background task: SIGTERM/SIGINT → graceful shutdown ──────────────────
     {
@@ -205,209 +206,298 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         });
     }
 
+    // ── Background task: Config watch → restart servers on port change ────────
+    {
+        let mut config_rx = live_config.subscribe();
+        let restart_tx = restart_tx.clone();
+        tokio::spawn(async move {
+            let mut current_bind = config_rx.borrow().server.bind.clone();
+            let mut current_user_port = config_rx.borrow().server.port_client;
+            let mut current_admin_port = config_rx.borrow().server.port_admin;
+
+            while config_rx.changed().await.is_ok() {
+                let cfg = config_rx.borrow();
+                let new_bind = &cfg.server.bind;
+                let new_user_port = cfg.server.port_client;
+                let new_admin_port = cfg.server.port_admin;
+
+                if new_bind != &current_bind
+                    || new_user_port != current_user_port
+                    || new_admin_port != current_admin_port
+                {
+                    info!(
+                        "Config change detected (bind/ports: {} {}:{} → {} {}:{}). Triggering server restart…",
+                        current_bind,
+                        current_user_port.unwrap_or(1337),
+                        current_admin_port.unwrap_or(1338),
+                        new_bind,
+                        new_user_port.unwrap_or(1337),
+                        new_admin_port.unwrap_or(1338)
+                    );
+
+                    current_bind = new_bind.clone();
+                    current_user_port = new_user_port;
+                    current_admin_port = new_admin_port;
+
+                    let _ = restart_tx.send(());
+                }
+            }
+        });
+    }
+
     let user_cors = create_cors_layer(&cors_origins);
     let admin_cors = create_cors_layer(&cors_origins);
 
     // ── User server ──────────────────────────────────────────────────────────
     let user_sem = Arc::clone(&connection_semaphore);
-    let mut user_shutdown_rx = shutdown_tx.subscribe();
+    let user_state_loop = state.clone();
+    let user_shutdown_tx = shutdown_tx.clone();
+    let user_restart_tx = restart_tx.clone();
     let user_server = async move {
-        let listener = match TcpListener::bind(user_sock).await {
-            Ok(l) => l,
-            Err(e) => {
-                error!("Failed to bind User server to {}: {}", user_sock, e);
-                return;
-            }
-        };
-
-        info!("User server listening on http://{}", user_sock);
-
         loop {
-            // Wait for a connection permit OR a shutdown signal.
-            let permit = tokio::select! {
-                p = user_sem.clone().acquire_owned() => p.expect("semaphore closed"),
-                _ = user_shutdown_rx.recv() => {
-                    info!("User server shutting down loop");
-                    break;
-                }
+            let mut user_shutdown_rx = user_shutdown_tx.subscribe();
+            let mut user_loop_restart_rx = user_restart_tx.subscribe();
+
+            let user_sock: SocketAddr = {
+                let cfg = user_state_loop.config.read().await;
+                let bind = cfg.server.bind.parse::<std::net::IpAddr>().unwrap_or([127, 0, 0, 1].into());
+                (bind, cfg.server.port_client.unwrap_or(1337)).into()
             };
 
-            let (stream, addr) = match listener.accept().await {
-                Ok(res) => res,
+            let listener = match TcpListener::bind(user_sock).await {
+                Ok(l) => l,
                 Err(e) => {
-                    error!("User server accept error: {}", e);
-                    // Small delay to prevent tight loop on persistent errors (e.g. EMFILE)
-                    tokio::time::sleep(Duration::from_millis(100)).await;
-                    continue;
-                }
-            };
-
-            let user_tower_service = UserService::new(
-                user_state.clone(),
-                addr,
-                Arc::clone(&user_state.user_router),
-            );
-
-            let tower_service = ServiceBuilder::new()
-                .layer(LoadShedLayer::new())
-                .layer(CompressionLayer::new().quality(CompressionLevel::Default))
-                .layer(server::IpFilterLayer::new(user_state.ip_filter.clone()))
-                .layer(server::RateLimiterLayer::new(
-                    user_state.rate_limiter.clone(),
-                ))
-                .layer(TimeoutLayer::new(timeout))
-                .layer(server::MetricsLayer::new(user_state.metrics.clone()))
-                .layer(user_cors.clone())
-                .service(user_tower_service);
-
-            let final_service = TowerToHyperService::new(tower_service);
-            let io = TokioIo::new(stream);
-            let timeout = user_timeout.clone();
-            let mut shutdown_rx = shutdown_tx.subscribe();
-
-            tokio::task::spawn(async move {
-                // `permit` is moved into this task and dropped when it ends,
-                // which releases the semaphore slot and allows the next accept.
-                let _permit = permit;
-
-                let conn = http1::Builder::new()
-                    .timer(TokioTimer::new())
-                    .header_read_timeout(Duration::from_secs(2))
-                    .serve_connection(io, final_service);
-                tokio::pin!(conn);
-
-                let mut completed = false;
-                for (iter, sleep) in timeout.iter().enumerate() {
+                    error!("Failed to bind User server to {}: {}", user_sock, e);
                     tokio::select! {
-                        res = conn.as_mut() => {
-                            match res {
-                                Ok(()) => debug!("Connection closed: {}", addr),
-                                Err(e) => warn!("Error serving connection {:?}", e),
-                            };
-                            completed = true;
-                            break;
-                        }
-                        _ = tokio::time::sleep(*sleep) => {
-                            info!(
-                                "iter = {} timeout elapsed, calling graceful_shutdown",
-                                iter
-                            );
-                            conn.as_mut().graceful_shutdown();
-                        }
-                        _ = shutdown_rx.recv() => {
-                            info!("Shutdown received, calling graceful_shutdown for {}", addr);
-                            conn.as_mut().graceful_shutdown();
-                        }
+                        _ = user_loop_restart_rx.recv() => continue,
+                        _ = user_shutdown_rx.recv() => break,
                     }
                 }
+            };
 
-                if !completed {
-                    info!("Holding long-lived connection open: {}", addr);
-                    tokio::select! {
-                        res = conn.as_mut() => {
-                            if let Err(e) = res {
-                                warn!("Long-lived connection {} closed with error: {:?}", addr, e);
+            info!("User server listening on http://{}", user_sock);
+
+            loop {
+                let permit = tokio::select! {
+                    p = user_sem.clone().acquire_owned() => p.expect("semaphore closed"),
+                    _ = user_shutdown_rx.recv() => {
+                        info!("User server shutting down loop");
+                        return;
+                    }
+                    _ = user_loop_restart_rx.recv() => {
+                        info!("User server restarting due to config change");
+                        break;
+                    }
+                };
+
+                let (stream, addr) = match listener.accept().await {
+                    Ok(res) => res,
+                    Err(e) => {
+                        error!("User server accept error: {}", e);
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        continue;
+                    }
+                };
+
+                let user_tower_service = UserService::new(
+                    user_state_loop.clone(),
+                    addr,
+                    Arc::clone(&user_state_loop.user_router),
+                );
+
+                let tower_service = ServiceBuilder::new()
+                    .layer(server::AddAddrLayer::new(addr))
+                    .layer(LoadShedLayer::new())
+                    .layer(CompressionLayer::new().quality(CompressionLevel::Default))
+                    .layer(server::IpFilterLayer::new(user_state_loop.ip_filter.clone()))
+                    .layer(server::RateLimiterLayer::new(
+                        user_state_loop.rate_limiter.clone(),
+                    ))
+                    .layer(TimeoutLayer::new(timeout))
+                    .layer(server::MetricsLayer::new(user_state_loop.metrics.clone()))
+                    .layer(user_cors.clone())
+                    .service(user_tower_service);
+
+                let final_service = TowerToHyperService::new(tower_service);
+                let io = TokioIo::new(stream);
+                let timeout = user_timeout.clone();
+                let mut shutdown_rx = user_shutdown_tx.subscribe();
+                let mut restart_rx = user_restart_tx.subscribe();
+
+                tokio::task::spawn(async move {
+                    let _permit = permit;
+
+                    let conn = http1::Builder::new()
+                        .timer(TokioTimer::new())
+                        .header_read_timeout(Duration::from_secs(2))
+                        .serve_connection(io, final_service);
+                    tokio::pin!(conn);
+
+                    let mut completed = false;
+                    for (iter, sleep) in timeout.iter().enumerate() {
+                        tokio::select! {
+                            res = conn.as_mut() => {
+                                match res {
+                                    Ok(()) => debug!("Connection closed: {}", addr),
+                                    Err(e) => warn!("Error serving connection {:?}", e),
+                                };
+                                completed = true;
+                                break;
+                            }
+                            _ = tokio::time::sleep(*sleep) => {
+                                info!(
+                                    "iter = {} timeout elapsed, calling graceful_shutdown",
+                                    iter
+                                );
+                                conn.as_mut().graceful_shutdown();
+                            }
+                            _ = shutdown_rx.recv() => {
+                                info!("Shutdown received, calling graceful_shutdown for {}", addr);
+                                conn.as_mut().graceful_shutdown();
+                            }
+                            _ = restart_rx.recv() => {
+                                info!("Restart received, calling graceful_shutdown for {}", addr);
+                                conn.as_mut().graceful_shutdown();
                             }
                         }
-                        _ = shutdown_rx.recv() => {
-                            info!("Shutdown received, closing long-lived connection {}", addr);
-                            conn.as_mut().graceful_shutdown();
-                            let _ = conn.await;
+                    }
+
+                    if !completed {
+                        info!("Holding long-lived connection open: {}", addr);
+                        tokio::select! {
+                            res = conn.as_mut() => {
+                                if let Err(e) = res {
+                                    warn!("Long-lived connection {} closed with error: {:?}", addr, e);
+                                }
+                            }
+                            _ = shutdown_rx.recv() => {
+                                info!("Shutdown received, closing long-lived connection {}", addr);
+                                conn.as_mut().graceful_shutdown();
+                                let _ = conn.await;
+                            }
+                            _ = restart_rx.recv() => {
+                                info!("Restart received, closing long-lived connection {}", addr);
+                                conn.as_mut().graceful_shutdown();
+                                let _ = conn.await;
+                            }
                         }
                     }
-                }
-            });
+                });
+            }
         }
     };
 
     // ── Admin server ─────────────────────────────────────────────────────────
     let admin_sem = Arc::clone(&connection_semaphore);
-    let mut admin_shutdown_rx = shutdown_tx.subscribe();
+    let admin_state_loop = state.clone();
+    let admin_shutdown_tx = shutdown_tx.clone();
+    let admin_restart_tx = restart_tx.clone();
     let admin_server = async move {
-        let listener = match TcpListener::bind(admin_sock).await {
-            Ok(l) => l,
-            Err(e) => {
-                error!("Failed to bind Admin server to {}: {}", admin_sock, e);
-                return;
-            }
-        };
-
-        info!("Admin server listening on http://{}", admin_sock);
-
         loop {
-            let permit = tokio::select! {
-                p = admin_sem.clone().acquire_owned() => p.expect("semaphore closed"),
-                _ = admin_shutdown_rx.recv() => {
-                    info!("Admin server shutting down loop");
-                    break;
-                }
+            let mut admin_shutdown_rx = admin_shutdown_tx.subscribe();
+            let mut admin_loop_restart_rx = admin_restart_tx.subscribe();
+
+            let admin_sock: SocketAddr = {
+                let cfg = admin_state_loop.config.read().await;
+                let bind = cfg.server.bind.parse::<std::net::IpAddr>().unwrap_or([127, 0, 0, 1].into());
+                (bind, cfg.server.port_admin.unwrap_or(1338)).into()
             };
 
-            let (stream, addr) = match listener.accept().await {
-                Ok(res) => res,
+            let listener = match TcpListener::bind(admin_sock).await {
+                Ok(l) => l,
                 Err(e) => {
-                    error!("Admin server accept error: {}", e);
-                    tokio::time::sleep(Duration::from_millis(100)).await;
-                    continue;
-                }
-            };
-
-            let admin_tower_service = AdminService::new(
-                admin_state.clone(),
-                addr,
-                Arc::clone(&admin_state.admin_router),
-            );
-
-            // Admin server uses its own dedicated rate limiter so that user
-            // traffic cannot starve admin operations during incidents.
-            let tower_service = ServiceBuilder::new()
-                .layer(server::AddAddrLayer::new(addr))
-                .layer(LoadShedLayer::new())
-                .layer(CompressionLayer::new().quality(CompressionLevel::Default))
-                .layer(server::IpFilterLayer::new(admin_state.ip_filter.clone()))
-                .layer(server::RateLimiterLayer::new(admin_rate_limiter.clone()))
-                .layer(TimeoutLayer::new(timeout))
-                .layer(server::MetricsLayer::new(admin_state.metrics.clone()))
-                .layer(admin_cors.clone())
-                .service(admin_tower_service);
-
-            let final_service = TowerToHyperService::new(tower_service);
-            let io = TokioIo::new(stream);
-            let timeout = admin_timeout.clone();
-            let mut shutdown_rx = shutdown_tx.subscribe();
-
-            tokio::task::spawn(async move {
-                let _permit = permit;
-
-                let conn = http1::Builder::new()
-                    .timer(TokioTimer::new())
-                    .header_read_timeout(Duration::from_secs(2))
-                    .serve_connection(io, final_service);
-                tokio::pin!(conn);
-
-                for (iter, sleep) in timeout.iter().enumerate() {
+                    error!("Failed to bind Admin server to {}: {}", admin_sock, e);
                     tokio::select! {
-                        res = conn.as_mut() => {
-                            match res {
-                                Ok(()) => debug!("Connection closed: {}", addr),
-                                Err(e) => warn!("Error serving connection {:?}", e),
-                            };
-                            break;
-                        }
-                        _ = tokio::time::sleep(*sleep) => {
-                            info!(
-                                "iter = {} timeout elapsed, calling graceful_shutdown",
-                                iter
-                            );
-                            conn.as_mut().graceful_shutdown();
-                        }
-                        _ = shutdown_rx.recv() => {
-                            info!("Shutdown received, calling graceful_shutdown for {}", addr);
-                            conn.as_mut().graceful_shutdown();
-                        }
+                        _ = admin_loop_restart_rx.recv() => continue,
+                        _ = admin_shutdown_rx.recv() => break,
                     }
                 }
-            });
+            };
+
+            info!("Admin server listening on http://{}", admin_sock);
+
+            loop {
+                let permit = tokio::select! {
+                    p = admin_sem.clone().acquire_owned() => p.expect("semaphore closed"),
+                    _ = admin_shutdown_rx.recv() => {
+                        info!("Admin server shutting down loop");
+                        return;
+                    }
+                    _ = admin_loop_restart_rx.recv() => {
+                        info!("Admin server restarting due to config change");
+                        break;
+                    }
+                };
+
+                let (stream, addr) = match listener.accept().await {
+                    Ok(res) => res,
+                    Err(e) => {
+                        error!("Admin server accept error: {}", e);
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        continue;
+                    }
+                };
+
+                let admin_tower_service = AdminService::new(
+                    admin_state_loop.clone(),
+                    addr,
+                    Arc::clone(&admin_state_loop.admin_router),
+                );
+
+                let tower_service = ServiceBuilder::new()
+                    .layer(server::AddAddrLayer::new(addr))
+                    .layer(LoadShedLayer::new())
+                    .layer(CompressionLayer::new().quality(CompressionLevel::Default))
+                    .layer(server::IpFilterLayer::new(admin_state_loop.ip_filter.clone()))
+                    .layer(server::RateLimiterLayer::new(admin_rate_limiter.clone()))
+                    .layer(TimeoutLayer::new(timeout))
+                    .layer(server::MetricsLayer::new(admin_state_loop.metrics.clone()))
+                    .layer(admin_cors.clone())
+                    .service(admin_tower_service);
+
+                let final_service = TowerToHyperService::new(tower_service);
+                let io = TokioIo::new(stream);
+                let timeout = admin_timeout.clone();
+                let mut shutdown_rx = admin_shutdown_tx.subscribe();
+                let mut restart_rx = admin_restart_tx.subscribe();
+
+                tokio::task::spawn(async move {
+                    let _permit = permit;
+
+                    let conn = http1::Builder::new()
+                        .timer(TokioTimer::new())
+                        .header_read_timeout(Duration::from_secs(2))
+                        .serve_connection(io, final_service);
+                    tokio::pin!(conn);
+
+                    for (iter, sleep) in timeout.iter().enumerate() {
+                        tokio::select! {
+                            res = conn.as_mut() => {
+                                match res {
+                                    Ok(()) => debug!("Connection closed: {}", addr),
+                                    Err(e) => warn!("Error serving connection {:?}", e),
+                                };
+                                break;
+                            }
+                            _ = tokio::time::sleep(*sleep) => {
+                                info!(
+                                    "iter = {} timeout elapsed, calling graceful_shutdown",
+                                    iter
+                                );
+                                conn.as_mut().graceful_shutdown();
+                            }
+                            _ = shutdown_rx.recv() => {
+                                info!("Shutdown received, calling graceful_shutdown for {}", addr);
+                                conn.as_mut().graceful_shutdown();
+                            }
+                            _ = restart_rx.recv() => {
+                                info!("Restart received, calling graceful_shutdown for {}", addr);
+                                conn.as_mut().graceful_shutdown();
+                            }
+                        }
+                    }
+                });
+            }
         }
     };
 
