@@ -15,6 +15,7 @@ import json
 import subprocess
 import os
 import threading
+import time
 from collections import defaultdict
 
 import config
@@ -411,6 +412,13 @@ class ChatClientApp:
             self.logger.exception("Failed to initialize API client", str(e), stop=True)
             raise
 
+        # Cache
+        try:
+            self.setup_caching()
+        except Exception as e:
+            self.logger.exception("Failed to initialize Cache", str(e), stop=True)
+            raise
+
         # State
         self.current_user = None
         self.is_admin = False
@@ -438,6 +446,56 @@ class ChatClientApp:
 
     def get_color(self, name):
         return self.theme.colors.get(name, "#000000")
+    
+    # ── Caching setup ────────────────────────────────────────────────────────
+
+    def setup_caching(self):
+        """Initialize cache cleanup scheduler."""
+        import threading
+        
+        def cleanup_task():
+            """Periodic cache maintenance."""
+            while True:
+                time.sleep(60)  # Run every minute
+                try:
+                    # Clean expired HTTP cache entries
+                    if hasattr(self.api, 'http_cache'):
+                        self.api.http_cache.cleanup_expired()
+                    
+                    # Log cache stats in dev mode
+                    if self.logger.dev_mode and hasattr(self.api, 'http_cache'):
+                        stats = self.api.http_cache.get_stats()
+                        self.logger.debug("Cache stats", extra_info=str(stats))
+                        
+                except Exception as e:
+                    self.logger.warning("Cache cleanup error", extra_info=str(e))
+        
+        # Start background cleanup thread
+        cleanup_thread = threading.Thread(target=cleanup_task, daemon=True)
+        cleanup_thread.start()
+        self.logger.info("Cache cleanup scheduler started")
+
+    def clear_all_caches(self):
+        """Clear all caches (useful for logout or refresh)."""
+        if hasattr(self.api, 'clear_cache'):
+            self.api.clear_cache()
+        messagebox.showinfo("Cache", "All caches cleared successfully")
+
+    def show_cache_stats(self):
+        """Display cache statistics (admin/debug feature)."""
+        if not hasattr(self.api, 'http_cache'):
+            return
+            
+        stats = self.api.http_cache.get_stats()
+        msg = f"""
+    HTTP Cache Statistics:
+    • Entries: {stats['size']} / {stats['max_size']}
+    • Hits: {stats['hits']}
+    • Misses: {stats['misses']}
+    • Hit Rate: {stats['hit_rate']}
+    • Evictions: {stats['evictions']}
+        """
+        messagebox.showinfo("Cache Statistics", msg)
 
     # ── Favicon ───────────────────────────────────────────────────────────────
 

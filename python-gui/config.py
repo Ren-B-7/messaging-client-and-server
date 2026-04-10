@@ -293,6 +293,31 @@ CARD_BORDER_WIDTH = 1
 CARD_CORNER_RADIUS = RADIUS["lg"]
 
 # ============================================================================
+# Performance & Caching Configuration - NEW
+# ============================================================================
+
+# Enable gzip/deflate compression for requests/responses
+ENABLE_COMPRESSION = True
+
+# HTTP Cache settings
+HTTP_CACHE_LIMIT = 100  # Max number of cached responses
+HTTP_CACHE_TTL = 300  # Default TTL in seconds (5 minutes)
+
+# Request retry settings
+MAX_RETRIES = 3  # Max retries for failed requests
+
+# Client-side rate limiting (to respect server limits)
+RATE_LIMIT_REQUESTS = 100  # Requests per window
+RATE_LIMIT_WINDOW = 60  # Window in seconds
+
+# Message batching for sending (to reduce API calls)
+MESSAGE_BATCH_SIZE = 5  # Batch up to 5 messages
+MESSAGE_BATCH_INTERVAL = 2  # Or send every 2 seconds
+
+# Memory limits
+MAX_MEMORY_USAGE_MB = 512  # Soft memory limit for caches
+
+# ============================================================================
 # Utility Functions
 # ============================================================================
 
