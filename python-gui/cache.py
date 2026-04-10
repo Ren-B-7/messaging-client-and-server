@@ -5,6 +5,8 @@ In-memory caching with TTL (Time To Live) support
 
 import time
 import hashlib
+import gzip
+import json
 from collections import defaultdict, OrderedDict
 from threading import Lock
 from config import MESSAGE_CACHE_LIMIT, HTTP_CACHE_LIMIT, HTTP_CACHE_TTL
@@ -254,9 +256,6 @@ class CompressedCache:
 
     def get(self, key):
         """Get and decompress data."""
-        import gzip
-        import json
-
         with self.lock:
             if key not in self.cache:
                 return None
@@ -275,9 +274,6 @@ class CompressedCache:
 
     def set(self, key, data, ttl=300):
         """Compress and store data."""
-        import gzip
-        import json
-
         with self.lock:
             json_bytes = json.dumps(data).encode("utf-8")
             compressed = gzip.compress(json_bytes)
