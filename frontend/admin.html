@@ -11,17 +11,17 @@
         <meta name="robots" content="noindex, nofollow" />
 
         <!-- Primary CSS -->
-        <link rel="stylesheet" href="static/css/var.css" fetchpriority="high" />
+        <link rel="stylesheet" href="static/css/min/var.css" fetchpriority="high" />
         <link
             rel="stylesheet"
-            href="static/css/base/base.light.css"
+            href="static/css/min/base/base.light.css"
             fetchpriority="high"
             data-theme-mod="base"
             data-theme-variant="light"
         />
         <link
             rel="stylesheet"
-            href="static/css/admin/admin.light.css"
+            href="static/css/min/admin/admin.light.css"
             fetchpriority="high"
             data-theme-mod="admin"
             data-theme-variant="light"
@@ -38,7 +38,7 @@
                     ["base", "admin"].forEach(function (m) {
                         var l = document.createElement("link");
                         l.rel = "stylesheet";
-                        l.href = "static/css/" + m + "/" + m + ".dark.css";
+                        l.href = "static/css/min/" + m + "/" + m + ".dark.css";
                         l.fetchPriority = "high";
                         l.dataset.themeMod = m;
                         l.dataset.themeVariant = "dark";
@@ -62,29 +62,29 @@
         </script>
 
         <!-- Preloads -->
-        <link rel="preload" href="static/js/utils/theme.manager.js" as="script" />
-        <link rel="preload" href="static/js/utils/error.interceptor.js" as="script" />
-        <link rel="preload" href="static/js/config/platform.config.js" as="script" />
-        <link rel="preload" href="static/js/utils/utils.js" as="script" />
-        <link rel="preload" href="non-static/admin/admin.state.js" as="script" />
-        <link rel="preload" href="non-static/admin/admin.ui.js" as="script" />
-        <link rel="preload" href="non-static/admin/admin.users.js" as="script" />
-        <link rel="preload" href="non-static/admin/admin.actions.js" as="script" />
-        <link rel="preload" href="non-static/admin/admin.config.js" as="script" />
-        <link rel="preload" href="non-static/admin/admin.init.js" as="script" />
-        <link rel="preload" href="static/js/utils/error.interceptor.js" as="script" />
+        <link rel="preload" href="static/js/min/utils/theme.manager.js" as="script" />
+        <link rel="preload" href="static/js/min/utils/error.interceptor.js" as="script" />
+        <link rel="preload" href="static/js/min/config/platform.config.js" as="script" />
+        <link rel="preload" href="static/js/min/utils/utils.js" as="script" />
+        <link rel="preload" href="non-static/min/admin/admin.state.js" as="script" />
+        <link rel="preload" href="non-static/min/admin/admin.ui.js" as="script" />
+        <link rel="preload" href="non-static/min/admin/admin.users.js" as="script" />
+        <link rel="preload" href="non-static/min/admin/admin.actions.js" as="script" />
+        <link rel="preload" href="non-static/min/admin/admin.config.js" as="script" />
+        <link rel="preload" href="non-static/min/admin/admin.init.js" as="script" />
+        <link rel="preload" href="static/js/min/utils/error.interceptor.js" as="script" />
 
         <!-- Scripts (deferred — execute after HTML is parsed, in order) -->
-        <script defer src="static/js/utils/error.interceptor.js"></script>
-        <script defer src="static/js/utils/theme.manager.js"></script>
-        <script defer src="static/js/config/platform.config.js"></script>
-        <script defer src="static/js/utils/utils.js"></script>
-        <script defer src="non-static/admin/admin.state.js"></script>
-        <script defer src="non-static/admin/admin.ui.js"></script>
-        <script defer src="non-static/admin/admin.users.js"></script>
-        <script defer src="non-static/admin/admin.actions.js"></script>
-        <script defer src="non-static/admin/admin.config.js"></script>
-        <script defer src="non-static/admin/admin.init.js"></script>
+        <script defer src="static/js/min/utils/error.interceptor.js"></script>
+        <script defer src="static/js/min/utils/theme.manager.js"></script>
+        <script defer src="static/js/min/config/platform.config.js"></script>
+        <script defer src="static/js/min/utils/utils.js"></script>
+        <script defer src="non-static/min/admin/admin.state.js"></script>
+        <script defer src="non-static/min/admin/admin.ui.js"></script>
+        <script defer src="non-static/min/admin/admin.users.js"></script>
+        <script defer src="non-static/min/admin/admin.actions.js"></script>
+        <script defer src="non-static/min/admin/admin.config.js"></script>
+        <script defer src="non-static/min/admin/admin.init.js"></script>
     </head>
     <body>
         <div id="loading">Loading…</div>

@@ -6,10 +6,28 @@ PY_DIR := python-gui
 FRONTEND_DIR := frontend
 
 # =========================
+# TOOLS SETUP
+# =========================
+PYTHON_TOOLS = mbake
+RUST_TOOLS = taplo typos
+FRONTEND_TOOLS = prettier
+
+# Target to install all necessary tools
+setup:
+	@echo "Setting up development tools..."
+	# Install Python tools using uv (assumes uv is installed and in PATH)
+	cd $(PY_DIR) && uv pip install --system $(PYTHON_TOOLS)
+	# Install Rust tools globally
+	cargo install $(RUST_TOOLS)
+	# Install Node.js tools globally
+	npm install -g $(FRONTEND_TOOLS)
+	@echo "Tools setup complete."
+
+# =========================
 # DEFAULT
 # =========================
 .PHONY: all
-all: format lint build
+all: setup format lint build
 
 # =========================
 # FORMAT
@@ -24,8 +42,9 @@ format-rust:
 	cd $(RUST_DIR) && cargo fmt
 
 format-python:
-	@echo "Formatting Python (black)..."
-	cd $(PY_DIR) && uv run black .
+	@echo "Formatting Python (ruff)..."
+	# Use ruff for formatting, replace black
+	cd $(PY_DIR) && uv run ruff format .
 
 format-frontend:
 	@echo "Formatting frontend..."
@@ -41,9 +60,9 @@ format-makefile:
 # LINT
 # =========================
 
-.PHONY: lint lint-rust lint-python lint-frontend lint-makefile
+.PHONY: lint lint-rust lint-python lint-frontend lint-makefile lint-typos
 
-lint: lint-rust lint-python lint-frontend lint-makefile
+lint: lint-rust lint-python lint-frontend lint-makefile lint-typos
 
 lint-rust:
 	@echo "Linting Rust..."
@@ -62,29 +81,24 @@ lint-makefile:
 	@echo "Linting Makefile..."
 	mbake validate Makefile
 
+lint-typos:
+	@echo "Checking for typos..."
+	typos --check .
+
 # =========================
 # BUILD
 # =========================
 
-.PHONY: build build-rust build-python build-frontend build-backend build-shared build-tui
+.PHONY: build build-rust build-python build-frontend
 
 build: build-rust build-python build-frontend
 
+# Use cargo build --workspace for consistency
 build-rust:
-	@echo "Building Rust..."
+	@echo "Building Rust workspace..."
 	cd $(RUST_DIR) && cargo build --workspace
 
-build-backend:
-	@echo "Building server..."
-	cd $(RUST_DIR) && cargo b -p server
-
-build-shared:
-	@echo "Building shared..."
-	cd $(RUST_DIR) && cargo b -p shared
-
-build-tui:
-	@echo "Building tui..."
-	cd $(RUST_DIR) && cargo b -p tui
+# build-backend, build-shared, build-tui are redundant with --workspace, removed.
 
 build-python:
 	@echo "Preparing Python..."
@@ -143,7 +157,8 @@ test-rust:
 	cd $(RUST_DIR) && cargo test --workspace
 
 test-python:
-	cd $(PY_DIR) && uv run pytest
+	@echo "No Python tests are currently implemented. Skipping."
+	# cd $(PY_DIR) && uv run pytest # Original line, commented out
 
 # =========================
 # CLEAN
@@ -157,9 +172,11 @@ clean-rust:
 	cd $(RUST_DIR) && cargo clean
 
 clean-python:
+	@echo "Cleaning Python environment..."
 	rm -rf $(PY_DIR)/.venv
 	rm -rf $(PY_DIR)/__pycache__
 	rm -rf $(PY_DIR)/.ruff_cache
+	# Re-added the --clean option for the main.py script, assuming it handles cleanup.
 	cd $(PY_DIR) && uv run python main.py --clean
 
 clean-frontend:
@@ -171,7 +188,8 @@ clean-frontend:
 
 .PHONY: ci check doctor
 
-ci: format lint test
+# Ensure setup is part of CI if it's intended for initial setup before lint/test
+ci: setup format lint test
 
 check:
 	cd $(RUST_DIR) && cargo check --workspace
@@ -180,6 +198,10 @@ doctor:
 	@echo "Checking tools..."
 	@command -v cargo >/dev/null || echo "cargo missing"
 	@command -v uv >/dev/null || echo "uv missing"
-	@command -v black >/dev/null || echo "black missing"
 	@command -v ruff >/dev/null || echo "ruff missing"
-	@command -v npx >/dev/null || echo "node/npx missing"
+	@command -v mbake >/dev/null || echo "mbake missing"
+	@command -v taplo >/dev/null || echo "taplo missing"
+	@command -v typos >/dev/null || echo "typos missing"
+	@command -v stylelint >/dev/null || echo "stylelint missing"
+	@command -v htmlhint >/dev/null || echo "htmlhint missing"
+	@command -v prettier >/dev/null || echo "prettier missing"

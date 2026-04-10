@@ -16,8 +16,25 @@ jobs:
             - name: Lint Makefile
               run: mbake validate Makefile
 
-            - name: Format check Makefile
+            - name: Check Makefile format
               run: mbake format --check Makefile
+
+            # Add actionlint for workflow validation
+            - name: Install actionlint
+              run: |
+                  wget https://github.com/rhysd/actionlint/releases/download/v1.6.7/actionlint_1.6.7_linux_amd64.tar.gz
+                  tar xvfz actionlint_1.6.7_linux_amd64.tar.gz
+                  sudo mv actionlint /usr/local/bin/
+
+            - name: Lint GitHub Actions
+              run: actionlint -f compact # Use compact format for cleaner output
+
+            # Add typos check
+            - name: Install typos-cli
+              run: cargo install typos-cli
+
+            - name: Check for typos
+              run: typos --check .
 
     rust-lint:
         runs-on: ubuntu-latest
@@ -32,13 +49,17 @@ jobs:
             - uses: Swatinem/rust-cache@v2
               with:
                   workspaces: "rust -> target"
-            - name: Check Format
+            # Install taplo for TOML formatting check
+            - name: Install taplo-cli
+              run: cargo install taplo-cli
+            - name: Check Rust format (rustfmt)
               run: cargo fmt --check
+            - name: Check TOML format (taplo)
+              run: taplo fmt --check
             - name: Run Clippy
-              run: cargo clippy --all-targets -- -D warnings
-            # cargo check removed — redundant with test/build jobs below
+              run: cargo clippy --all-targets --all-features -- -D warnings
 
-    # Consolidated: ruff + black in one job (saves a checkout + python setup)
+    # Consolidated: ruff for linting and formatting in one job
     python-lint:
         runs-on: ubuntu-latest
         steps:
@@ -46,17 +67,14 @@ jobs:
             - uses: actions/setup-python@v5
               with:
                   python-version: "3.13"
-            - name: Ruff lint
+            # Ruff check and format check in one go
+            - name: Ruff lint and format check
               uses: astral-sh/ruff-action@v3
               with:
                   src: "./python-gui"
-            - name: Black format check
-              working-directory: ./python-gui
-              run: |
-                  pip install black
-                  black --check .
+                  args: "--format-check" # Ensure formatting is also checked
 
-    # Consolidated: htmlhint + stylelint + prettier in one job (saves 2 checkouts)
+    # Consolidated: htmlhint, stylelint, prettier via npm ci for performance
     frontend-lint:
         runs-on: ubuntu-latest
         defaults:
@@ -67,16 +85,16 @@ jobs:
             - uses: actions/setup-node@v4
               with:
                   node-version: "20"
-            - name: Install lint tools
-              run: npm install -g htmlhint stylelint stylelint-config-standard prettier
+            - name: Install Node.js dependencies
+              run: npm ci # Use npm ci for faster, more reliable installs
             - name: HTMLHint
-              run: htmlhint "**/*.html"
+              run: npx htmlhint "**/*.html"
             - name: Stylelint
               run: npx stylelint "**/*.css"
-            - name: Prettier
+            - name: Prettier check
               run: npx prettier --check "**/*.{html,css,js,json}"
 
-    # --- PHASE 2: RUST TEST & BUILD (parallel, both need rust-lint) ---
+    # --- PHASE 2: RUST TEST & BUILD (parallel, all need rust-lint) ---
 
     cargo-test:
         needs: [rust-lint]
@@ -90,6 +108,11 @@ jobs:
             - uses: Swatinem/rust-cache@v2
               with:
                   workspaces: "rust -> target"
+            # Install taplo for TOML formatting check
+            - name: Install taplo-cli
+              run: cargo install taplo-cli
+            - name: Check TOML format (taplo)
+              run: taplo fmt --check
             - run: cargo test --verbose
 
     cargo-build:
@@ -104,6 +127,11 @@ jobs:
             - uses: Swatinem/rust-cache@v2
               with:
                   workspaces: "rust -> target"
+            # Install taplo for TOML formatting check
+            - name: Install taplo-cli
+              run: cargo install taplo-cli
+            - name: Check TOML format (taplo)
+              run: taplo fmt --check
             - run: cargo build --release --verbose
 
     # --- PHASE 3: PYTHON GUI BUILD & RUN ---

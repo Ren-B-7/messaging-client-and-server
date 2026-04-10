@@ -10,23 +10,23 @@
         />
 
         <!-- Primary CSS -->
-        <link rel="stylesheet" href="static/css/var.css" fetchpriority="high" />
+        <link rel="stylesheet" href="static/css/min/var.css" fetchpriority="high" />
         <link
             rel="stylesheet"
-            href="static/css/base/base.light.css"
+            href="static/css/min/base/base.light.css"
             fetchpriority="high"
             data-theme-mod="base"
             data-theme-variant="light"
         />
         <link
             rel="stylesheet"
-            href="static/css/chat/chat.light.css"
+            href="static/css/min/chat/chat.light.css"
             fetchpriority="high"
             data-theme-mod="chat"
             data-theme-variant="light"
         />
         <!-- Chrome styles — no data-theme-* attrs so the theme manager never removes this -->
-        <link rel="stylesheet" href="static/css/chat/chat.override.css" fetchpriority="low" />
+        <link rel="stylesheet" href="static/css/min/chat/chat.override.css" fetchpriority="low" />
 
         <!-- Synchronous theme detection — runs before render to avoid flash -->
         <script>
@@ -39,7 +39,7 @@
                     ["base", "chat"].forEach(function (m) {
                         var l = document.createElement("link");
                         l.rel = "stylesheet";
-                        l.href = "static/css/" + m + "/" + m + ".dark.css";
+                        l.href = "static/css/min/" + m + "/" + m + ".dark.css";
                         l.fetchPriority = "high";
                         l.dataset.themeMod = m;
                         l.dataset.themeVariant = "dark";
@@ -63,31 +63,31 @@
         </script>
 
         <!-- Preloads -->
-        <link rel="preload" href="static/js/utils/theme.manager.js" as="script" />
-        <link rel="preload" href="static/js/utils/error.interceptor.js" as="script" />
-        <link rel="preload" href="static/js/config/platform.config.js" as="script" />
-        <link rel="preload" href="static/js/utils/utils.js" as="script" />
-        <link rel="preload" href="static/js/utils/error.interceptor.js" as="script" />
-        <link rel="preload" href="non-static/chat/chat.state.js" as="script" />
-        <link rel="preload" href="non-static/chat/chat.ui.js" as="script" />
-        <link rel="preload" href="non-static/chat/chat.messages.js" as="script" />
-        <link rel="preload" href="non-static/chat/chat.conversations.js" as="script" />
-        <link rel="preload" href="non-static/chat/chat.sse.js" as="script" />
-        <link rel="preload" href="non-static/chat/chat.files.js" as="script" />
-        <link rel="preload" href="non-static/chat/chat.init.js" as="script" />
+        <link rel="preload" href="static/js/min/utils/theme.manager.js" as="script" />
+        <link rel="preload" href="static/js/min/utils/error.interceptor.js" as="script" />
+        <link rel="preload" href="static/js/min/config/platform.config.js" as="script" />
+        <link rel="preload" href="static/js/min/utils/utils.js" as="script" />
+        <link rel="preload" href="static/js/min/utils/error.interceptor.js" as="script" />
+        <link rel="preload" href="non-static/min/chat/chat.state.js" as="script" />
+        <link rel="preload" href="non-static/min/chat/chat.ui.js" as="script" />
+        <link rel="preload" href="non-static/min/chat/chat.messages.js" as="script" />
+        <link rel="preload" href="non-static/min/chat/chat.conversations.js" as="script" />
+        <link rel="preload" href="non-static/min/chat/chat.sse.js" as="script" />
+        <link rel="preload" href="non-static/min/chat/chat.files.js" as="script" />
+        <link rel="preload" href="non-static/min/chat/chat.init.js" as="script" />
 
         <!-- Scripts (deferred — execute after HTML is parsed, in order) -->
-        <script defer src="static/js/utils/error.interceptor.js"></script>
-        <script defer src="static/js/utils/theme.manager.js"></script>
-        <script defer src="static/js/config/platform.config.js"></script>
-        <script defer src="static/js/utils/utils.js"></script>
-        <script defer src="non-static/chat/chat.state.js"></script>
-        <script defer src="non-static/chat/chat.ui.js"></script>
-        <script defer src="non-static/chat/chat.messages.js"></script>
-        <script defer src="non-static/chat/chat.conversations.js"></script>
-        <script defer src="non-static/chat/chat.sse.js"></script>
-        <script defer src="non-static/chat/chat.files.js"></script>
-        <script defer src="non-static/chat/chat.init.js"></script>
+        <script defer src="static/js/min/utils/error.interceptor.js"></script>
+        <script defer src="static/js/min/utils/theme.manager.js"></script>
+        <script defer src="static/js/min/config/platform.config.js"></script>
+        <script defer src="static/js/min/utils/utils.js"></script>
+        <script defer src="non-static/min/chat/chat.state.js"></script>
+        <script defer src="non-static/min/chat/chat.ui.js"></script>
+        <script defer src="non-static/min/chat/chat.messages.js"></script>
+        <script defer src="non-static/min/chat/chat.conversations.js"></script>
+        <script defer src="non-static/min/chat/chat.sse.js"></script>
+        <script defer src="non-static/min/chat/chat.files.js"></script>
+        <script defer src="non-static/min/chat/chat.init.js"></script>
     </head>
     <body>
         <div id="loading">Loading...</div>

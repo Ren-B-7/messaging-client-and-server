@@ -7,17 +7,17 @@
         <meta name="robots" content="noindex, nofollow" />
 
         <!-- Primary CSS -->
-        <link rel="stylesheet" href="static/css/var.css" fetchpriority="high" />
+        <link rel="stylesheet" href="static/css/min/var.css" fetchpriority="high" />
         <link
             rel="stylesheet"
-            href="static/css/base/base.light.css"
+            href="static/css/min/base/base.light.css"
             fetchpriority="high"
             data-theme-mod="base"
             data-theme-variant="light"
         />
         <link
             rel="stylesheet"
-            href="static/css/error/error.light.css"
+            href="static/css/min/error/error.light.css"
             fetchpriority="high"
             data-theme-mod="error"
             data-theme-variant="light"
@@ -34,7 +34,7 @@
                     ["base", "error"].forEach(function (m) {
                         var l = document.createElement("link");
                         l.rel = "stylesheet";
-                        l.href = "static/css/" + m + "/" + m + ".dark.css";
+                        l.href = "static/css/min/" + m + "/" + m + ".dark.css";
                         l.fetchPriority = "high";
                         l.dataset.themeMod = m;
                         l.dataset.themeVariant = "dark";
@@ -58,12 +58,12 @@
         </script>
 
         <!-- Preloads -->
-        <link rel="preload" href="static/js/utils/theme.manager.js" as="script" />
-        <link rel="preload" href="static/js/utils/error.interceptor.js" as="script" />
+        <link rel="preload" href="static/js/min/utils/theme.manager.js" as="script" />
+        <link rel="preload" href="static/js/min/utils/error.interceptor.js" as="script" />
 
         <!-- Scripts -->
-        <script defer src="static/js/utils/error.interceptor.js"></script>
-        <script defer src="static/js/utils/theme.manager.js"></script>
+        <script defer src="static/js/min/utils/error.interceptor.js"></script>
+        <script defer src="static/js/min/utils/theme.manager.js"></script>
     </head>
     <body>
         <div id="loading">Loading…</div>
