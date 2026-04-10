@@ -21,6 +21,7 @@ pub use handlers::{
 };
 pub use tower_middle::{
     security::{IpFilter, Metrics, RateLimiter},
+    tower_addr::AddAddrLayer,
     tower_ip_filter::IpFilterLayer,
     tower_metrics::MetricsLayer,
     tower_rate_limiter::RateLimiterLayer,
