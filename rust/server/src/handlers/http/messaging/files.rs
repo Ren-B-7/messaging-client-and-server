@@ -227,7 +227,7 @@ pub async fn handle_upload_file(
     //   set_file_message_id(file_id, ...)    (back-fill)
     //
     // If `send_message` failed, the `files` row was orphaned (no message_id,
-    // unreachable via the API).  Combining both INSERTs in a single
+    // unreachable via the API).  Combining both inserts in a single
     // `conn.transaction()` ensures they succeed or fail atomically.
     let filename_c = filename.clone();
     let mime_type_c = mime_type.clone();

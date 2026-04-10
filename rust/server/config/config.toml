@@ -1,24 +1,24 @@
 # Server configuration
 [server]
 bind = "0.0.0.0"
-port_admin = 1338  # Port for admin interface (default: 1338)
-port_client = 1337  # Port for client interface (default: 1337)
-max_connections = 1000  # Maximum concurrent connections
+port_admin = 1338      # Port for admin interface (default: 1338)
+port_client = 1337     # Port for client interface (default: 1337)
+max_connections = 1000 # Maximum concurrent connections
 
 # Path configuration
 [paths]
-web_dir = "~/Documents/messaging-client-and-server/frontend/"  # Directory for serving static files
-icons = "static/icons/favicons"  # Optional: Directory for user icons/avatars
-blocked_paths = [  # Paths that should return 403
-    "/admin",
-    "/.git",
-    "/.env",
-    "/config.toml"
+web_dir = "~/Documents/messaging-client-and-server/frontend/" # Directory for serving static files
+icons = "static/icons/favicons" # Optional: Directory for user icons/avatars
+blocked_paths = [ # Paths that should return 403
+  "/admin",
+  "/.git",
+  "/.env",
+  "/config.toml",
 ]
-uploads_dir="/uploads"
+uploads_dir = "/uploads"
 
 # Authentication configuration
 [auth]
-token_expiry_minutes = 60  # How long auth tokens are valid
-email_required = true  # Whether email is required for registration
+token_expiry_minutes = 60                                                       # How long auth tokens are valid
+email_required = true                                                           # Whether email is required for registration
 jwt_secret = "WlNNRl9K3NI6kj8pyh3VnL3ssLCHorjSG8YQ752xb/ejeLBIaRIWYF/B9nEDcdU3"

@@ -20,4 +20,3 @@ packages = ["."]
 
 [tool.ruff]
 line-length = 88
-

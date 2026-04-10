@@ -47,20 +47,20 @@ multer = "3"
 
 # Tower
 tower = { version = "0.5.3", default-features = false, features = [
-    "util",
-    "load-shed",
+  "util",
+  "load-shed",
 ] }
 
 tower-http = { version = "0.6.8", default-features = false, features = [
-    "compression-gzip",
-    "compression-deflate",
-    "cors",
+  "compression-gzip",
+  "compression-deflate",
+  "cors",
 ] }
 
 # Hyper (HTTP + SSE)
 hyper-util = { version = "0.1", default-features = false, features = [
-    "tokio",
-    "service",
+  "tokio",
+  "service",
 ] }
 
 tokio-rusqlite = "0.7.0"

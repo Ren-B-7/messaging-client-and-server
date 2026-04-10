@@ -33,7 +33,7 @@ all: setup format lint build
 # FORMAT
 # =========================
 
-.PHONY: format format-rust format-python format-frontend format-makefile
+.PHONY: format format-rust format-python format-frontend format-makefile format-toml
 
 format: format-rust format-python format-frontend format-makefile
 
@@ -55,6 +55,10 @@ format-frontend:
 format-makefile:
 	@echo "Formatting Makefile..."
 	mbake format Makefile
+
+format-toml:
+	@echo "Formatting Toml..."
+	taplo format
 
 # =========================
 # LINT
