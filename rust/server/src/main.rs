@@ -73,7 +73,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Some(icons),
     ));
 
-    let state = AppState::new(live_config, db, jwt_secret, user_router, admin_router);
+    let state = AppState::new(
+        live_config.clone(),
+        db,
+        jwt_secret,
+        user_router,
+        admin_router,
+    );
 
     // ── Rate limiters ─────────────────────────────────────────────────────
     //
@@ -86,25 +92,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // the original AppState limiter (100 req/s, burst 200).
     let admin_rate_limiter = server::RateLimiter::new(600, 1200);
 
-    let (user_port, admin_port) = {
-        let cfg = state.config.read().await;
-        (
-            cfg.server.port_client.unwrap_or(1337),
-            cfg.server.port_admin.unwrap_or(1338),
-        )
-    };
-
     let cors_origins = state.config.read().await.auth.cors_origins.clone();
 
     let connection_timeouts = vec![Duration::from_secs(5), Duration::from_secs(2)];
     let user_timeout = connection_timeouts.clone();
     let admin_timeout = connection_timeouts.clone();
-
-    let user_sock: SocketAddr = ([127, 0, 0, 1], user_port).into();
-    let admin_sock: SocketAddr = ([127, 0, 0, 1], admin_port).into();
-
-    let user_state = state.clone();
-    let admin_state = state.clone();
 
     let rate_limiter_cleanup = state.clone().rate_limiter;
     let admin_rate_limiter_cleanup = admin_rate_limiter.clone();
@@ -260,7 +252,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
             let user_sock: SocketAddr = {
                 let cfg = user_state_loop.config.read().await;
-                let bind = cfg.server.bind.parse::<std::net::IpAddr>().unwrap_or([127, 0, 0, 1].into());
+                let bind = cfg
+                    .server
+                    .bind
+                    .parse::<std::net::IpAddr>()
+                    .unwrap_or([127, 0, 0, 1].into());
                 (bind, cfg.server.port_client.unwrap_or(1337)).into()
             };
 
@@ -309,7 +305,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     .layer(server::AddAddrLayer::new(addr))
                     .layer(LoadShedLayer::new())
                     .layer(CompressionLayer::new().quality(CompressionLevel::Default))
-                    .layer(server::IpFilterLayer::new(user_state_loop.ip_filter.clone()))
+                    .layer(server::IpFilterLayer::new(
+                        user_state_loop.ip_filter.clone(),
+                    ))
                     .layer(server::RateLimiterLayer::new(
                         user_state_loop.rate_limiter.clone(),
                     ))
@@ -399,7 +397,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
             let admin_sock: SocketAddr = {
                 let cfg = admin_state_loop.config.read().await;
-                let bind = cfg.server.bind.parse::<std::net::IpAddr>().unwrap_or([127, 0, 0, 1].into());
+                let bind = cfg
+                    .server
+                    .bind
+                    .parse::<std::net::IpAddr>()
+                    .unwrap_or([127, 0, 0, 1].into());
                 (bind, cfg.server.port_admin.unwrap_or(1338)).into()
             };
 
@@ -448,7 +450,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     .layer(server::AddAddrLayer::new(addr))
                     .layer(LoadShedLayer::new())
                     .layer(CompressionLayer::new().quality(CompressionLevel::Default))
-                    .layer(server::IpFilterLayer::new(admin_state_loop.ip_filter.clone()))
+                    .layer(server::IpFilterLayer::new(
+                        admin_state_loop.ip_filter.clone(),
+                    ))
                     .layer(server::RateLimiterLayer::new(admin_rate_limiter.clone()))
                     .layer(TimeoutLayer::new(timeout))
                     .layer(server::MetricsLayer::new(admin_state_loop.metrics.clone()))
