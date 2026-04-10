@@ -21,5 +21,3 @@ packages = ["."]
 [tool.ruff]
 line-length = 88
 
-[tool.ruff.lint]
-ignore = ["E501"]  # handled by black
