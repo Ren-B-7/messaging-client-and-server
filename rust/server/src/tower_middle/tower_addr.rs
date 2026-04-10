@@ -4,7 +4,7 @@ use std::task::{Context, Poll};
 use tower::{Layer, Service};
 
 /// Tower layer for inserting the remote SocketAddr into request extensions.
-/// 
+///
 /// This is required for downstream middlewares (like IpFilter or RateLimiter)
 /// to be able to identify the client IP.
 #[derive(Clone)]
