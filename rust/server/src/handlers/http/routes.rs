@@ -1,6 +1,8 @@
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use base64::prelude::{BASE64_STANDARD, Engine as _};
@@ -15,6 +17,24 @@ use crate::handlers::http::{messaging, profile, utils::*};
 
 use shared::types::cache::*;
 use shared::types::jwt::JwtClaims;
+
+// ---------------------------------------------------------------------------
+// Path Parameters
+// ---------------------------------------------------------------------------
+
+/// Extracted path parameters from a route match (e.g. ":id").
+#[derive(Debug, Clone, Default)]
+pub struct PathParams(HashMap<String, String>);
+
+impl PathParams {
+    pub fn get(&self, name: &str) -> Option<&String> {
+        self.0.get(name)
+    }
+
+    pub fn get_i64(&self, name: &str) -> Option<i64> {
+        self.0.get(name).and_then(|s| s.parse().ok())
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Handler type aliases
@@ -99,8 +119,8 @@ struct Route {
 
 pub struct Router {
     routes: Vec<Route>,
-    web_dir: Option<String>,
-    icons_dir: Option<String>,
+    web_dir: Option<Arc<str>>,
+    icons_dir: Option<Arc<str>>,
 }
 
 impl std::fmt::Debug for Router {
@@ -129,13 +149,17 @@ impl Router {
     }
 
     pub fn with_web_dir(mut self, web_dir: String) -> Self {
-        self.web_dir = Some(web_dir);
+        self.web_dir = Some(Arc::from(web_dir));
         self
     }
 
     pub fn with_icons_dir(mut self, icons_dir: String) -> Self {
-        self.icons_dir = Some(icons_dir);
+        self.icons_dir = Some(Arc::from(icons_dir));
         self
+    }
+
+    pub fn web_dir(&self) -> Option<Arc<str>> {
+        self.web_dir.clone()
     }
 
     // ── Open (no auth) ────────────────────────────────────────────────────────
@@ -317,47 +341,52 @@ impl Router {
 
     pub async fn route(
         &self,
-        req: Request<hyper::body::Incoming>,
+        mut req: Request<hyper::body::Incoming>,
         state: AppState,
     ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
         let method = req.method().clone();
         let path = req.uri().path().to_string();
 
         for route in &self.routes {
-            if route.method != method || !Self::path_matches(&route.path, &path) {
+            if route.method != method {
                 continue;
             }
 
-            return match &route.kind {
-                // ── Open ──────────────────────────────────────────────────────
-                RouteKind::Open(h) => h(req, state).await,
+            if let Some(params) = Self::extract_params(&route.path, &path) {
+                // Store parameters in request extensions so handlers can access them.
+                req.extensions_mut().insert(params);
 
-                // ── Light: JWT decode only, no DB ─────────────────────────────
-                RouteKind::Light(h) => match decode_jwt_claims(&req, &state.jwt_secret) {
-                    Ok(claims) => h(req, state, claims).await,
-                    Err(reason) => {
-                        warn!("Light-auth rejected {} {}: {}", method, path, reason);
-                        // Token is missing or cryptographically invalid — always 401.
-                        unauthorized(&req)
-                    }
-                },
+                return match &route.kind {
+                    // ── Open ──────────────────────────────────────────────────────
+                    RouteKind::Open(h) => h(req, state).await,
 
-                // ── Hard: JWT + DB session lookup + IP binding ────────────────
-                RouteKind::Hard(h) => match validate_jwt_secure(&req, &state).await {
-                    Ok((user_id, claims)) => h(req, state, user_id, claims).await,
-                    Err(reason) => {
-                        warn!("Hard-auth rejected {} {}: {}", method, path, reason);
-                        // Token decoded successfully but the session was revoked or the
-                        // request arrived from a different IP — the user is authenticated
-                        // but not permitted, so 403 is more accurate than 401.
-                        if reason.contains("Session") || reason.contains("IP") {
-                            forbidden(&req)
-                        } else {
+                    // ── Light: JWT decode only, no DB ─────────────────────────────
+                    RouteKind::Light(h) => match decode_jwt_claims(&req, &state.jwt_secret) {
+                        Ok(claims) => h(req, state, claims).await,
+                        Err(reason) => {
+                            warn!("Light-auth rejected {} {}: {}", method, path, reason);
+                            // Token is missing or cryptographically invalid — always 401.
                             unauthorized(&req)
                         }
-                    }
-                },
-            };
+                    },
+
+                    // ── Hard: JWT + DB session lookup + IP binding ────────────────
+                    RouteKind::Hard(h) => match validate_jwt_secure(&req, &state).await {
+                        Ok((user_id, claims)) => h(req, state, user_id, claims).await,
+                        Err(reason) => {
+                            warn!("Hard-auth rejected {} {}: {}", method, path, reason);
+                            // Token decoded successfully but the session was revoked or the
+                            // request arrived from a different IP — the user is authenticated
+                            // but not permitted, so 403 is more accurate than 401.
+                            if reason.contains("Session") || reason.contains("IP") {
+                                forbidden(&req)
+                            } else {
+                                unauthorized(&req)
+                            }
+                        }
+                    },
+                };
+            }
         }
 
         // No registered route matched — try static file fallback for GET.
@@ -370,15 +399,15 @@ impl Router {
         not_found(&req)
     }
 
-    // ── Path matching ─────────────────────────────────────────────────────────
+    // ── Path matching & Param Extraction ──────────────────────────────────────
 
-    pub fn path_matches(route_path: &str, request_path: &str) -> bool {
+    pub fn extract_params(route_path: &str, request_path: &str) -> Option<PathParams> {
         // Strip query string from incoming request path before comparing.
         let clean = request_path.split('?').next().unwrap_or(request_path);
 
-        // Exact match.
+        // Exact match (optimisation).
         if route_path == clean {
-            return true;
+            return Some(PathParams::default());
         }
 
         // Segment-by-segment matching for `:param` wildcards.
@@ -387,13 +416,20 @@ impl Router {
         let path_segs: Vec<&str> = clean.split('/').collect();
 
         if route_segs.len() != path_segs.len() {
-            return false;
+            return None;
         }
 
-        route_segs
-            .iter()
-            .zip(path_segs.iter())
-            .all(|(r, p)| r.starts_with(':') || r == p)
+        let mut params = HashMap::new();
+
+        for (r, p) in route_segs.iter().zip(path_segs.iter()) {
+            if let Some(name) = r.strip_prefix(':') {
+                params.insert(name.to_string(), p.to_string());
+            } else if r != p {
+                return None;
+            }
+        }
+
+        Some(PathParams(params))
     }
 
     // ── Static file fallback ──────────────────────────────────────────────────
@@ -404,15 +440,19 @@ impl Router {
         state: &AppState,
     ) -> Result<Option<Response<BoxBody<Bytes, Infallible>>>> {
         let cfg = state.config.read().await.clone();
+
         let web_dir = self
             .web_dir
             .as_ref()
-            .unwrap_or(&cfg.paths.web_dir)
+            .map(|s| s.as_ref())
+            .unwrap_or(cfg.paths.web_dir.as_str())
             .trim_end_matches('/');
+
         let icons = self
             .icons_dir
             .as_ref()
-            .unwrap_or(&cfg.paths.icons)
+            .map(|s| s.as_ref())
+            .unwrap_or(cfg.paths.icons.as_str())
             .trim_start_matches('/')
             .trim_end_matches('/');
 
@@ -559,16 +599,18 @@ fn error_redirect_url(
     primary_label: &str,
     primary_href: &str,
 ) -> String {
-    // Hand-roll minimal JSON to avoid pulling in serde just for this path.
-    let json = format!(
-        r#"{{"code":{code},"title":"{title}","subtitle":"{subtitle}","hint":"{hint}","primary":{{"label":"{primary_label}","href":"{primary_href}"}}}}"#,
-        code = code,
-        title = title,
-        subtitle = subtitle,
-        hint = hint,
-        primary_label = primary_label,
-        primary_href = primary_href,
-    );
+    let json = serde_json::json!({
+        "code": code,
+        "title": title,
+        "subtitle": subtitle,
+        "hint": hint,
+        "primary": {
+            "label": primary_label,
+            "href": primary_href
+        }
+    })
+    .to_string();
+
     // base64 encode — use the standard alphabet without padding issues in URLs
     let encoded = BASE64_STANDARD.encode(json.as_bytes());
     format!("/error?e={}", encoded)
@@ -586,15 +628,10 @@ pub fn unauthorized(
             "Sign In",
             "/login",
         );
-        return Response::builder()
-            .status(StatusCode::FOUND)
-            .header(hyper::header::LOCATION, location)
-            .header(hyper::header::CACHE_CONTROL, "no-store")
-            .body(http_body_util::Empty::new().map_err(|e| match e {}).boxed())
-            .context("Failed to build 401 redirect response");
+        return deliver_redirect(&location).context("Failed to build 401 redirect response");
     }
 
-    json_response::deliver_error_json(
+    deliver_error_json(
         "UNAUTHORIZED",
         "Authentication required",
         StatusCode::UNAUTHORIZED,
@@ -609,20 +646,15 @@ pub fn forbidden(
         let location = error_redirect_url(
             403,
             "Forbidden",
-            "You don\\'t have permission to view this resource.",
+            "You don't have permission to view this resource.",
             "Contact an administrator if you believe this is a mistake.",
             "Go Home",
             "/",
         );
-        return Response::builder()
-            .status(StatusCode::FOUND)
-            .header(hyper::header::LOCATION, location)
-            .header(hyper::header::CACHE_CONTROL, "no-store")
-            .body(http_body_util::Empty::new().map_err(|e| match e {}).boxed())
-            .context("Failed to build 403 redirect response");
+        return deliver_redirect(&location).context("Failed to build 403 redirect response");
     }
 
-    json_response::deliver_error_json(
+    deliver_error_json(
         "FORBIDDEN",
         "Insufficient privileges",
         StatusCode::FORBIDDEN,
@@ -645,20 +677,15 @@ pub fn not_found(
         let location = error_redirect_url(
             404,
             "Page Not Found",
-            "The page you\'re looking for doesn\'t exist.",
+            "The page you're looking for doesn't exist.",
             "It may have been moved, renamed, or deleted.",
             "Go Home",
             "/",
         );
-        return Response::builder()
-            .status(StatusCode::FOUND)
-            .header(hyper::header::LOCATION, location)
-            .header(hyper::header::CACHE_CONTROL, "no-store")
-            .body(http_body_util::Empty::new().map_err(|e| match e {}).boxed())
-            .context("Failed to build 404 redirect response");
+        return deliver_redirect(&location).context("Failed to build 404 redirect response");
     }
 
-    json_response::deliver_error_json("NOT_FOUND", "Endpoint not found", StatusCode::NOT_FOUND)
+    deliver_error_json("NOT_FOUND", "Endpoint not found", StatusCode::NOT_FOUND)
         .context("Failed to deliver 404 response")
 }
 
@@ -737,11 +764,9 @@ pub fn build_user_api_routes(router: Router) -> Router {
         })
         .get_light("/api/groups/:id/members", |req, state, claims| async move {
             let chat_id = req
-                .uri()
-                .path()
-                .split('/')
-                .nth(3)
-                .and_then(|s| s.parse::<i64>().ok());
+                .extensions()
+                .get::<PathParams>()
+                .and_then(|p| p.get_i64("id"));
             match chat_id {
                 Some(id) => messaging::handle_get_members(req, state, claims, id)
                     .await
@@ -767,11 +792,9 @@ pub fn build_user_api_routes(router: Router) -> Router {
             "/api/messages/:id/read",
             |req, state, user_id, _claims| async move {
                 let message_id = req
-                    .uri()
-                    .path()
-                    .split('/')
-                    .nth(3)
-                    .and_then(|s| s.parse::<i64>().ok());
+                    .extensions()
+                    .get::<PathParams>()
+                    .and_then(|p| p.get_i64("id"));
                 match message_id {
                     Some(id) => messaging::handle_mark_read(req, state, user_id, id)
                         .await
@@ -794,11 +817,9 @@ pub fn build_user_api_routes(router: Router) -> Router {
             "/api/messages/:id",
             |req, state, user_id, _claims| async move {
                 let message_id = req
-                    .uri()
-                    .path()
-                    .split('/')
-                    .nth(3)
-                    .and_then(|s| s.parse::<i64>().ok());
+                    .extensions()
+                    .get::<PathParams>()
+                    .and_then(|p| p.get_i64("id"));
                 match message_id {
                     Some(id) => messaging::handle_delete_message(req, state, user_id, id)
                         .await
@@ -832,11 +853,9 @@ pub fn build_user_api_routes(router: Router) -> Router {
             "/api/groups/:id/members",
             |req, state, user_id, _claims| async move {
                 let chat_id = req
-                    .uri()
-                    .path()
-                    .split('/')
-                    .nth(3)
-                    .and_then(|s| s.parse::<i64>().ok());
+                    .extensions()
+                    .get::<PathParams>()
+                    .and_then(|p| p.get_i64("id"));
                 match chat_id {
                     Some(id) => messaging::handle_add_member(req, state, user_id, id)
                         .await
@@ -854,11 +873,9 @@ pub fn build_user_api_routes(router: Router) -> Router {
             "/api/groups/:id/members",
             |req, state, user_id, _claims| async move {
                 let chat_id = req
-                    .uri()
-                    .path()
-                    .split('/')
-                    .nth(3)
-                    .and_then(|s| s.parse::<i64>().ok());
+                    .extensions()
+                    .get::<PathParams>()
+                    .and_then(|p| p.get_i64("id"));
                 match chat_id {
                     Some(id) => messaging::handle_remove_member(req, state, user_id, id)
                         .await
@@ -876,11 +893,9 @@ pub fn build_user_api_routes(router: Router) -> Router {
             "/api/groups/:id",
             |req, state, user_id, _claims| async move {
                 let chat_id = req
-                    .uri()
-                    .path()
-                    .split('/')
-                    .nth(3)
-                    .and_then(|s| s.parse::<i64>().ok());
+                    .extensions()
+                    .get::<PathParams>()
+                    .and_then(|p| p.get_i64("id"));
                 match chat_id {
                     Some(id) => messaging::handle_rename_group(req, state, user_id, id)
                         .await
@@ -898,11 +913,9 @@ pub fn build_user_api_routes(router: Router) -> Router {
             "/api/groups/:id",
             |req, state, user_id, _claims| async move {
                 let chat_id = req
-                    .uri()
-                    .path()
-                    .split('/')
-                    .nth(3)
-                    .and_then(|s| s.parse::<i64>().ok());
+                    .extensions()
+                    .get::<PathParams>()
+                    .and_then(|p| p.get_i64("id"));
                 match chat_id {
                     Some(id) => messaging::handle_delete_group(req, state, user_id, id)
                         .await

@@ -3,18 +3,18 @@ use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context as taskContext, Poll};
 
 use anyhow::Context;
 use bytes::Bytes;
 use http_body_util::{BodyExt, combinators::BoxBody};
 use hyper::body::Incoming as IncomingBody;
 use hyper::{Request, Response, StatusCode};
-use std::task::{Context as taskContext, Poll};
 use tower::Service;
 use tracing::{error, info};
 
 use crate::AppState;
-use crate::handlers::http::routes::{Router, build_base_router};
+use crate::handlers::http::routes::{PathParams, Router, build_base_router};
 use crate::handlers::http::{
     admin, auth,
     utils::{deliver_page::*, json_response::*},
@@ -117,47 +117,85 @@ pub fn build_admin_router_with_config(
     web_dir_static: Option<String>,
     icons_dir_static: Option<String>,
 ) -> Router {
-    // Leak paths for use in async closures that require 'static lifetime.
-    // Safe here because this function is called exactly once at startup.
-    let web_dir: &'static str = web_dir_static
-        .clone()
-        .map(|d| -> &'static str { Box::leak(d.into_boxed_str()) })
-        .unwrap_or("");
-
     // Start with shared API routes, layer on admin-specific API routes, then
     // add admin HTML pages and login endpoints.
     let base = build_base_router(web_dir_static, icons_dir_static);
     let mut router = build_admin_api_routes(base);
 
+    // Use the directory stored in the router (wrapped in Arc) instead of Box::leak.
+    let web_dir = router.web_dir().unwrap_or_else(|| Arc::from(""));
+
     router = router
         // ── HTML pages ──────────────────────────────────────────────────────
-        .get("/", move |_req, _state| async move {
-            let path = format!("{}/index.html", web_dir);
-            deliver_html_page(path).context("failed to deliver admin login page")
+        .get("/", {
+            let web_dir = web_dir.clone();
+            move |_req, _state| {
+                let web_dir = web_dir.clone();
+                async move {
+                    let path = format!("{}/index.html", web_dir);
+                    deliver_html_page(path).context("failed to deliver admin login page")
+                }
+            }
         })
-        .get("/index.html", move |_req, _state| async move {
-            let path = format!("{}/index.html", web_dir);
-            deliver_html_page(path).context("failed to deliver admin login page")
+        .get("/index.html", {
+            let web_dir = web_dir.clone();
+            move |_req, _state| {
+                let web_dir = web_dir.clone();
+                async move {
+                    let path = format!("{}/index.html", web_dir);
+                    deliver_html_page(path).context("failed to deliver admin login page")
+                }
+            }
         })
-        .get("/index", move |_req, _state| async move {
-            let path = format!("{}/index.html", web_dir);
-            deliver_html_page(path).context("failed to deliver admin login page")
+        .get("/index", {
+            let web_dir = web_dir.clone();
+            move |_req, _state| {
+                let web_dir = web_dir.clone();
+                async move {
+                    let path = format!("{}/index.html", web_dir);
+                    deliver_html_page(path).context("failed to deliver admin login page")
+                }
+            }
         })
-        .get("/login", move |_req, _state| async move {
-            let path = format!("{}/index.html", web_dir);
-            deliver_html_page(path).context("failed to deliver admin login page")
+        .get("/login", {
+            let web_dir = web_dir.clone();
+            move |_req, _state| {
+                let web_dir = web_dir.clone();
+                async move {
+                    let path = format!("{}/index.html", web_dir);
+                    deliver_html_page(path).context("failed to deliver admin login page")
+                }
+            }
         })
-        .get("/admin", move |_req, _state| async move {
-            let path = format!("{}/admin.html", web_dir);
-            deliver_html_page(path).context("failed to deliver admin dashboard page")
+        .get("/admin", {
+            let web_dir = web_dir.clone();
+            move |_req, _state| {
+                let web_dir = web_dir.clone();
+                async move {
+                    let path = format!("{}/admin.html", web_dir);
+                    deliver_html_page(path).context("failed to deliver admin dashboard page")
+                }
+            }
         })
-        .get("/admin/", move |_req, _state| async move {
-            let path = format!("{}/admin.html", web_dir);
-            deliver_html_page(path).context("failed to deliver admin dashboard page")
+        .get("/admin/", {
+            let web_dir = web_dir.clone();
+            move |_req, _state| {
+                let web_dir = web_dir.clone();
+                async move {
+                    let path = format!("{}/admin.html", web_dir);
+                    deliver_html_page(path).context("failed to deliver admin dashboard page")
+                }
+            }
         })
-        .get("/admin/dashboard", move |_req, _state| async move {
-            let path = format!("{}/admin.html", web_dir);
-            deliver_html_page(path).context("failed to deliver admin dashboard page")
+        .get("/admin/dashboard", {
+            let web_dir = web_dir.clone();
+            move |_req, _state| {
+                let web_dir = web_dir.clone();
+                async move {
+                    let path = format!("{}/admin.html", web_dir);
+                    deliver_html_page(path).context("failed to deliver admin dashboard page")
+                }
+            }
         })
         // ── Health ──────────────────────────────────────────────────────────
         .get("/admin/health", |_req, _state| async move {
@@ -393,7 +431,7 @@ pub fn build_admin_api_routes(router: Router) -> Router {
         // ── Delete user ───────────────────────────────────────────────────────
         .delete_hard(
             "/admin/users/:id",
-            |req, state, user_id, claims| async move {
+            |req, state, _user_id, claims| async move {
                 if !claims.is_admin {
                     return deliver_error_json(
                         "FORBIDDEN",
@@ -401,14 +439,18 @@ pub fn build_admin_api_routes(router: Router) -> Router {
                         StatusCode::FORBIDDEN,
                     );
                 }
-                admin::handle_delete_user(req, state, user_id)
-                    .await
-                    .context("Delete user failed")
+                let target_id = req.extensions().get::<PathParams>().and_then(|p| p.get_i64("id"));
+                match target_id {
+                    Some(id) => admin::handle_delete_user(req, state, id)
+                        .await
+                        .context("Delete user failed"),
+                    None => deliver_error_json("BAD_REQUEST", "Invalid id", StatusCode::BAD_REQUEST),
+                }
             },
         )
         .delete_hard(
             "/admin/api/users/:id",
-            |req, state, user_id, claims| async move {
+            |req, state, _user_id, claims| async move {
                 if !claims.is_admin {
                     return deliver_error_json(
                         "FORBIDDEN",
@@ -416,9 +458,13 @@ pub fn build_admin_api_routes(router: Router) -> Router {
                         StatusCode::FORBIDDEN,
                     );
                 }
-                admin::handle_delete_user(req, state, user_id)
-                    .await
-                    .context("Delete user failed")
+                let target_id = req.extensions().get::<PathParams>().and_then(|p| p.get_i64("id"));
+                match target_id {
+                    Some(id) => admin::handle_delete_user(req, state, id)
+                        .await
+                        .context("Delete user failed"),
+                    None => deliver_error_json("BAD_REQUEST", "Invalid id", StatusCode::BAD_REQUEST),
+                }
             },
         )
         // ── Promote / demote ──────────────────────────────────────────────────
@@ -455,7 +501,7 @@ pub fn build_admin_api_routes(router: Router) -> Router {
         // ── Config reload (SIGHUP) ────────────────────────────────────────────
         .post_hard(
             "/admin/api/reload",
-            |_req, _state, user_id, claims| async move {
+            |req, _state, user_id, claims| async move {
                 if !claims.is_admin {
                     return deliver_error_json(
                         "FORBIDDEN",
@@ -463,7 +509,7 @@ pub fn build_admin_api_routes(router: Router) -> Router {
                         StatusCode::FORBIDDEN,
                     );
                 }
-                admin::handle_reload_config(_req, user_id)
+                admin::handle_reload_config(req, user_id)
                     .await
                     .context("Reload config failed")
             },

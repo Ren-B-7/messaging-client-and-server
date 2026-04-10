@@ -1,8 +1,10 @@
 use std::collections::HashSet;
+use std::convert::Infallible;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context as taskContext, Poll};
 
 use anyhow::Context;
 use bytes::Bytes;
@@ -10,14 +12,12 @@ use http_body_util::BodyExt;
 use http_body_util::combinators::BoxBody;
 use hyper::body::Incoming as IncomingBody;
 use hyper::{Request, Response, StatusCode};
-use std::convert::Infallible;
-use std::task::{Context as taskContext, Poll};
 use tower::Service;
 use tracing::{error, info, warn};
 
 use crate::AppState;
 use crate::handlers::http::routes::{
-    Router, build_base_router, build_user_api_routes, forbidden, unauthorized,
+    PathParams, Router, build_base_router, build_user_api_routes, forbidden, unauthorized,
 };
 use crate::handlers::http::{auth, utils::*};
 use crate::handlers::sse::sse_helper;
@@ -132,41 +132,75 @@ pub fn build_user_router_with_config(
     web_dir_static: Option<String>,
     icons_dir_static: Option<String>,
 ) -> Router {
-    let web_dir: &'static str = web_dir_static
-        .clone()
-        .map(|d| -> &'static str { Box::leak(d.into_boxed_str()) })
-        .unwrap_or("");
-
     // Start with shared base API routes, layer on user messaging/profile API,
     // then add HTML pages and the SSE stream.
-    let base = build_base_router(web_dir_static.clone(), icons_dir_static.clone());
+    let base = build_base_router(web_dir_static, icons_dir_static);
     let mut router = build_user_api_routes(base);
+
+    // Use the directory stored in the router (wrapped in Arc) instead of Box::leak.
+    let web_dir = router.web_dir().unwrap_or_else(|| Arc::from(""));
 
     router = router
         // ── HTML pages ──────────────────────────────────────────────────────
-        .get("/login", move |_req, _| async move {
-            let path = format!("{}/index.html", web_dir);
-            deliver_html_page(path).context("failed to deliver login page")
+        .get("/login", {
+            let web_dir = web_dir.clone();
+            move |_req, _| {
+                let web_dir = web_dir.clone();
+                async move {
+                    let path = format!("{}/index.html", web_dir);
+                    deliver_html_page(path).context("failed to deliver login page")
+                }
+            }
         })
-        .get("/", move |_req, _| async move {
-            let path = format!("{}/index.html", web_dir);
-            deliver_html_page(path).context("failed to deliver home page")
+        .get("/", {
+            let web_dir = web_dir.clone();
+            move |_req, _| {
+                let web_dir = web_dir.clone();
+                async move {
+                    let path = format!("{}/index.html", web_dir);
+                    deliver_html_page(path).context("failed to deliver home page")
+                }
+            }
         })
-        .get("/index", move |_req, _| async move {
-            let path = format!("{}/index.html", web_dir);
-            deliver_html_page(path).context("failed to deliver index page")
+        .get("/index", {
+            let web_dir = web_dir.clone();
+            move |_req, _| {
+                let web_dir = web_dir.clone();
+                async move {
+                    let path = format!("{}/index.html", web_dir);
+                    deliver_html_page(path).context("failed to deliver index page")
+                }
+            }
         })
-        .get("/register", move |_req, _| async move {
-            let path = format!("{}/register.html", web_dir);
-            deliver_html_page(path).context("failed to deliver register page")
+        .get("/register", {
+            let web_dir = web_dir.clone();
+            move |_req, _| {
+                let web_dir = web_dir.clone();
+                async move {
+                    let path = format!("{}/register.html", web_dir);
+                    deliver_html_page(path).context("failed to deliver register page")
+                }
+            }
         })
-        .get_light("/settings", move |_req, _, _| async move {
-            let path = format!("{}/settings.html", web_dir);
-            deliver_html_page(path).context("failed to deliver settings page")
+        .get_light("/settings", {
+            let web_dir = web_dir.clone();
+            move |_req, _, _| {
+                let web_dir = web_dir.clone();
+                async move {
+                    let path = format!("{}/settings.html", web_dir);
+                    deliver_html_page(path).context("failed to deliver settings page")
+                }
+            }
         })
-        .get_light("/chat", move |_req, _, _| async move {
-            let path = format!("{}/chat.html", web_dir);
-            deliver_html_page(path).context("failed to deliver chat page")
+        .get_light("/chat", {
+            let web_dir = web_dir.clone();
+            move |_req, _, _| {
+                let web_dir = web_dir.clone();
+                async move {
+                    let path = format!("{}/chat.html", web_dir);
+                    deliver_html_page(path).context("failed to deliver chat page")
+                }
+            }
         })
         // ── Auth ────────────────────────────────────────────────────────────
         .post("/api/login", |req, state| async move {
@@ -206,12 +240,7 @@ pub fn build_user_router_with_config(
         })
         // GET /api/files/:id — download a file (light auth)
         .get_light("/api/files/:id", |req, state, claims| async move {
-            let file_id = req
-                .uri()
-                .path()
-                .split('/')
-                .nth(3)
-                .and_then(|s| s.parse::<i64>().ok());
+            let file_id = req.extensions().get::<PathParams>().and_then(|p| p.get_i64("id"));
             match file_id {
                 Some(id) => crate::handlers::http::messaging::files::handle_download_file(
                     req, state, claims, id,
@@ -230,12 +259,7 @@ pub fn build_user_router_with_config(
         .delete_hard(
             "/api/files/:id",
             |req, state, user_id, _claims| async move {
-                let file_id = req
-                    .uri()
-                    .path()
-                    .split('/')
-                    .nth(3)
-                    .and_then(|s| s.parse::<i64>().ok());
+                let file_id = req.extensions().get::<PathParams>().and_then(|p| p.get_i64("id"));
                 match file_id {
                     Some(id) => crate::handlers::http::messaging::files::handle_delete_file(
                         req, state, user_id, id,
@@ -262,12 +286,7 @@ pub fn build_user_router_with_config(
         )
         // GET /api/avatar/:user_id — serve any user's avatar image (light auth)
         .get_light("/api/avatar/:user_id", |req, state, claims| async move {
-            let target_user_id = req
-                .uri()
-                .path()
-                .split('/')
-                .nth(3)
-                .and_then(|s| s.parse::<i64>().ok());
+            let target_user_id = req.extensions().get::<PathParams>().and_then(|p| p.get_i64("user_id"));
             match target_user_id {
                 Some(uid) => {
                     crate::handlers::http::profile::handle_get_avatar(req, state, claims, uid)

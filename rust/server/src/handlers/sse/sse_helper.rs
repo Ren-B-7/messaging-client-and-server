@@ -299,12 +299,15 @@ pub async fn handle_sse_subscribe(
     ));
 
     for msg in &history {
-        let content = utils::decompress_data(&msg.content).map_err(|e| {
+        let content_bytes = utils::decompress_data(&msg.content).map_err(|e| {
             error!("SSE history decompress failed for msg {}: {}", msg.id, e);
             SseError::ChannelSendFailed("Failed to decompress message".to_string())
         })?;
 
-        let content_str = String::from_utf8_lossy(&content).to_string();
+        let content_str = String::from_utf8(content_bytes).map_err(|e| {
+            error!("SSE history UTF-8 decode failed for msg {}: {}", msg.id, e);
+            SseError::ChannelSendFailed("Invalid UTF-8 in message content".to_string())
+        })?;
 
         history_frames.push(SseStreamBuilder::format_raw(
             "history_message",
