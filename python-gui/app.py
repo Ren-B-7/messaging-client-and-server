@@ -691,6 +691,7 @@ class ChatClientApp:
         self.setup_sse()
 
         # State
+        self.state_lock = threading.Lock()
         self.current_user = None
         self.is_admin = False
         self.current_chat_id = None
@@ -798,7 +799,8 @@ class ChatClientApp:
                         self.api.mark_message_read(msg["id"])
                 else:
                     # Increment unread for other chats
-                    self.unread_counts[chat_id] += 1
+                    with self.state_lock:
+                        self.unread_counts[chat_id] += 1
                     self._refresh_sidebar_item(chat_id)
             except Exception as e:
                 self.logger.exception("Error handling live message", str(e))
@@ -1194,8 +1196,9 @@ class ChatClientApp:
                 user_data = self._unwrap(response) or {}
                 if not isinstance(user_data, dict):
                     user_data = {}
-                self.current_user = user_data
-                self.is_admin = user_data.get("is_admin", False)
+                with self.state_lock:
+                    self.current_user = user_data
+                    self.is_admin = user_data.get("is_admin", False)
                 self.navbar.set_user(f"@{user_data.get('username', username)}")
                 self.tab_bar.set_enabled("Chat", True)
                 self.tab_bar.set_enabled("Settings", True)
@@ -1232,9 +1235,10 @@ class ChatClientApp:
         profile = self._unwrap(response)
         if not isinstance(profile, dict):
             return
-        self.current_user = profile
-        was_admin = self.is_admin
-        self.is_admin = profile.get("is_admin", False)
+        with self.state_lock:
+            self.current_user = profile
+            was_admin = self.is_admin
+            self.is_admin = profile.get("is_admin", False)
         self.navbar.set_user(f"@{profile.get('username', '')}")
         # Unlock Admin tab if the profile confirms admin rights.
         if self.is_admin and not was_admin:
