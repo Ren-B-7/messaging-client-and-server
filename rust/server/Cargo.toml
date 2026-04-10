@@ -87,4 +87,5 @@ hyper = { workspace = true }
 shared = { path = "../shared" }
 
 [dev-dependencies]
+proptest = "1.11.0"
 tokio-test = "0.4"
