@@ -181,17 +181,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         });
     }
 
-    // ── Background task: SIGTERM → graceful shutdown ─────────────────────────
+    let (shutdown_tx, _) = tokio::sync::broadcast::channel::<()>(1);
+
+    // ── Background task: SIGTERM/SIGINT → graceful shutdown ──────────────────
     {
+        let shutdown_tx = shutdown_tx.clone();
         tokio::spawn(async move {
-            match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
-                Ok(mut signal) => {
-                    signal.recv().await;
-                    info!("SIGTERM received — shutting down");
-                    std::process::exit(0);
-                }
-                Err(e) => warn!("Could not install SIGTERM handler: {}", e),
+            let mut sigterm =
+                match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        warn!("Could not install SIGTERM handler: {}", e);
+                        return;
+                    }
+                };
+
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => info!("SIGINT received — starting graceful shutdown"),
+                _ = sigterm.recv() => info!("SIGTERM received — starting graceful shutdown"),
             }
+
+            let _ = shutdown_tx.send(());
         });
     }
 
@@ -200,25 +210,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // ── User server ──────────────────────────────────────────────────────────
     let user_sem = Arc::clone(&connection_semaphore);
+    let mut user_shutdown_rx = shutdown_tx.subscribe();
     let user_server = async move {
-        let listener = TcpListener::bind(user_sock)
-            .await
-            .context(format!("Failed to bind to {}", user_sock))
-            .unwrap();
+        let listener = match TcpListener::bind(user_sock).await {
+            Ok(l) => l,
+            Err(e) => {
+                error!("Failed to bind User server to {}: {}", user_sock, e);
+                return;
+            }
+        };
 
         info!("User server listening on http://{}", user_sock);
 
         loop {
-            // Acquire a connection permit before accepting.  This is what
-            // actually enforces max_connections.  If no permit is available
-            // the task yields until one frees up — no connection is dropped,
-            // it just waits.
-            let permit = Arc::clone(&user_sem)
-                .acquire_owned()
-                .await
-                .expect("semaphore closed");
+            // Wait for a connection permit OR a shutdown signal.
+            let permit = tokio::select! {
+                p = user_sem.clone().acquire_owned() => p.expect("semaphore closed"),
+                _ = user_shutdown_rx.recv() => {
+                    info!("User server shutting down loop");
+                    break;
+                }
+            };
 
-            let (stream, addr) = listener.accept().await.unwrap();
+            let (stream, addr) = match listener.accept().await {
+                Ok(res) => res,
+                Err(e) => {
+                    error!("User server accept error: {}", e);
+                    // Small delay to prevent tight loop on persistent errors (e.g. EMFILE)
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    continue;
+                }
+            };
 
             let user_tower_service = UserService::new(
                 user_state.clone(),
@@ -241,6 +263,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let final_service = TowerToHyperService::new(tower_service);
             let io = TokioIo::new(stream);
             let timeout = user_timeout.clone();
+            let mut shutdown_rx = shutdown_tx.subscribe();
 
             tokio::task::spawn(async move {
                 // `permit` is moved into this task and dropped when it ends,
@@ -271,13 +294,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             );
                             conn.as_mut().graceful_shutdown();
                         }
+                        _ = shutdown_rx.recv() => {
+                            info!("Shutdown received, calling graceful_shutdown for {}", addr);
+                            conn.as_mut().graceful_shutdown();
+                        }
                     }
                 }
 
                 if !completed {
                     info!("Holding long-lived connection open: {}", addr);
-                    if let Err(e) = conn.await {
-                        warn!("Long-lived connection {} closed with error: {:?}", addr, e);
+                    tokio::select! {
+                        res = conn.as_mut() => {
+                            if let Err(e) = res {
+                                warn!("Long-lived connection {} closed with error: {:?}", addr, e);
+                            }
+                        }
+                        _ = shutdown_rx.recv() => {
+                            info!("Shutdown received, closing long-lived connection {}", addr);
+                            conn.as_mut().graceful_shutdown();
+                            let _ = conn.await;
+                        }
                     }
                 }
             });
@@ -286,21 +322,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // ── Admin server ─────────────────────────────────────────────────────────
     let admin_sem = Arc::clone(&connection_semaphore);
+    let mut admin_shutdown_rx = shutdown_tx.subscribe();
     let admin_server = async move {
-        let listener = TcpListener::bind(admin_sock)
-            .await
-            .context(format!("Failed to bind to {}", admin_sock))
-            .unwrap();
+        let listener = match TcpListener::bind(admin_sock).await {
+            Ok(l) => l,
+            Err(e) => {
+                error!("Failed to bind Admin server to {}: {}", admin_sock, e);
+                return;
+            }
+        };
 
         info!("Admin server listening on http://{}", admin_sock);
 
         loop {
-            let permit = Arc::clone(&admin_sem)
-                .acquire_owned()
-                .await
-                .expect("semaphore closed");
+            let permit = tokio::select! {
+                p = admin_sem.clone().acquire_owned() => p.expect("semaphore closed"),
+                _ = admin_shutdown_rx.recv() => {
+                    info!("Admin server shutting down loop");
+                    break;
+                }
+            };
 
-            let (stream, addr) = listener.accept().await.unwrap();
+            let (stream, addr) = match listener.accept().await {
+                Ok(res) => res,
+                Err(e) => {
+                    error!("Admin server accept error: {}", e);
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    continue;
+                }
+            };
 
             let admin_tower_service = AdminService::new(
                 admin_state.clone(),
@@ -323,6 +373,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let final_service = TowerToHyperService::new(tower_service);
             let io = TokioIo::new(stream);
             let timeout = admin_timeout.clone();
+            let mut shutdown_rx = shutdown_tx.subscribe();
 
             tokio::task::spawn(async move {
                 let _permit = permit;
@@ -347,6 +398,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                 "iter = {} timeout elapsed, calling graceful_shutdown",
                                 iter
                             );
+                            conn.as_mut().graceful_shutdown();
+                        }
+                        _ = shutdown_rx.recv() => {
+                            info!("Shutdown received, calling graceful_shutdown for {}", addr);
                             conn.as_mut().graceful_shutdown();
                         }
                     }
