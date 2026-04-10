@@ -51,6 +51,7 @@ format-frontend:
 	cd $(FRONTEND_DIR) && prettier --write "**/*.css"
 	cd $(FRONTEND_DIR) && prettier --write "**/*.html"
 	cd $(FRONTEND_DIR) && prettier --write "**/*.js"
+	cd $(FRONTEND_DIR) && prettier --write "**/*.json"
 
 format-makefile:
 	@echo "Formatting Makefile..."

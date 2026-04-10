@@ -20,4 +20,3 @@
         "minify:css": "find static/css/full -name '*.css' | xargs -I{} sh -c 'out=$(echo {} | sed \"s|static/css/full/|static/css/min/|\"); mkdir -p $(dirname $out) && ./node_modules/.bin/csso-cli {} -o $out'"
     }
 }
-
