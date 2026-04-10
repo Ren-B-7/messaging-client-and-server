@@ -1,13 +1,13 @@
 /**
  * Settings — Initialiser
- * Fetches the current user profile from the API (so avatar_url is always
- * fresh), merges into localStorage, then boots all settings sub-modules.
- *
- * Load order (all deferred):
- *   theme.manager.js → platform.config.js → utils.js
- *   → settings.nav.js → settings.profile.js → settings.account.js
- *   → settings.preferences.js → settings.init.js
  */
+
+import { themeManager } from "../../../static/js/full/utils/theme.manager.js";
+import Utils from "../../../static/js/full/utils/utils.js";
+import { SettingsNav } from "./settings.nav.js";
+import { SettingsProfile } from "./settings.profile.js";
+import { SettingsAccount } from "./settings.account.js";
+import { SettingsPreferences } from "./settings.preferences.js";
 
 document.addEventListener("DOMContentLoaded", async () => {
     // ── Theme ──────────────────────────────────────────────────────────────────
@@ -20,7 +20,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
 
     // ── Fetch fresh user data from the API ─────────────────────────────────────
-    // Always hit /api/profile so avatar_url, username, and email are current.
     let user = Utils.getStorage("user") || {};
 
     try {
@@ -28,7 +27,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (res.ok) {
             const data = await res.json();
             const profile = data.data ?? data;
-            // Merge API fields into the local user object.
             user = {
                 ...user,
                 id: Number(profile.user_id),
@@ -59,12 +57,6 @@ document.addEventListener("DOMContentLoaded", async () => {
             : user.username || user.email || "?";
         initialsEl.textContent = Utils.getInitials(displayName);
         initialsEl.style.display = "";
-    }
-
-    // ── Platform info (Help tab) ───────────────────────────────────────────────
-    const platformEl = document.getElementById("platformInfo");
-    if (platformEl && window.PlatformConfig) {
-        platformEl.textContent = window.PlatformConfig.platform || "Web";
     }
 
     // ── Boot sub-modules ───────────────────────────────────────────────────────

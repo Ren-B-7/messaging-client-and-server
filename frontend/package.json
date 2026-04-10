@@ -17,6 +17,6 @@
         "format:check": "./node_modules/.bin/prettier --check '**/*.{html,css,js,json}'",
         "minify:js:static": "find static/js/full -name '*.js' | xargs -I{} sh -c 'out=$(echo {} | sed \"s|static/js/full/|static/js/min/|\"); mkdir -p $(dirname $out) && ./node_modules/.bin/terser {} -o $out --compress'",
         "minify:js:non": "find non-static/full -name '*.js' | xargs -I{} sh -c 'out=$(echo {} | sed \"s|non-static/full/|non-static/min/|\"); mkdir -p $(dirname $out) && ./node_modules/.bin/terser {} -o $out --compress'",
-        "minify:css": "find static/css/full -name '*.css' | xargs -I{} sh -c 'out=$(echo {} | sed \"s|static/css/full/|static/css/min/|\"); mkdir -p $(dirname $out) && ./node_modules/.bin/csso-cli {} -o $out'"
+        "minify:css": "find static/css/full -name '*.css' | xargs -I{} sh -c 'out=$(echo {} | sed \"s|static/css/full/|static/css/min/|\"); mkdir -p $(dirname $out) && ./node_modules/.bin/csso {} -o $out'"
     }
 }

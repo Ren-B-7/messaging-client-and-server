@@ -2,10 +2,9 @@
  * Settings — Tab Navigation
  * Manages the sidebar nav links and settings tab panel switching.
  * Also handles direct navigation via URL hash (e.g. /settings#privacy).
- * Depends on: (none — pure DOM)
  */
 
-const SettingsNav = {
+export const SettingsNav = {
     setup() {
         const navItems = document.querySelectorAll(".settings-nav-item");
         const tabs = document.querySelectorAll(".settings-tab");
@@ -26,7 +25,6 @@ const SettingsNav = {
             });
         });
 
-        // Honour a hash already in the URL on page load.
         const hash = window.location.hash.substring(1);
         if (hash) {
             document.querySelector(`[href="#${hash}"]`)?.click();

@@ -62,63 +62,70 @@
             })();
         </script>
 
-        <!-- Preloads -->
-        <link rel="preload" href="static/js/min/utils/theme.manager.js" as="script" />
-        <link rel="preload" href="static/js/min/utils/error.interceptor.js" as="script" />
-        <link rel="preload" href="static/js/min/config/platform.config.js" as="script" />
-        <link rel="preload" href="static/js/min/utils/utils.js" as="script" />
-        <link rel="preload" href="static/js/min/utils/error.interceptor.js" as="script" />
-        <link rel="preload" href="non-static/min/chat/chat.state.js" as="script" />
-        <link rel="preload" href="non-static/min/chat/chat.ui.js" as="script" />
-        <link rel="preload" href="non-static/min/chat/chat.messages.js" as="script" />
-        <link rel="preload" href="non-static/min/chat/chat.conversations.js" as="script" />
-        <link rel="preload" href="non-static/min/chat/chat.sse.js" as="script" />
-        <link rel="preload" href="non-static/min/chat/chat.files.js" as="script" />
-        <link rel="preload" href="non-static/min/chat/chat.init.js" as="script" />
+        <!-- Preloads (ESM version uses modulepreload) -->
+        <link rel="modulepreload" href="static/js/min/utils/theme.manager.js" />
+        <link rel="modulepreload" href="static/js/min/utils/error.interceptor.js" />
+        <link rel="modulepreload" href="static/js/min/config/platform.config.js" />
+        <link rel="modulepreload" href="static/js/min/utils/utils.js" />
+        <link rel="modulepreload" href="static/js/min/utils/events.js" />
+        <link rel="modulepreload" href="static/js/min/utils/dom.js" />
+        <link rel="modulepreload" href="non-static/min/chat/chat.state.js" />
+        <link rel="modulepreload" href="non-static/min/chat/chat.ui.js" />
+        <link rel="modulepreload" href="non-static/min/chat/chat.messages.js" />
+        <link rel="modulepreload" href="non-static/min/chat/chat.conversations.js" />
+        <link rel="modulepreload" href="non-static/min/chat/chat.sse.js" />
+        <link rel="modulepreload" href="non-static/min/chat/chat.files.js" />
+        <link rel="modulepreload" href="non-static/min/chat/chat.init.js" />
 
-        <!-- Scripts (deferred — execute after HTML is parsed, in order) -->
-        <script defer src="static/js/min/utils/error.interceptor.js"></script>
-        <script defer src="static/js/min/utils/theme.manager.js"></script>
-        <script defer src="static/js/min/config/platform.config.js"></script>
-        <script defer src="static/js/min/utils/utils.js"></script>
-        <script defer src="non-static/min/chat/chat.state.js"></script>
-        <script defer src="non-static/min/chat/chat.ui.js"></script>
-        <script defer src="non-static/min/chat/chat.messages.js"></script>
-        <script defer src="non-static/min/chat/chat.conversations.js"></script>
-        <script defer src="non-static/min/chat/chat.sse.js"></script>
-        <script defer src="non-static/min/chat/chat.files.js"></script>
-        <script defer src="non-static/min/chat/chat.init.js"></script>
+        <!-- Main Entry Point -->
+        <script type="module" src="non-static/min/chat/chat.init.js"></script>
     </head>
     <body>
-        <div id="loading">Loading...</div>
+        <div id="loading" aria-hidden="true">Loading...</div>
 
-        <nav class="navbar">
-            <a href="/chat" class="navbar-brand">
-                <div class="navbar-logo">💬</div>
+        <nav class="navbar" role="navigation" aria-label="Main Navigation">
+            <a href="/chat" class="navbar-brand" aria-label="Chat Home">
+                <div class="navbar-logo" aria-hidden="true">💬</div>
                 <span>Chat</span>
             </a>
             <div class="navbar-menu">
-                <a href="/chat" class="active">Messages</a>
+                <a href="/chat" class="active" aria-current="page">Messages</a>
             </div>
             <div class="navbar-end">
-                <button class="btn btn-ghost btn-icon" id="themeToggle" title="Toggle theme">
+                <button
+                    class="btn btn-ghost btn-icon"
+                    id="themeToggle"
+                    title="Toggle theme"
+                    aria-label="Toggle theme"
+                >
                     <img
                         src="static/icons/icons/sun.svg"
-                        alt="Toggle theme"
+                        alt=""
                         width="20"
                         height="20"
+                        aria-hidden="true"
                     />
                 </button>
-                <a href="/settings" class="btn btn-ghost btn-icon" title="Settings">
+                <a
+                    href="/settings"
+                    class="btn btn-ghost btn-icon"
+                    title="Settings"
+                    aria-label="Settings"
+                >
                     <img
                         src="static/icons/icons/settings.svg"
-                        alt="Settings"
+                        alt=""
                         width="20"
                         height="20"
+                        aria-hidden="true"
                     />
                 </a>
-                <div class="avatar avatar-sm" style="position: relative; overflow: hidden">
-                    <span id="userInitials">U</span>
+                <div
+                    class="avatar avatar-sm"
+                    style="position: relative; overflow: hidden"
+                    aria-label="User Profile"
+                >
+                    <span id="userInitials" aria-hidden="true">U</span>
                     <img
                         id="userAvatarImg"
                         style="
@@ -138,11 +145,27 @@
 
         <div class="chat-container">
             <!-- ── Sidebar: conversation list ── -->
-            <aside class="conversations-panel">
+            <aside class="conversations-panel" aria-label="Conversations Sidebar">
                 <div class="panel-header">
-                    <div class="panel-tabs">
-                        <button class="panel-tab active" data-tab="dm">Messages</button>
-                        <button class="panel-tab" data-tab="groups">Groups</button>
+                    <div class="panel-tabs" role="tablist">
+                        <button
+                            class="panel-tab active"
+                            data-tab="dm"
+                            role="tab"
+                            aria-selected="true"
+                            aria-controls="conversationsList"
+                        >
+                            Messages
+                        </button>
+                        <button
+                            class="panel-tab"
+                            data-tab="groups"
+                            role="tab"
+                            aria-selected="false"
+                            aria-controls="conversationsList"
+                        >
+                            Groups
+                        </button>
                     </div>
                     <div class="panel-actions">
                         <div class="search-box">
@@ -152,12 +175,14 @@
                                 class="search-icon"
                                 width="16"
                                 height="16"
+                                aria-hidden="true"
                             />
                             <input
                                 type="text"
                                 class="search-input"
                                 id="conversationSearch"
                                 placeholder="Search..."
+                                aria-label="Search conversations"
                             />
                         </div>
                         <button
@@ -168,14 +193,21 @@
                         >
                             ↺
                         </button>
-                        <button class="new-chat-btn" id="newChatBtn" title="New">+</button>
+                        <button
+                            class="new-chat-btn"
+                            id="newChatBtn"
+                            title="New"
+                            aria-label="Start new conversation"
+                        >
+                            +
+                        </button>
                     </div>
                 </div>
-                <div class="conversations-list" id="conversationsList"></div>
+                <div class="conversations-list" id="conversationsList" role="tabpanel"></div>
             </aside>
 
             <!-- ── Main: message area ── -->
-            <main class="chat-area">
+            <main class="chat-area" aria-label="Chat Content">
                 <!-- Shown when no conversation is selected -->
                 <div
                     id="emptyChatState"
@@ -184,13 +216,14 @@
                     <div style="text-align: center; color: var(--fg-tertiary)">
                         <img
                             src="static/icons/icons/chat.svg"
-                            alt="Chat icon"
+                            alt=""
                             style="
                                 width: 64px;
                                 height: 64px;
                                 margin-bottom: var(--space-4);
                                 opacity: 0.7;
                             "
+                            aria-hidden="true"
                         />
                         <h2 style="color: var(--fg-secondary)">Select a conversation</h2>
                         <p>Choose a conversation from the sidebar to start messaging</p>
@@ -200,96 +233,110 @@
                 <div id="activeChatView" class="active-chat-view" style="display: none">
                     <div class="chat-header">
                         <div class="chat-info">
-                            <div class="avatar" id="chatAvatar">U</div>
+                            <div class="avatar" id="chatAvatar" aria-hidden="true">U</div>
                             <div class="chat-details">
                                 <div class="chat-name" id="chatName">User</div>
                                 <div class="chat-status">
                                     <span id="statusText">Server indicator:</span>
-                                    <!-- SSE connection indicator: green=live, amber=reconnecting, red=disconnected -->
                                     <span
                                         id="sseStatusDot"
                                         data-status="disconnected"
                                         title="Connecting…"
+                                        aria-label="Connection Status"
                                     ></span>
                                 </div>
                             </div>
                         </div>
                         <div class="chat-actions">
-                            <!-- Only visible for group conversations -->
                             <button
                                 class="chat-action-btn"
                                 id="groupSettingsBtn"
                                 title="Group settings"
+                                aria-label="Group settings"
                                 style="display: none"
                             >
                                 <img
                                     src="static/icons/icons/settings.svg"
-                                    alt="Group settings"
+                                    alt=""
                                     width="20"
                                     height="20"
                                     style="display: block; opacity: 0.7"
+                                    aria-hidden="true"
                                 />
                             </button>
-                            <!-- Only visible for group conversations -->
                             <button
                                 class="chat-action-btn"
                                 id="addMemberBtn"
                                 title="Add member"
+                                aria-label="Add member to group"
                                 style="display: none"
                             >
                                 <img
                                     src="static/icons/icons/add-user.svg"
-                                    alt="Add member"
+                                    alt=""
                                     width="20"
                                     height="20"
                                     style="display: block; opacity: 0.7"
+                                    aria-hidden="true"
                                 />
                             </button>
-                            <!-- View files button — always visible when a chat is open -->
-                            <button class="chat-action-btn" id="viewFilesBtn" title="View files">
+                            <button
+                                class="chat-action-btn"
+                                id="viewFilesBtn"
+                                title="View files"
+                                aria-label="View conversation files"
+                            >
                                 <img
                                     src="static/icons/icons/file.svg"
-                                    alt="Add member"
+                                    alt=""
                                     width="20"
                                     height="20"
                                     style="display: block; opacity: 0.7"
+                                    aria-hidden="true"
                                 />
                             </button>
                         </div>
                     </div>
 
-                    <!-- Isolated scrollable message viewport -->
                     <div class="chat-body">
-                        <!-- Messages list — scrolls independently -->
-                        <div class="messages-container" id="messagesContainer"></div>
+                        <div
+                            class="messages-container"
+                            id="messagesContainer"
+                            aria-live="polite"
+                            aria-label="Message History"
+                        ></div>
                     </div>
 
-                    <!-- Pinned bottom bar: typing indicator + input (never scrolls away) -->
                     <div class="chat-bottom-bar">
-                        <!-- Typing indicator is injected here by ChatUI.showTyping() -->
-                        <!-- id="messageInputArea" lets ChatUI insert the typing banner just above -->
                         <div class="message-input-area" id="messageInputArea">
-                            <!-- Hidden file picker — triggered by the paperclip button -->
-                            <input type="file" id="fileInput" style="display: none" multiple />
+                            <input
+                                type="file"
+                                id="fileInput"
+                                style="display: none"
+                                multiple
+                                aria-label="File Upload"
+                            />
                             <div class="input-tools">
                                 <button
                                     class="input-tool-btn"
                                     id="attachFileBtn"
                                     title="Attach file"
+                                    aria-label="Attach file"
                                 >
                                     <img
                                         src="static/icons/icons/paperclip.svg"
-                                        alt="Attach file"
+                                        alt=""
                                         width="20"
                                         height="20"
+                                        aria-hidden="true"
                                     />
                                 </button>
                             </div>
-                            <!-- Upload progress/status strip -->
                             <div
                                 id="uploadStatus"
                                 class="upload-status"
                                 style="display: none"
+                                aria-live="assertive"
                             ></div>
                             <div class="message-input-wrapper">
                                 <textarea
@@ -297,13 +344,20 @@
                                     id="messageInput"
                                     placeholder="Type a message…"
                                     rows="1"
+                                    aria-label="Type a message"
                                 ></textarea>
-                                <button class="send-btn" id="sendBtn" disabled>
+                                <button
+                                    class="send-btn"
+                                    id="sendBtn"
+                                    disabled
+                                    aria-label="Send message"
+                                >
                                     <img
                                         src="static/icons/icons/send.svg"
-                                        alt="Send"
+                                        alt=""
                                         width="20"
                                         height="20"
+                                        aria-hidden="true"
                                     />
                                 </button>
                             </div>

@@ -4,10 +4,15 @@
  * action button handlers, group settings (rename, delete, member management),
  * and the typing indicator.
  *
- * Depends on: Utils, ChatState, ChatConversations
+ * Depends on: Utils, ChatState, ChatConversations, DOM, EventEmitter
  */
 
-const ChatUI = {
+import Utils from "../../../static/js/full/utils/utils.js";
+import { DOM } from "../../../static/js/full/utils/dom.js";
+import { EventEmitter } from "../../../static/js/full/utils/events.js";
+import ChatState from "./chat.state.js";
+
+export const ChatUI = {
     // ── Empty / active state ─────────────────────────────────────────────────
 
     showEmptyState() {
@@ -15,6 +20,7 @@ const ChatUI = {
         const active = document.getElementById("activeChatView");
         if (empty) empty.style.display = "flex";
         if (active) active.style.display = "none";
+        EventEmitter.emit("ui:state:empty");
     },
 
     hideEmptyState() {
@@ -22,6 +28,7 @@ const ChatUI = {
         const active = document.getElementById("activeChatView");
         if (empty) empty.style.display = "none";
         if (active) active.style.display = "flex";
+        EventEmitter.emit("ui:state:active");
     },
 
     // ── Chat header ──────────────────────────────────────────────────────────
@@ -29,7 +36,6 @@ const ChatUI = {
     updateHeader(conversation, type = "dm") {
         const nameEl = document.getElementById("chatName");
         const avatarEl = document.getElementById("chatAvatar");
-        const dotEl = document.getElementById("statusDot");
         const textEl = document.getElementById("statusText");
         const addMemberBtn = document.getElementById("addMemberBtn");
         const groupSettingsBtn = document.getElementById("groupSettingsBtn");
@@ -38,32 +44,39 @@ const ChatUI = {
 
         // Render avatar: photo if available, initials otherwise.
         if (avatarEl) {
+            DOM.clear(avatarEl);
             if (type === "dm" && conversation.avatarUrl) {
-                avatarEl.innerHTML = `<img src="${conversation.avatarUrl}" alt="${Utils.escapeHtml(
-                    conversation.name
-                )}"
-                style="width:100%;height:100%;object-fit:cover;border-radius:inherit"
-                onerror="this.parentElement.textContent='${Utils.getInitials(
-                    conversation.name
-                )}'">`;
+                avatarEl.appendChild(
+                    DOM.create("img", {
+                        src: conversation.avatarUrl,
+                        alt: `Avatar of ${conversation.name}`,
+                        style: {
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "cover",
+                            borderRadius: "inherit",
+                        },
+                        onerror: () => {
+                            avatarEl.textContent = Utils.getInitials(conversation.name);
+                        },
+                    })
+                );
             } else {
                 avatarEl.textContent = Utils.getInitials(conversation.name);
             }
         }
 
         if (type === "groups") {
-            if (dotEl) dotEl.className = "status-dot";
             if (textEl)
                 textEl.textContent = conversation.memberCount
                     ? `${conversation.memberCount} members`
                     : "Group";
-            if (textEl) textEl.style.color = "";
             if (addMemberBtn) addMemberBtn.style.display = "";
             if (groupSettingsBtn) groupSettingsBtn.style.display = "";
         } else {
             if (addMemberBtn) addMemberBtn.style.display = "none";
             if (groupSettingsBtn) groupSettingsBtn.style.display = "none";
-            if (textEl) textEl.style.color = "";
+            if (textEl) textEl.textContent = "Online"; // Or fallback
         }
     },
 
@@ -87,10 +100,13 @@ const ChatUI = {
             if (banner) banner.remove();
             return;
         }
+
         if (!banner) {
-            banner = document.createElement("div");
-            banner.id = "typingIndicator";
-            banner.className = "typing-indicator";
+            banner = DOM.create("div", {
+                id: "typingIndicator",
+                className: "typing-indicator",
+                ariaLive: "polite",
+            });
             const bottomBar = document.querySelector(".chat-bottom-bar");
             const inputArea = document.getElementById("messageInputArea");
             if (bottomBar && inputArea) {
@@ -101,32 +117,28 @@ const ChatUI = {
                 document.getElementById("messagesContainer")?.appendChild(banner);
             }
         }
+
         const count = this._typingUsers.size;
         banner.innerHTML = `
-      <span class="typing-dots"><span></span><span></span><span></span></span>
-      <span class="typing-text">${
-          count === 1 ? "Someone is typing" : `${count} people are typing`
-      }&hellip;</span>`;
+            <span class="typing-dots"><span></span><span></span><span></span></span>
+            <span class="typing-text">${
+                count === 1 ? "Someone is typing" : `${count} people are typing`
+            }&hellip;</span>`;
     },
 
     // ── Action buttons setup ─────────────────────────────────────────────────
 
     setupActionButtons() {
-        // File upload + files modal wired in chat.files.js
-        ChatFiles.setupUpload();
-
-        // ── Avatar upload (own profile picture) ──────────────────────────────
+        // Own profile picture
         const avatarInput = document.getElementById("avatarFileInput");
         const avatarBtn = document.getElementById("changeAvatarBtn");
 
         if (avatarBtn && avatarInput) {
             avatarBtn.addEventListener("click", () => avatarInput.click());
-
             avatarInput.addEventListener("change", async () => {
                 const file = avatarInput.files?.[0];
                 avatarInput.value = "";
-                if (!file) return;
-                await this._uploadAvatar(file);
+                if (file) await this._uploadAvatar(file);
             });
         }
 
@@ -134,9 +146,8 @@ const ChatUI = {
         document.getElementById("addMemberBtn")?.addEventListener("click", () => {
             const conv = ChatState.currentConversation;
             if (!conv) return;
-            const nameEl = document.getElementById("addMemberGroupName");
-            if (nameEl) nameEl.textContent = conv.name;
-            this._openAddMemberModal();
+            document.getElementById("addMemberGroupName").textContent = conv.name;
+            this._openModal("add-member-modal");
         });
 
         document
@@ -145,60 +156,29 @@ const ChatUI = {
         document.getElementById("addMemberInput")?.addEventListener("keydown", (e) => {
             if (e.key === "Enter") this._submitAddMember();
         });
-        document
-            .querySelectorAll('[data-close-conv-modal="add-member-modal"]')
-            .forEach((btn) => btn.addEventListener("click", () => this._closeAddMemberModal()));
-        document.getElementById("add-member-modal")?.addEventListener("click", (e) => {
-            if (e.target === e.currentTarget) this._closeAddMemberModal();
-        });
 
-        // Group settings button
+        // Group settings
         document
             .getElementById("groupSettingsBtn")
             ?.addEventListener("click", () => this._openGroupSettings());
-
-        // Group settings modal
-        document
-            .querySelectorAll('[data-close-conv-modal="group-settings-modal"]')
-            .forEach((btn) =>
-                btn.addEventListener("click", () => this._closeModal("group-settings-modal"))
-            );
-        document.getElementById("group-settings-modal")?.addEventListener("click", (e) => {
-            if (e.target === e.currentTarget) this._closeModal("group-settings-modal");
-        });
-
-        // Rename
         document
             .getElementById("groupRenameBtn")
             ?.addEventListener("click", () => this._submitRename());
         document.getElementById("groupRenameInput")?.addEventListener("keydown", (e) => {
             if (e.key === "Enter") this._submitRename();
         });
-
-        // Delete flow
         document.getElementById("groupDeleteBtn")?.addEventListener("click", () => {
             const conv = ChatState.currentConversation;
             if (!conv) return;
-            const nameEl = document.getElementById("groupDeleteName");
-            if (nameEl) nameEl.textContent = conv.name;
-            const errEl = document.getElementById("groupDeleteError");
-            if (errEl) errEl.textContent = "";
+            document.getElementById("groupDeleteName").textContent = conv.name;
+            document.getElementById("groupDeleteError").textContent = "";
             this._openModal("group-delete-confirm-modal");
-        });
-
-        document
-            .querySelectorAll('[data-close-conv-modal="group-delete-confirm-modal"]')
-            .forEach((btn) =>
-                btn.addEventListener("click", () => this._closeModal("group-delete-confirm-modal"))
-            );
-        document.getElementById("group-delete-confirm-modal")?.addEventListener("click", (e) => {
-            if (e.target === e.currentTarget) this._closeModal("group-delete-confirm-modal");
         });
         document
             .getElementById("groupDeleteConfirmBtn")
             ?.addEventListener("click", () => this._submitDeleteGroup());
 
-        // Add member inside settings
+        // Add member in settings
         document
             .getElementById("groupAddMemberBtn")
             ?.addEventListener("click", () => this._submitAddMemberFromSettings());
@@ -210,8 +190,16 @@ const ChatUI = {
             Utils.debounce((e) => this._searchUsers(e.target.value), 300)
         );
 
-        // Close search results when clicking outside
+        // Global modal close listeners
+        document.querySelectorAll("[data-close-conv-modal]").forEach((btn) => {
+            btn.addEventListener("click", () => this._closeModal(btn.dataset.closeConvModal));
+        });
+
         document.addEventListener("click", (e) => {
+            if (e.target.classList.contains("conv-modal-backdrop")) {
+                this._closeModal(e.target.id);
+            }
+            // Close search results
             const wrapper = document.querySelector(".group-search-wrapper");
             if (wrapper && !wrapper.contains(e.target)) {
                 const results = document.getElementById("groupSearchResults");
@@ -224,9 +212,8 @@ const ChatUI = {
 
         document.addEventListener("keydown", (e) => {
             if (e.key === "Escape") {
-                this._closeAddMemberModal();
-                this._closeModal("group-settings-modal");
-                this._closeModal("group-delete-confirm-modal");
+                const openModal = document.querySelector(".conv-modal-backdrop.open");
+                if (openModal) this._closeModal(openModal.id);
             }
         });
     },
@@ -248,14 +235,10 @@ const ChatUI = {
             }
         });
 
-        const addInput = document.getElementById("groupAddMemberInput");
-        if (addInput) addInput.value = "";
-
+        document.getElementById("groupAddMemberInput").value = "";
         const searchResults = document.getElementById("groupSearchResults");
-        if (searchResults) {
-            searchResults.style.display = "none";
-            searchResults.innerHTML = "";
-        }
+        searchResults.style.display = "none";
+        searchResults.innerHTML = "";
 
         this._openModal("group-settings-modal");
         await this._loadMembers(conv.id);
@@ -266,7 +249,7 @@ const ChatUI = {
         const countEl = document.getElementById("groupMemberCount");
         if (!listEl) return;
 
-        listEl.innerHTML = `<p style="color:var(--fg-tertiary);font-size:var(--text-sm)">Loading…</p>`;
+        DOM.clear(listEl, DOM.create("p", { className: "loading-text" }, "Loading…"));
 
         try {
             const res = await fetch(`/api/groups/${encodeURIComponent(chatId)}/members`);
@@ -277,51 +260,66 @@ const ChatUI = {
             if (countEl) countEl.textContent = `(${members.length})`;
 
             if (!members.length) {
-                listEl.innerHTML = `<p style="color:var(--fg-tertiary);font-size:var(--text-sm)">No members found.</p>`;
+                DOM.clear(
+                    listEl,
+                    DOM.create("p", { className: "empty-text" }, "No members found.")
+                );
                 return;
             }
 
             const myId = ChatState.currentUser?.id ?? null;
 
-            listEl.innerHTML = members
-                .map((m) => {
+            DOM.clear(
+                listEl,
+                members.map((m) => {
                     const isMe = m.user_id === myId;
                     const displayName = m.username || `User ${m.user_id}`;
-                    return `
-          <div class="group-member-row" data-user-id="${m.user_id}">
-            <div class="avatar avatar-sm">${Utils.getInitials(displayName)}</div>
-            <div class="group-member-info">
-              <span class="group-member-name">${Utils.escapeHtml(displayName)}</span>
-              ${
-                  m.role && m.role !== "member"
-                      ? `<span class="group-member-role">${Utils.escapeHtml(m.role)}</span>`
-                      : ""
-              }
-              ${isMe ? `<span class="group-member-you">you</span>` : ""}
-            </div>
-            ${
-                !isMe
-                    ? `
-              <button class="group-member-remove-btn" data-user-id="${
-                  m.user_id
-              }" title="Remove member">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-              </button>`
-                    : ""
-            }
-          </div>`;
+                    return DOM.create(
+                        "div",
+                        { className: "group-member-row", dataset: { userId: m.user_id } },
+                        [
+                            DOM.create(
+                                "div",
+                                { className: "avatar avatar-sm" },
+                                Utils.getInitials(displayName)
+                            ),
+                            DOM.create("div", { className: "group-member-info" }, [
+                                DOM.create(
+                                    "span",
+                                    { className: "group-member-name" },
+                                    Utils.escapeHtml(displayName)
+                                ),
+                                m.role && m.role !== "member"
+                                    ? DOM.create(
+                                          "span",
+                                          { className: "group-member-role" },
+                                          Utils.escapeHtml(m.role)
+                                      )
+                                    : null,
+                                isMe
+                                    ? DOM.create("span", { className: "group-member-you" }, "you")
+                                    : null,
+                            ]),
+                            !isMe
+                                ? DOM.create(
+                                      "button",
+                                      {
+                                          className: "group-member-remove-btn",
+                                          title: "Remove member",
+                                          onclick: () => this._removeMember(chatId, m.user_id),
+                                      },
+                                      "×"
+                                  )
+                                : null,
+                        ]
+                    );
                 })
-                .join("");
-
-            listEl.querySelectorAll(".group-member-remove-btn").forEach((btn) => {
-                btn.addEventListener("click", () =>
-                    this._removeMember(chatId, parseInt(btn.dataset.userId, 10))
-                );
-            });
+            );
         } catch (e) {
-            listEl.innerHTML = `<p style="color:var(--danger);font-size:var(--text-sm)">Failed to load members.</p>`;
+            DOM.clear(
+                listEl,
+                DOM.create("p", { className: "error-text" }, "Failed to load members.")
+            );
             console.error("[group-settings] Load members error:", e);
         }
     },
@@ -341,10 +339,8 @@ const ChatUI = {
             const group = ChatState.groups.find((g) => g.id === String(chatId));
             if (group && group.memberCount > 0) {
                 group.memberCount--;
-                ChatState.currentConversation = group;
-                ChatState.save();
                 this.updateHeader(group, "groups");
-                ChatConversations.render();
+                EventEmitter.emit("group:updated", group);
             }
 
             await this._loadMembers(chatId);
@@ -353,8 +349,6 @@ const ChatUI = {
             alert(e.message || "Failed to remove member.");
         }
     },
-
-    // ── Rename ───────────────────────────────────────────────────────────────
 
     async _submitRename() {
         const input = document.getElementById("groupRenameInput");
@@ -390,10 +384,8 @@ const ChatUI = {
             const group = ChatState.groups.find((g) => g.id === conv.id);
             if (group) {
                 group.name = newName;
-                ChatState.currentConversation = group;
-                ChatState.save();
                 this.updateHeader(group, "groups");
-                ChatConversations.render();
+                EventEmitter.emit("group:updated", group);
             }
 
             if (errEl) {
@@ -411,8 +403,6 @@ const ChatUI = {
             if (btn) btn.disabled = false;
         }
     },
-
-    // ── Delete group ─────────────────────────────────────────────────────────
 
     async _submitDeleteGroup() {
         const conv = ChatState.currentConversation;
@@ -434,13 +424,12 @@ const ChatUI = {
 
             ChatState.groups = ChatState.groups.filter((g) => g.id !== conv.id);
             ChatState.currentConversation = null;
-            ChatState.currentConversationType = "groups";
             ChatState.save();
 
             this._closeModal("group-delete-confirm-modal");
             this._closeModal("group-settings-modal");
             this.showEmptyState();
-            ChatConversations.render();
+            EventEmitter.emit("group:deleted", conv.id);
         } catch (e) {
             if (errEl) errEl.textContent = e.message || "Failed to delete group.";
             console.error("[group-settings] Delete error:", e);
@@ -448,8 +437,6 @@ const ChatUI = {
             if (btn) btn.disabled = false;
         }
     },
-
-    // ── Add member from settings panel ───────────────────────────────────────
 
     async _submitAddMemberFromSettings() {
         const input = document.getElementById("groupAddMemberInput");
@@ -485,18 +472,12 @@ const ChatUI = {
             const group = ChatState.groups.find((g) => g.id === conv.id);
             if (group) {
                 group.memberCount = (group.memberCount ?? 1) + 1;
-                ChatState.currentConversation = group;
-                ChatState.save();
                 this.updateHeader(group, "groups");
-                ChatConversations.render();
+                EventEmitter.emit("group:updated", group);
             }
 
             if (input) input.value = "";
-            const searchResults = document.getElementById("groupSearchResults");
-            if (searchResults) {
-                searchResults.style.display = "none";
-                searchResults.innerHTML = "";
-            }
+            document.getElementById("groupSearchResults").style.display = "none";
 
             await this._loadMembers(conv.id);
 
@@ -515,8 +496,6 @@ const ChatUI = {
             if (btn) btn.disabled = false;
         }
     },
-
-    // ── User search autocomplete ──────────────────────────────────────────────
 
     async _searchUsers(query) {
         const resultsEl = document.getElementById("groupSearchResults");
@@ -540,48 +519,34 @@ const ChatUI = {
                 return;
             }
 
-            resultsEl.innerHTML = users
-                .map(
-                    (u) => `
-        <div class="group-search-result-item" data-username="${Utils.escapeHtml(u.username)}">
-          <div class="avatar avatar-sm">${Utils.getInitials(u.username)}</div>
-          <span>${Utils.escapeHtml(u.username)}</span>
-        </div>`
+            DOM.clear(
+                resultsEl,
+                users.map((u) =>
+                    DOM.create(
+                        "div",
+                        {
+                            className: "group-search-result-item",
+                            onclick: () => {
+                                document.getElementById("groupAddMemberInput").value = u.username;
+                                resultsEl.style.display = "none";
+                            },
+                        },
+                        [
+                            DOM.create(
+                                "div",
+                                { className: "avatar avatar-sm" },
+                                Utils.getInitials(u.username)
+                            ),
+                            DOM.create("span", {}, Utils.escapeHtml(u.username)),
+                        ]
+                    )
                 )
-                .join("");
-
-            resultsEl.querySelectorAll(".group-search-result-item").forEach((item) => {
-                item.addEventListener("click", () => {
-                    const input = document.getElementById("groupAddMemberInput");
-                    if (input) input.value = item.dataset.username;
-                    resultsEl.style.display = "none";
-                    resultsEl.innerHTML = "";
-                });
-            });
+            );
 
             resultsEl.style.display = "block";
         } catch (e) {
             console.warn("[group-settings] User search error:", e);
         }
-    },
-
-    // ── Legacy quick-add modal (header button) ───────────────────────────────
-
-    _openAddMemberModal() {
-        const modal = document.getElementById("add-member-modal");
-        if (!modal) return;
-        modal.classList.add("open");
-        const input = document.getElementById("addMemberInput");
-        const err = document.getElementById("addMemberError");
-        if (input) {
-            input.value = "";
-            input.focus();
-        }
-        if (err) err.textContent = "";
-    },
-
-    _closeAddMemberModal() {
-        document.getElementById("add-member-modal")?.classList.remove("open");
     },
 
     async _submitAddMember() {
@@ -614,19 +579,15 @@ const ChatUI = {
             const group = ChatState.groups.find((g) => g.id === conv.id);
             if (group) {
                 group.memberCount = (group.memberCount ?? 1) + 1;
-                ChatState.currentConversation = group;
-                ChatState.save();
                 this.updateHeader(group, "groups");
-                ChatConversations.render();
+                EventEmitter.emit("group:updated", group);
             }
 
-            this._closeAddMemberModal();
+            this._closeModal("add-member-modal");
         } catch (err) {
             if (errorEl) errorEl.textContent = err.message || "Failed to add member.";
         }
     },
-
-    // ── Own avatar upload ─────────────────────────────────────────────────────
 
     async _uploadAvatar(file) {
         const statusEl = document.getElementById("avatarUploadStatus");
@@ -654,19 +615,16 @@ const ChatUI = {
             const data = await res.json();
             const avatarUrl = data.avatar_url || `/api/avatar/${ChatState.currentUser?.id}`;
 
-            // Update the sidebar avatar for own user immediately
             if (ChatState.currentUser) {
                 ChatState.currentUser.avatarUrl = avatarUrl;
                 Utils.setStorage("user", ChatState.currentUser);
             }
 
-            // Update the preview element (settings page) if present
             if (previewEl) {
-                previewEl.src = avatarUrl + "?t=" + Date.now(); // bust cache
+                previewEl.src = avatarUrl + "?t=" + Date.now();
                 previewEl.style.display = "block";
             }
 
-            // Update the top-left user avatar chip if present
             const userAvatarEl = document.getElementById("userAvatarImg");
             if (userAvatarEl) {
                 userAvatarEl.src = avatarUrl + "?t=" + Date.now();
@@ -675,10 +633,11 @@ const ChatUI = {
                 if (initialsEl) initialsEl.style.display = "none";
             }
 
-            setStatus("✓ Avatar updated", "var(--success, #22c55e)");
+            setStatus("✓ Avatar updated", "var(--success)");
             setTimeout(() => setStatus("", ""), 3000);
+            EventEmitter.emit("user:avatar:updated", avatarUrl);
         } catch (e) {
-            setStatus(`✕ ${e.message}`, "var(--danger, #ef4444)");
+            setStatus(`✕ ${e.message}`, "var(--danger)");
             setTimeout(() => setStatus("", ""), 5000);
             console.error("[avatar] Upload error:", e);
         }
@@ -686,15 +645,27 @@ const ChatUI = {
 
     // ── Generic modal helpers ─────────────────────────────────────────────────
 
+    _modalTraps: new Map(),
+
     _openModal(id) {
         const modal = document.getElementById(id);
         if (!modal) return;
         modal.classList.add("open");
-        const input = modal.querySelector('input[type="text"]');
-        if (input) input.focus();
+        DOM.focus(modal.querySelector('input[type="text"]') || modal);
+        this._modalTraps.set(id, DOM.trapFocus(modal));
+        EventEmitter.emit("modal:open", id);
     },
 
     _closeModal(id) {
-        document.getElementById(id)?.classList.remove("open");
+        const modal = document.getElementById(id);
+        if (!modal) return;
+        modal.classList.remove("open");
+        if (this._modalTraps.has(id)) {
+            this._modalTraps.get(id)();
+            this._modalTraps.delete(id);
+        }
+        EventEmitter.emit("modal:close", id);
     },
 };
+
+export default ChatUI;

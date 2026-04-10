@@ -1,28 +1,30 @@
 /**
  * Chat — Messages
  * Renders the message list, handles sending, and integrates with ChatSSE
- * for real-time delivery.  HTTP polling is no longer used — all live updates
- * arrive through the SSE stream managed by chat.sse.js.
+ * for real-time delivery.
  *
- * Depends on: Utils, ChatState, ChatSSE
+ * Depends on: Utils, ChatState, DOM, EventEmitter
  */
 
-const ChatMessages = {
+import Utils from "../../../static/js/full/utils/utils.js";
+import { DOM } from "../../../static/js/full/utils/dom.js";
+import { EventEmitter } from "../../../static/js/full/utils/events.js";
+import ChatState from "./chat.state.js";
+
+export const ChatMessages = {
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    /** Return the logged-in user's numeric ID, or null if unavailable. */
     _currentUserId() {
         return ChatState.currentUser?.id ?? null;
     },
 
-    /** Map a raw API message object to the local format. */
     _fromApi(msg) {
         const myId = this._currentUserId();
         return {
             id: msg.id,
             text: msg.content,
             content: msg.content,
-            timestamp: msg.sent_at * 1000, // seconds → ms
+            timestamp: msg.sent_at * 1000,
             isSent: myId !== null && msg.sender_id === myId,
             sender_id: msg.sender_id,
             delivered_at: msg.delivered_at,
@@ -33,76 +35,81 @@ const ChatMessages = {
 
     // ── Rendering ────────────────────────────────────────────────────────────
 
-    /**
-     * Render all messages for the active conversation into #messagesContainer.
-     * @param {object[]} messages
-     */
     render(messages) {
         const container = document.getElementById("messagesContainer");
         if (!container) return;
 
         if (!messages || !messages.length) {
-            container.innerHTML = `
-        <div class="text-center" style="padding: var(--space-8); color: var(--fg-tertiary);">
-          <p>No messages yet</p>
-          <p style="font-size: var(--text-sm); margin-top: var(--space-2);">
-            Send a message to start the conversation
-          </p>
-        </div>`;
+            DOM.clear(
+                container,
+                DOM.create(
+                    "div",
+                    {
+                        className: "text-center",
+                        style: { padding: "var(--space-8)", color: "var(--fg-tertiary)" },
+                    },
+                    [
+                        DOM.create("p", {}, "No messages yet"),
+                        DOM.create(
+                            "p",
+                            { style: { fontSize: "var(--text-sm)", marginTop: "var(--space-2)" } },
+                            "Send a message to start the conversation"
+                        ),
+                    ]
+                )
+            );
             return;
         }
 
-        // column-reverse renders the last DOM child at the top visually,
-        // so we reverse the array so the newest message ends up at the top.
         const reversed = [...messages].reverse();
-        container.innerHTML = reversed.map((msg) => this._renderItem(msg)).join("");
-        // column-reverse means scrollTop=0 is the newest (top) — reset to top on
-        // load
+        DOM.clear(
+            container,
+            reversed.map((msg) => this._renderItem(msg))
+        );
         container.scrollTop = 0;
     },
 
-    /** @returns {string} HTML for a single message bubble. */
-    _renderItem({ id, text, content, timestamp, isSent, sender_id, read_at }) {
+    _renderItem(msg) {
+        const { id, text, content, timestamp, isSent, sender_id, read_at } = msg;
         const messageText = text || content || "";
         const time = typeof timestamp === "number" ? new Date(timestamp) : new Date();
         const myId = this._currentUserId();
         const sentByMe = isSent || (myId !== null && sender_id === myId);
 
-        const readTick =
-            sentByMe && read_at
-                ? `<span class="message-read-tick" title="Read">✓✓</span>`
-                : sentByMe
-                  ? `<span class="message-read-tick message-read-tick--sent" title="Sent">✓</span>`
-                  : "";
+        const readTick = sentByMe
+            ? DOM.create(
+                  "span",
+                  {
+                      className: `message-read-tick ${read_at ? "" : "message-read-tick--sent"}`,
+                      title: read_at ? "Read" : "Sent",
+                  },
+                  read_at ? "✓✓" : "✓"
+              )
+            : null;
 
-        return `
-      <div class="message ${sentByMe ? "sent" : "received"}" data-msg-id="${id ?? ""}">
-        <div class="message-bubble">${Utils.escapeHtml(messageText)}</div>
-        <div class="message-meta">
-          <span class="message-time">${Utils.formatTime(time)}</span>
-          ${readTick}
-        </div>
-      </div>`;
+        return DOM.create(
+            "div",
+            {
+                className: `message ${sentByMe ? "sent" : "received"}`,
+                dataset: { msgId: id ?? "" },
+            },
+            [
+                DOM.create("div", { className: "message-bubble" }, Utils.escapeHtml(messageText)),
+                DOM.create("div", { className: "message-meta" }, [
+                    DOM.create("span", { className: "message-time" }, Utils.formatTime(time)),
+                    readTick,
+                ]),
+            ]
+        );
     },
 
-    /**
-     * Update read-receipt ticks on an already-rendered message without a
-     * full re-render.  Called by ChatSSE when a message_read event arrives.
-     *
-     * @param {string} chatId
-     * @param {number} messageId
-     * @param {number} readerId  — unused visually but available for future use
-     */
     renderReadReceipts(chatId, messageId, readerId) {
-        // Update the in-memory message
         const msgs = ChatState.getMessages(chatId);
         const msg = msgs.find((m) => m.id === messageId);
         if (msg && !msg.read_at) {
             msg.read_at = Math.floor(Date.now() / 1000);
         }
 
-        // Patch the DOM node if it exists (avoid full re-render for one tick
-        // change)
         const el = document.querySelector(`[data-msg-id="${messageId}"]`);
         if (!el) return;
 
@@ -114,46 +121,30 @@ const ChatMessages = {
         }
     },
 
-    /**
-     * Append a single new message bubble without touching existing DOM.
-     * Called by ChatSSE for live incoming messages — avoids a full re-render.
-     * @param {object} msg  — same shape as objects stored in ChatState.messages
-     */
     renderOne(msg) {
         const container = document.getElementById("messagesContainer");
         if (!container) return;
 
-        // If the empty-state placeholder is showing, clear it first
         const placeholder = container.querySelector(".text-center");
-        if (placeholder) container.innerHTML = "";
+        if (placeholder) DOM.clear(container);
 
-        const html = this._renderItem(msg);
-        const el = document.createElement("div");
-        el.innerHTML = html.trim();
-        const node = el.firstElementChild;
-        if (node) {
-            // column-reverse: prepending puts the new message at the visual top
-            container.prepend(node);
-            // Auto-scroll to top (newest) only if the user is already there (within
-            // 120px)
-            if (container.scrollTop < 120) {
-                container.scrollTop = 0;
-            }
+        const node = this._renderItem(msg);
+        container.prepend(node);
+
+        if (container.scrollTop < 120) {
+            container.scrollTop = 0;
         }
     },
 
-    /** Show a temporary inline error banner inside the message area. */
     _showSendError(message) {
         const container = document.getElementById("messagesContainer");
         if (!container) return;
 
-        const banner = document.createElement("div");
-        banner.className = "message-send-error";
-        banner.textContent = message;
+        const banner = DOM.create("div", { className: "message-send-error" }, message);
         container.appendChild(banner);
         container.scrollTop = container.scrollHeight;
 
-        setTimeout(() => banner.remove(), 4_000);
+        setTimeout(() => banner.remove(), 4000);
     },
 
     // ── Sending ──────────────────────────────────────────────────────────────
@@ -169,7 +160,7 @@ const ChatMessages = {
             return;
         }
 
-        if (text.length > 10_000) {
+        if (text.length > 10000) {
             this._showSendError("Message is too long (max 10,000 characters).");
             return;
         }
@@ -178,19 +169,17 @@ const ChatMessages = {
         const sendBtn = document.getElementById("sendBtn");
         if (sendBtn) sendBtn.disabled = true;
 
-        // Clear input immediately for snappy UX
         input.value = "";
         input.style.height = "auto";
 
-        // Stop any pending typing indicator
-        ChatSSE.sendTyping(false);
+        EventEmitter.emit("typing:stop");
 
         try {
             const response = await fetch("/api/messages/send", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    chat_id: parseInt(chatId),
+                    chat_id: parseInt(chatId, 10),
                     content: text,
                     message_type: "text",
                 }),
@@ -204,7 +193,6 @@ const ChatMessages = {
             const result = await response.json();
             const messageData = result.data || result;
 
-            // Optimistic local update with the server-assigned ID
             const message = {
                 id: messageData.message_id || Utils.generateId(),
                 text,
@@ -214,30 +202,21 @@ const ChatMessages = {
                 sender_id: this._currentUserId(),
             };
 
-            // Add only if SSE hasn't already delivered it (race condition guard)
             const existing = ChatState.getMessages(chatId);
             if (!existing.some((m) => m.id === message.id)) {
                 ChatState.addMessage(chatId, message);
-                this.renderOne(message); // append the bubble without wiping the DOM
+                this.renderOne(message);
             }
 
             const conv = ChatState.findConversation(chatId) ?? ChatState.findGroup(chatId);
             if (conv) {
                 conv.lastMessage = text;
                 conv.timestamp = Date.now();
+                EventEmitter.emit("conversation:updated", conv);
             }
 
-            try {
-                ChatState.save();
-            } catch (e) {
-                console.warn("[messages] Could not persist to localStorage:", e);
-            }
-
-            ChatConversations.render(); // sidebar preview update only
-
-            console.info("[messages] Sent:", messageData.message_id);
+            ChatState.save();
         } catch (err) {
-            // Put the text back so the user doesn't lose it
             if (input) input.value = text;
             console.error("[messages] Send failed:", err);
             this._showSendError(err.message || "Failed to send message. Please try again.");
@@ -256,7 +235,6 @@ const ChatMessages = {
         const sendBtn = document.getElementById("sendBtn");
         if (!input || !sendBtn) return;
 
-        // Auto-resize textarea
         input.addEventListener("input", () => {
             input.style.height = "auto";
             input.style.height = Math.min(input.scrollHeight, 120) + "px";
@@ -264,40 +242,29 @@ const ChatMessages = {
             const hasText = input.value.trim().length > 0;
             sendBtn.disabled = !hasText;
 
-            // Typing signal driven purely by whether the box has text.
-            // No timers, no key tracking — if box has text we're typing, if empty
-            // we're not.
             if (ChatState.currentConversation) {
-                ChatSSE.sendTyping(hasText);
+                EventEmitter.emit("typing:status", hasText);
             }
         });
 
-        // Send on Enter (Shift+Enter inserts newline)
         input.addEventListener("keydown", (e) => {
             if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                ChatMessages.send();
+                this.send();
             }
         });
 
-        sendBtn.addEventListener("click", () => ChatMessages.send());
+        sendBtn.addEventListener("click", () => this.send());
     },
 
-    /**
-     * Load messages for a chat from the backend over HTTP (one-shot, pre-SSE).
-     * Once the SSE stream connects it replays history automatically, so this
-     * is a fallback shown while the SSE handshake is in progress.
-     *
-     * @param {string|number} chatId
-     */
     async loadMessages(chatId) {
-        // Immediately show whatever we have cached while waiting for SSE history
         const cached = ChatState.getMessages(String(chatId));
         if (cached.length) {
             this.render(cached);
         }
 
-        // Connect (or switch) the SSE stream — it will replay history
-        ChatSSE.connect(chatId);
+        EventEmitter.emit("messages:request:load", chatId);
     },
 };
+
+export default ChatMessages;

@@ -2,10 +2,13 @@
  * Chat — Shared State & Persistence
  * Single source of truth for conversation, group, and message data.
  * All other chat modules read from and write to ChatState.
- * Depends on: Utils
+ * Depends on: Utils, EventEmitter
  */
 
-const ChatState = {
+import Utils from "../../../static/js/full/utils/utils.js";
+import { EventEmitter } from "../../../static/js/full/utils/events.js";
+
+export const ChatState = {
     currentUser: null, // { id, username } — fetched from /api/profile on init
     currentConversation: null,
     currentConversationType: "dm", // 'dm' | 'groups'
@@ -18,6 +21,7 @@ const ChatState = {
         this.conversations = Utils.getStorage("conversations") || [];
         this.groups = Utils.getStorage("groups") || [];
         this.messages = Utils.getStorage("messages") || {};
+        EventEmitter.emit("state:loaded", this);
     },
 
     /** Persist all state to localStorage. */
@@ -25,6 +29,15 @@ const ChatState = {
         Utils.setStorage("conversations", this.conversations);
         Utils.setStorage("groups", this.groups);
         Utils.setStorage("messages", this.messages);
+        EventEmitter.emit("state:saved", this);
+    },
+
+    // ── Setters ──────────────────────────────────────────────────────────────
+
+    setCurrentConversation(conv, type = "dm") {
+        this.currentConversation = conv;
+        this.currentConversationType = type;
+        EventEmitter.emit("conversation:changed", { conv, type });
     },
 
     // ── Conversations ─────────────────────────────────────────────────────────
@@ -38,6 +51,7 @@ const ChatState = {
     addConversation(conversation) {
         this.conversations.unshift(conversation);
         this.messages[conversation.id] = [];
+        EventEmitter.emit("conversation:added", conversation);
     },
 
     // ── Groups ────────────────────────────────────────────────────────────────
@@ -51,6 +65,7 @@ const ChatState = {
     addGroup(group) {
         this.groups.unshift(group);
         this.messages[group.id] = [];
+        EventEmitter.emit("group:added", group);
     },
 
     // ── Messages ──────────────────────────────────────────────────────────────
@@ -59,6 +74,7 @@ const ChatState = {
     addMessage(conversationId, message) {
         if (!this.messages[conversationId]) this.messages[conversationId] = [];
         this.messages[conversationId].push(message);
+        EventEmitter.emit("message:added", { conversationId, message });
     },
 
     /** Return all messages for a conversation or group (or empty array). */
@@ -66,3 +82,5 @@ const ChatState = {
         return this.messages[id] || [];
     },
 };
+
+export default ChatState;

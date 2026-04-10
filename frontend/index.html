@@ -60,33 +60,27 @@
             })();
         </script>
 
-        <!-- Preloads -->
-        <link rel="preload" href="static/js/min/utils/theme.manager.js" as="script" />
-        <link rel="preload" href="static/js/min/utils/error.interceptor.js" as="script" />
-        <link rel="preload" href="static/js/min/config/platform.config.js" as="script" />
-        <link rel="preload" href="static/js/min/utils/utils.js" as="script" />
-        <link rel="preload" href="static/js/min/auth/auth.password.js" as="script" />
-        <link rel="preload" href="static/js/min/utils/error.interceptor.js" as="script" />
-        <link rel="preload" href="non-static/min/auth/auth.login.js" as="script" />
-        <link rel="preload" href="non-static/min/auth/auth.init.js" as="script" />
+        <!-- Preloads (ESM version uses modulepreload) -->
+        <link rel="modulepreload" href="static/js/min/utils/theme.manager.js" />
+        <link rel="modulepreload" href="static/js/min/utils/error.interceptor.js" />
+        <link rel="modulepreload" href="static/js/min/config/platform.config.js" />
+        <link rel="modulepreload" href="static/js/min/utils/utils.js" />
+        <link rel="modulepreload" href="static/js/min/auth/auth.password.js" />
+        <link rel="modulepreload" href="non-static/min/auth/auth.login.js" />
+        <link rel="modulepreload" href="non-static/min/auth/auth.register.js" />
+        <link rel="modulepreload" href="non-static/min/auth/auth.init.js" />
 
-        <!-- Scripts (deferred — execute after HTML is parsed, in order) -->
-        <script defer src="static/js/min/utils/error.interceptor.js"></script>
-        <script defer src="static/js/min/utils/theme.manager.js"></script>
-        <script defer src="static/js/min/config/platform.config.js"></script>
-        <script defer src="static/js/min/utils/utils.js"></script>
-        <script defer src="static/js/min/auth/auth.password.js"></script>
-        <script defer src="non-static/min/auth/auth.login.js"></script>
-        <script defer src="non-static/min/auth/auth.init.js"></script>
+        <!-- Main Entry Point -->
+        <script type="module" src="non-static/min/auth/auth.init.js"></script>
     </head>
     <body>
-        <div id="loading">Loading...</div>
+        <div id="loading" aria-hidden="true">Loading...</div>
 
         <div class="auth-page">
             <div class="auth-container">
                 <div class="auth-card">
                     <div class="auth-header">
-                        <div class="auth-logo">💬</div>
+                        <div class="auth-logo" aria-hidden="true">💬</div>
                         <h1 class="auth-title">Welcome Back</h1>
                         <p class="auth-subtitle">Sign in to continue to your account</p>
                     </div>
@@ -104,7 +98,7 @@
                                 autocomplete="username"
                                 autofocus
                             />
-                            <div class="form-error" id="usernameError"></div>
+                            <div class="form-error" id="usernameError" aria-live="polite"></div>
                         </div>
 
                         <div class="form-group">
@@ -129,10 +123,11 @@
                                         alt=""
                                         width="20"
                                         height="20"
+                                        aria-hidden="true"
                                     />
                                 </button>
                             </div>
-                            <div class="form-error" id="passwordError"></div>
+                            <div class="form-error" id="passwordError" aria-live="polite"></div>
                         </div>
 
                         <label class="form-checkbox">

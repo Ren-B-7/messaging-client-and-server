@@ -4,10 +4,16 @@
  * search/filter, refreshing from the API, and creating new DMs / groups
  * via modals.
  *
- * Depends on: Utils, ChatState, ChatUI, ChatMessages, ChatSSE
+ * Depends on: Utils, ChatState, ChatUI, DOM, EventEmitter
  */
 
-const ChatConversations = {
+import Utils from "../../../static/js/full/utils/utils.js";
+import { DOM } from "../../../static/js/full/utils/dom.js";
+import { EventEmitter } from "../../../static/js/full/utils/events.js";
+import ChatState from "./chat.state.js";
+import ChatUI from "./chat.ui.js";
+
+export const ChatConversations = {
     activeTab: "dm", // 'dm' | 'groups'
 
     // ─── Tab switching ────────────────────────────────────────────────────────
@@ -15,31 +21,31 @@ const ChatConversations = {
     setupTabs() {
         document.querySelectorAll(".panel-tab").forEach((btn) => {
             btn.addEventListener("click", () => {
-                this.activeTab = btn.dataset.tab;
-
-                document
-                    .querySelectorAll(".panel-tab")
-                    .forEach((b) => b.classList.remove("active"));
-                btn.classList.add("active");
-
-                const newBtn = document.getElementById("newChatBtn");
-                if (newBtn) {
-                    newBtn.title = this.activeTab === "dm" ? "New Message" : "New Group";
-                }
-
-                this.refresh();
+                this._switchTab(btn.dataset.tab);
             });
         });
+    },
+
+    _switchTab(tab) {
+        this.activeTab = tab;
+        document.querySelectorAll(".panel-tab").forEach((btn) => {
+            btn.classList.toggle("active", btn.dataset.tab === tab);
+        });
+
+        const newBtn = document.getElementById("newChatBtn");
+        if (newBtn) {
+            newBtn.title = tab === "dm" ? "New Message" : "New Group";
+        }
+
+        this.refresh();
+        EventEmitter.emit("tab:changed", tab);
     },
 
     // ─── Rendering ───────────────────────────────────────────────────────────
 
     render() {
-        if (this.activeTab === "dm") {
-            this._renderList(ChatState.conversations, "dm");
-        } else {
-            this._renderList(ChatState.groups, "groups");
-        }
+        const items = this.activeTab === "dm" ? ChatState.conversations : ChatState.groups;
+        this._renderList(items, this.activeTab);
     },
 
     _renderList(items, type) {
@@ -51,19 +57,32 @@ const ChatConversations = {
                 type === "dm"
                     ? ["No conversations yet", "Start a new chat to begin messaging"]
                     : ["No groups yet", "Create a group to get started"];
-            list.innerHTML = `
-        <div class="text-center" style="padding: var(--space-8); color: var(--fg-tertiary);">
-          <p>${title}</p>
-          <p style="font-size: var(--text-sm); margin-top: var(--space-2);">${sub}</p>
-        </div>`;
+
+            DOM.clear(
+                list,
+                DOM.create(
+                    "div",
+                    {
+                        className: "text-center",
+                        style: { padding: "var(--space-8)", color: "var(--fg-tertiary)" },
+                    },
+                    [
+                        DOM.create("p", {}, title),
+                        DOM.create(
+                            "p",
+                            { style: { fontSize: "var(--text-sm)", marginTop: "var(--space-2)" } },
+                            sub
+                        ),
+                    ]
+                )
+            );
             return;
         }
 
-        list.innerHTML = items.map((item) => this._renderItem(item, type)).join("");
-
-        list.querySelectorAll(".conversation-item").forEach((el) => {
-            el.addEventListener("click", () => this.open(el.dataset.id, el.dataset.type));
-        });
+        DOM.clear(
+            list,
+            items.map((item) => this._renderItem(item, type))
+        );
     },
 
     _renderItem(conv, type) {
@@ -72,62 +91,71 @@ const ChatConversations = {
         const isActive = ChatState.currentConversation?.id === id;
         const prefix = type === "groups" ? "# " : "";
 
-        const avatarHtml =
-            type === "dm" && avatarUrl
-                ? `<img class="avatar avatar-sm avatar-img" src="${avatarUrl}" alt="${Utils.escapeHtml(name)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">` +
-                  `<div class="avatar avatar-sm" style="display:none">${Utils.getInitials(name)}</div>`
-                : `<div class="avatar avatar-sm">${Utils.getInitials(name)}</div>`;
-
-        return `
-      <div class="conversation-item ${isActive ? "active" : ""} ${unreadCount > 0 ? "unread" : ""}"
-           data-id="${id}" data-type="${type}">
-        <div class="avatar-wrapper">${avatarHtml}</div>
-        <div class="conversation-content">
-          <div class="conversation-name">${prefix}${Utils.escapeHtml(name)}</div>
-          <div class="conversation-preview">${Utils.escapeHtml(lastMessage || "No messages yet")}</div>
-        </div>
-        ${
-            unreadCount > 0
-                ? `<div class="unread-count">${unreadCount}</div>`
-                : `<div class="conversation-time">${timeStr}</div>`
-        }
-      </div>`;
+        return DOM.create(
+            "div",
+            {
+                className: `conversation-item ${isActive ? "active" : ""} ${unreadCount > 0 ? "unread" : ""}`,
+                dataset: { id, type },
+                onclick: () => this.open(id, type),
+            },
+            [
+                DOM.create("div", { className: "avatar-wrapper" }, [
+                    type === "dm" && avatarUrl
+                        ? DOM.create("img", {
+                              className: "avatar avatar-sm avatar-img",
+                              src: avatarUrl,
+                              alt: name,
+                              onerror: (e) => {
+                                  e.target.style.display = "none";
+                                  e.target.nextElementSibling.style.display = "flex";
+                              },
+                          })
+                        : null,
+                    DOM.create(
+                        "div",
+                        {
+                            className: "avatar avatar-sm",
+                            style: type === "dm" && avatarUrl ? { display: "none" } : {},
+                        },
+                        Utils.getInitials(name)
+                    ),
+                ]),
+                DOM.create("div", { className: "conversation-content" }, [
+                    DOM.create(
+                        "div",
+                        { className: "conversation-name" },
+                        `${prefix}${Utils.escapeHtml(name)}`
+                    ),
+                    DOM.create(
+                        "div",
+                        { className: "conversation-preview" },
+                        Utils.escapeHtml(lastMessage || "No messages yet")
+                    ),
+                ]),
+                unreadCount > 0
+                    ? DOM.create("div", { className: "unread-count" }, unreadCount)
+                    : DOM.create("div", { className: "conversation-time" }, timeStr),
+            ]
+        );
     },
 
     // ─── Open / mark read ────────────────────────────────────────────────────
 
-    /**
-     * Select and display a conversation or group by id.
-     * Tears down any existing SSE connection and opens a new one scoped to
-     * the selected chat.
-     *
-     * @param {string}          id
-     * @param {'dm'|'groups'}   type
-     */
     open(id, type = this.activeTab) {
         const items = type === "groups" ? ChatState.groups : ChatState.conversations;
         const conv = items.find((c) => c.id === id);
         if (!conv) return;
 
-        ChatState.currentConversation = conv;
-        ChatState.currentConversationType = type;
+        ChatState.setCurrentConversation(conv, type);
         ChatState.save();
 
-        document.querySelectorAll(".conversation-item").forEach((el) => {
-            el.classList.toggle("active", el.dataset.id === id);
-        });
-
-        // Clear any leftover typing banner from the previous chat
-        document.getElementById("typingIndicator")?.remove();
-        ChatUI._typingUsers?.clear();
+        this.render(); // Update active state in sidebar
 
         ChatUI.hideEmptyState();
         ChatUI.updateHeader(conv, type);
 
-        // loadMessages now connects the SSE stream (replays history automatically)
-        ChatMessages.loadMessages(id);
-
         this._markAsRead(id, type);
+        EventEmitter.emit("conversation:opened", { id, type });
     },
 
     _markAsRead(id, type) {
@@ -137,6 +165,7 @@ const ChatConversations = {
             conv.unreadCount = 0;
             ChatState.save();
             this.render();
+            EventEmitter.emit("conversation:read", id);
         }
     },
 
@@ -150,11 +179,41 @@ const ChatConversations = {
         }
 
         try {
-            if (this.activeTab === "dm") {
-                await this._fetchChats();
-            } else {
-                await this._fetchGroups();
-            }
+            const res = await fetch("/api/chats");
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            const chats = data.data?.chats ?? data.chats ?? [];
+
+            ChatState.conversations = chats
+                .filter((c) => c.chat_type === "direct")
+                .map((c) => ({
+                    id: String(c.chat_id || c.id),
+                    name: c.name ?? "Unnamed chat",
+                    lastMessage: c.last_message ?? "",
+                    timestamp: c.last_message_at
+                        ? c.last_message_at * 1000
+                        : (c.created_at ?? Date.now()),
+                    unreadCount: c.unread_count ?? 0,
+                    isOnline: c.is_online ?? false,
+                    avatarUrl: c.avatar_url ?? null,
+                }));
+
+            ChatState.groups = chats
+                .filter((c) => c.chat_type === "group")
+                .map((g) => ({
+                    id: String(g.chat_id || g.id),
+                    name: g.name ?? "Unnamed group",
+                    lastMessage: g.last_message ?? "",
+                    timestamp: g.last_message_at
+                        ? g.last_message_at * 1000
+                        : (g.created_at ?? Date.now()),
+                    unreadCount: g.unread_count ?? 0,
+                    memberCount: g.member_count ?? null,
+                }));
+
+            ChatState.save();
+            this.render();
+            EventEmitter.emit("conversations:refreshed");
         } catch (e) {
             console.error("[chat] refresh failed:", e);
             this.render();
@@ -164,53 +223,6 @@ const ChatConversations = {
                 btn.textContent = "↺";
             }
         }
-    },
-
-    async _fetchChats() {
-        const res = await fetch("/api/chats");
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-
-        const chats = data.data?.chats ?? data.chats ?? [];
-        ChatState.conversations = chats
-            .filter((c) => c.chat_type === "direct")
-            .map((c) => ({
-                id: String(c.chat_id || c.id),
-                name: c.name ?? "Unnamed chat",
-                lastMessage: c.last_message ?? "",
-                // Prefer last_message_at (Unix seconds from server) converted to ms;
-                // fall back to created_at which may already be ms or seconds.
-                timestamp: c.last_message_at
-                    ? c.last_message_at * 1000
-                    : (c.created_at ?? Date.now()),
-                unreadCount: c.unread_count ?? 0,
-                isOnline: c.is_online ?? false,
-                avatarUrl: c.avatar_url ?? null,
-            }));
-        ChatState.save();
-        this.render();
-    },
-
-    async _fetchGroups() {
-        const res = await fetch("/api/chats");
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-
-        const chats = data.data?.chats ?? data.chats ?? [];
-        ChatState.groups = chats
-            .filter((c) => c.chat_type === "group")
-            .map((g) => ({
-                id: String(g.chat_id || g.id),
-                name: g.name ?? "Unnamed group",
-                lastMessage: g.last_message ?? "",
-                timestamp: g.last_message_at
-                    ? g.last_message_at * 1000
-                    : (g.created_at ?? Date.now()),
-                unreadCount: g.unread_count ?? 0,
-                memberCount: g.member_count ?? null,
-            }));
-        ChatState.save();
-        this.render();
     },
 
     // ─── Search ──────────────────────────────────────────────────────────────
@@ -236,7 +248,8 @@ const ChatConversations = {
 
     setupNewButtons() {
         document.getElementById("newChatBtn")?.addEventListener("click", () => {
-            this._openModal(this.activeTab === "dm" ? "new-dm-modal" : "new-group-modal");
+            const id = this.activeTab === "dm" ? "new-dm-modal" : "new-group-modal";
+            EventEmitter.emit("modal:request:open", id);
         });
 
         document.getElementById("refreshConvsBtn")?.addEventListener("click", () => {
@@ -256,39 +269,6 @@ const ChatConversations = {
         document.getElementById("groupNameInput")?.addEventListener("keydown", (e) => {
             if (e.key === "Enter") this._submitGroup();
         });
-
-        document.querySelectorAll("[data-close-conv-modal]").forEach((btn) => {
-            btn.addEventListener("click", () => this._closeModal(btn.dataset.closeConvModal));
-        });
-
-        ["new-dm-modal", "new-group-modal"].forEach((id) => {
-            document.getElementById(id)?.addEventListener("click", (e) => {
-                if (e.target === e.currentTarget) this._closeModal(id);
-            });
-        });
-
-        document.addEventListener("keydown", (e) => {
-            if (e.key === "Escape") {
-                ["new-dm-modal", "new-group-modal"].forEach((id) => this._closeModal(id));
-            }
-        });
-    },
-
-    _openModal(id) {
-        const modal = document.getElementById(id);
-        if (!modal) return;
-        modal.classList.add("open");
-        const input = modal.querySelector('input[type="text"]');
-        const err = modal.querySelector(".conv-modal-error");
-        if (input) {
-            input.value = "";
-            input.focus();
-        }
-        if (err) err.textContent = "";
-    },
-
-    _closeModal(id) {
-        document.getElementById(id)?.classList.remove("open");
     },
 
     async _submitDm() {
@@ -315,9 +295,10 @@ const ChatConversations = {
 
             const newChat = await response.json();
             const chatData = newChat.data || newChat;
+            const id = String(chatData.id || chatData.chat_id);
 
             ChatState.addConversation({
-                id: String(chatData.id || chatData.chat_id),
+                id,
                 name: chatData.name || username,
                 lastMessage: "",
                 timestamp: chatData.created_at || Date.now(),
@@ -327,9 +308,9 @@ const ChatConversations = {
             });
             ChatState.save();
 
-            this._closeModal("new-dm-modal");
+            EventEmitter.emit("modal:request:close", "new-dm-modal");
             this._switchTab("dm");
-            this.open(String(chatData.id || chatData.chat_id), "dm");
+            this.open(id, "dm");
         } catch (err) {
             if (errorEl) errorEl.textContent = err.message;
             console.error("[conversations] Create DM error:", err);
@@ -360,9 +341,10 @@ const ChatConversations = {
 
             const newGroup = await response.json();
             const groupData = newGroup.data || newGroup;
+            const id = String(groupData.chat_id || groupData.group_id || groupData.id);
 
             ChatState.addGroup({
-                id: String(groupData.chat_id || groupData.group_id || groupData.id),
+                id,
                 name: groupData.name || name,
                 lastMessage: "",
                 timestamp: groupData.created_at || Date.now(),
@@ -371,20 +353,14 @@ const ChatConversations = {
             });
             ChatState.save();
 
-            this._closeModal("new-group-modal");
+            EventEmitter.emit("modal:request:close", "new-group-modal");
             this._switchTab("groups");
-            this.open(String(groupData.chat_id || groupData.group_id || groupData.id), "groups");
+            this.open(id, "groups");
         } catch (err) {
             if (errorEl) errorEl.textContent = err.message;
             console.error("[conversations] Create Group error:", err);
         }
     },
-
-    _switchTab(tab) {
-        this.activeTab = tab;
-        document.querySelectorAll(".panel-tab").forEach((btn) => {
-            btn.classList.toggle("active", btn.dataset.tab === tab);
-        });
-        this.render();
-    },
 };
+
+export default ChatConversations;

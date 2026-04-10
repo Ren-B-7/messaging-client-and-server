@@ -1,15 +1,11 @@
 /**
  * Settings — Preferences
- * Handles theme radio selection and all toggle-switch preferences.
- * Each change is persisted to localStorage for instant local effect
- * and also synced to /api/user/preferences as JSON.
- * Depends on: Utils, themeManager
  */
 
-const SettingsPreferences = {
-    /**
-     * Read stored preferences and pre-check the relevant controls.
-     */
+import Utils from "../../../static/js/full/utils/utils.js";
+import { themeManager } from "../../../static/js/full/utils/theme.manager.js";
+
+export const SettingsPreferences = {
     load() {
         const prefs = Utils.getStorage("preferences") || {};
 
@@ -22,20 +18,16 @@ const SettingsPreferences = {
         if (radio) radio.checked = true;
     },
 
-    /** Wire theme radios and all toggle switches. */
     setup() {
         this._setupThemeRadios();
         this._setupToggles();
     },
-
-    // ── Private ───────────────────────────────────────────────────────────────
 
     _setupThemeRadios() {
         document.querySelectorAll('input[name="theme"]').forEach((radio) => {
             radio.addEventListener("change", (e) => {
                 if (e.target.checked) {
                     themeManager.setTheme(e.target.value);
-                    // Theme is managed client-side only; no API call needed.
                 }
             });
         });
@@ -77,8 +69,6 @@ const SettingsPreferences = {
             });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
         } catch (e) {
-            // Preference sync failures are non-critical; log but don't surface to
-            // user.
             console.warn("[settings] preferences sync failed:", e);
         }
     },

@@ -3,25 +3,120 @@
  * Loads user data from storage, boots all chat sub-modules in the correct
  * order, fetches conversations from the API on first load, and renders
  * the initial state.
- *
- * Load order (all deferred):
- *   theme.manager.js → platform.config.js → utils.js
- *   → chat.state.js → chat.ui.js → chat.messages.js
- *   → chat.conversations.js → chat.sse.js → chat.init.js
  */
 
-document.addEventListener("DOMContentLoaded", async () => {
-    // ── Theme ──────────────────────────────────────────────────────────────────
-    themeManager.init(["base", "chat"]);
+import { EventEmitter } from "../../../static/js/full/utils/events.js";
+import Utils from "../../../static/js/full/utils/utils.js";
+import ChatState from "./chat.state.js";
+import ChatUI from "./chat.ui.js";
+import ChatMessages from "./chat.messages.js";
+import ChatConversations from "./chat.conversations.js";
+import ChatSSE from "./chat.sse.js";
+import ChatFiles from "./chat.files.js";
 
-    const chatThemeBtn = document.getElementById("themeToggle");
-    themeManager.syncIcon(chatThemeBtn);
-    chatThemeBtn?.addEventListener("click", () => {
-        themeManager.toggle(); // syncIcon auto-updates via themechange event
+document.addEventListener("DOMContentLoaded", async () => {
+    // ── Global Event Bus Listeners ───────────────────────────────────────────
+
+    // SSE Events -> UI/Messages
+    EventEmitter.on("sse:connected", (chatId) => {
+        console.info("[init] SSE Connected:", chatId);
     });
 
+    EventEmitter.on("sse:history:loaded", ({ chatId, messages }) => {
+        if (ChatState.currentConversation?.id === chatId) {
+            ChatMessages.render(messages);
+        }
+    });
+
+    EventEmitter.on("sse:message:received", ({ chatId, message }) => {
+        if (ChatState.currentConversation?.id === chatId) {
+            ChatMessages.renderOne(message);
+        }
+        ChatConversations.render();
+    });
+
+    EventEmitter.on("sse:message:read", ({ chatId, message_id, reader_id }) => {
+        if (ChatState.currentConversation?.id === chatId) {
+            ChatMessages.renderReadReceipts(chatId, message_id, reader_id);
+        }
+    });
+
+    EventEmitter.on("sse:typing:start", (userId) => {
+        ChatUI.showTyping(userId);
+    });
+
+    EventEmitter.on("sse:typing:stop", (userId) => {
+        ChatUI.hideTyping(userId);
+    });
+
+    EventEmitter.on("sse:chat:created", () => {
+        ChatConversations.refresh();
+    });
+
+    EventEmitter.on("sse:status", (status) => {
+        const dot = document.getElementById("sseStatusDot");
+        const textEl = document.getElementById("statusText");
+        if (dot) dot.dataset.status = status;
+        if (!textEl) return;
+
+        if (ChatState.currentConversationType === "dm") {
+            switch (status) {
+                case "connected":
+                    textEl.textContent = "Connected";
+                    textEl.style.color = "var(--success)";
+                    break;
+                case "reconnecting":
+                    textEl.textContent = "Connecting…";
+                    textEl.style.color = "var(--warning)";
+                    break;
+                default:
+                    textEl.textContent = "Disconnected";
+                    textEl.style.color = "var(--danger)";
+            }
+        }
+    });
+
+    // UI Events -> SSE/Data
+    EventEmitter.on("typing:status", (isTyping) => {
+        ChatSSE.sendTyping(isTyping);
+    });
+
+    EventEmitter.on("typing:stop", () => {
+        ChatSSE.sendTyping(false);
+    });
+
+    EventEmitter.on("messages:request:load", (chatId) => {
+        ChatSSE.connect(chatId);
+    });
+
+    EventEmitter.on("modal:request:open", (id) => {
+        ChatUI._openModal(id);
+    });
+
+    EventEmitter.on("modal:request:close", (id) => {
+        ChatUI._closeModal(id);
+    });
+
+    EventEmitter.on("group:updated", (group) => {
+        ChatState.save();
+        ChatConversations.render();
+    });
+
+    EventEmitter.on("group:deleted", () => {
+        ChatSSE.disconnect();
+    });
+
+    // ── Theme ──────────────────────────────────────────────────────────────────
+    if (window.themeManager) {
+        window.themeManager.init(["base", "chat"]);
+        const chatThemeBtn = document.getElementById("themeToggle");
+        window.themeManager.syncIcon(chatThemeBtn);
+        chatThemeBtn?.addEventListener("click", () => {
+            window.themeManager.toggle();
+        });
+    }
+
     // ── Fetch current user from server ─────────────────────────────────────────
-    // Always resolve identity from the API — localStorage may be stale or empty.
     try {
         const res = await fetch("/api/profile");
         if (res.ok) {
@@ -36,14 +131,12 @@ document.addEventListener("DOMContentLoaded", async () => {
             };
             Utils.setStorage("user", ChatState.currentUser);
             console.info("[init] Current user:", ChatState.currentUser);
-        } else {
-            console.warn("[init] Could not fetch profile — sent messages may render incorrectly");
         }
     } catch (e) {
         console.error("[init] Profile fetch failed:", e);
     }
 
-    // ── Update own avatar / initials in the sidebar header ────────────────────
+    // ── Update UI with user data ──────────────────────────────────────────────
     const initialsEl = document.getElementById("userInitials");
     const userAvatarEl = document.getElementById("userAvatarImg");
 
@@ -54,13 +147,6 @@ document.addEventListener("DOMContentLoaded", async () => {
             if (initialsEl) initialsEl.style.display = "none";
         } else if (initialsEl) {
             initialsEl.textContent = Utils.getInitials(ChatState.currentUser.username);
-        }
-
-        // Populate the avatar preview on the settings/profile section if present
-        const avatarPreviewEl = document.getElementById("avatarPreview");
-        if (avatarPreviewEl && ChatState.currentUser.avatarUrl) {
-            avatarPreviewEl.src = ChatState.currentUser.avatarUrl;
-            avatarPreviewEl.style.display = "block";
         }
     }
 
@@ -73,23 +159,19 @@ document.addEventListener("DOMContentLoaded", async () => {
     ChatConversations.setupSearch();
     ChatConversations.setupNewButtons();
     ChatUI.setupActionButtons();
+    ChatFiles.setupUpload();
 
-    // ── Fetch fresh data from API on every page load ───────────────────────────
+    // ── Initial Data Fetch ─────────────────────────────────────────────────────
     await ChatConversations.refresh();
 
-    // ── Restore previously open conversation (if any) ─────────────────────────
+    // ── Restore previous conversation ─────────────────────────────────────────
     if (ChatState.currentConversation) {
         ChatConversations.open(ChatState.currentConversation.id, ChatState.currentConversationType);
     }
 
-    // ── Tear down SSE and clear transient data when the user leaves
-    // ─────────────
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
     window.addEventListener("beforeunload", () => {
-        // Cleanly close the SSE stream so the server reclaims the channel promptly.
         ChatSSE.disconnect();
-
-        // Clear per-session data that is always re-fetched from the server on
-        // reload.
         Utils.removeStorage("messages");
         Utils.removeStorage("conversations");
         Utils.removeStorage("groups");

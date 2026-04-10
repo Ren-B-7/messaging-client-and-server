@@ -48,9 +48,10 @@ format-python:
 
 format-frontend:
 	@echo "Formatting frontend..."
-	cd $(FRONTEND_DIR) && prettier --write "**/*.css"
+	cd $(FRONTEND_DIR) && prettier --write "static/css/full/**/*.css"
 	cd $(FRONTEND_DIR) && prettier --write "**/*.html"
-	cd $(FRONTEND_DIR) && prettier --write "**/*.js"
+	cd $(FRONTEND_DIR) && prettier --write "static/js/full/**/*.js"
+	cd $(FRONTEND_DIR) && prettier --write "non-static/full/**/*.js"
 	cd $(FRONTEND_DIR) && prettier --write "**/*.json"
 
 format-makefile:

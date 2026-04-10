@@ -3,15 +3,16 @@
  * Common functions used across the application
  */
 
-const Utils = {
+export const Utils = {
     /**
      * Format time to HH:MM format
      * @param {Date} date - The date to format
      * @returns {string} Formatted time string
      */
     formatTime(date = new Date()) {
-        const hours = String(date.getHours()).padStart(2, "0");
-        const minutes = String(date.getMinutes()).padStart(2, "0");
+        const d = date instanceof Date ? date : new Date(date);
+        const hours = String(d.getHours()).padStart(2, "0");
+        const minutes = String(d.getMinutes()).padStart(2, "0");
         return `${hours}:${minutes}`;
     },
 
@@ -21,8 +22,9 @@ const Utils = {
      * @returns {string} Relative time string
      */
     formatRelativeTime(date) {
+        const d = date instanceof Date ? date : new Date(date);
         const now = new Date();
-        const seconds = Math.floor((now - date) / 1000);
+        const seconds = Math.floor((now - d) / 1000);
 
         if (seconds < 60) return "Just now";
 
@@ -35,7 +37,7 @@ const Utils = {
         const days = Math.floor(hours / 24);
         if (days < 7) return `${days}d`;
 
-        return date.toLocaleDateString();
+        return d.toLocaleDateString();
     },
 
     /**
@@ -58,6 +60,7 @@ const Utils = {
      * @returns {string} Escaped text
      */
     escapeHtml(text) {
+        if (!text) return "";
         const div = document.createElement("div");
         div.textContent = text;
         return div.innerHTML;
@@ -141,7 +144,7 @@ const Utils = {
      */
     async showNotification(title, options = {}) {
         if (!("Notification" in window)) {
-            console.log("This browser does not support notifications");
+            console.info("This browser does not support notifications");
             return;
         }
 
@@ -193,9 +196,4 @@ const Utils = {
     },
 };
 
-// Export for use in modules
-if (typeof module !== "undefined" && module.exports) {
-    module.exports = Utils;
-} else {
-    window.Utils = Utils;
-}
+export default Utils;

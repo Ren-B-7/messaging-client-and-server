@@ -1,23 +1,13 @@
 /**
  * Settings — Profile Form
- * Populates the profile tab with user data, detects unsaved changes,
- * handles save / cancel, and wires the avatar upload button.
- *
- * Avatar API:  POST /api/profile/avatar   multipart field: "avatar"
- * Profile API: PUT  /api/profile          JSON { username, email }
- *
- * Depends on: Utils
  */
 
-const SettingsProfile = {
+import Utils from "../../../static/js/full/utils/utils.js";
+
+export const SettingsProfile = {
     _original: {},
 
-    /**
-     * Populate form fields and avatar display from user data.
-     * @param {object} user  — merged object from localStorage + /api/profile
-     */
     load(user) {
-        // ── Profile header ───────────────────────────────────────────────────────
         const profileName = document.getElementById("profileName");
         const profileEmail = document.getElementById("profileEmail");
         const profileAvatar = document.getElementById("profileAvatar");
@@ -28,7 +18,6 @@ const SettingsProfile = {
         if (profileName) profileName.textContent = displayName;
         if (profileEmail) profileEmail.textContent = user.email || "";
 
-        // Show avatar image if one exists, otherwise fall back to initials.
         if (profileAvatar) {
             if (user.avatarUrl) {
                 profileAvatar.innerHTML =
@@ -41,7 +30,6 @@ const SettingsProfile = {
             }
         }
 
-        // ── Form fields ──────────────────────────────────────────────────────────
         const firstName = document.getElementById("firstName");
         const lastName = document.getElementById("lastName");
         const username = document.getElementById("username");
@@ -59,7 +47,6 @@ const SettingsProfile = {
         };
     },
 
-    /** Attach all event listeners for the profile tab. */
     setup() {
         const form = document.getElementById("profileForm");
         const saveBtn = document.getElementById("saveProfileBtn");
@@ -82,24 +69,19 @@ const SettingsProfile = {
             });
         }
 
-        // ── Avatar upload wiring ─────────────────────────────────────────────────
         const avatarEditBtn = document.getElementById("avatarEditBtn");
         const avatarFileInput = document.getElementById("avatarFileInput");
 
         if (avatarEditBtn && avatarFileInput) {
-            // Clicking the edit button opens the file picker.
             avatarEditBtn.addEventListener("click", () => avatarFileInput.click());
 
-            // Once the user picks a file, upload immediately.
             avatarFileInput.addEventListener("change", async () => {
                 const file = avatarFileInput.files?.[0];
-                avatarFileInput.value = ""; // reset so same file can be re-selected
+                avatarFileInput.value = "";
                 if (file) await this._uploadAvatar(file);
             });
         }
     },
-
-    // ── Avatar upload ─────────────────────────────────────────────────────────
 
     async _uploadAvatar(file) {
         const statusEl = document.getElementById("avatarUploadStatus");
@@ -129,13 +111,11 @@ const SettingsProfile = {
             }
 
             const data = await res.json();
-            // Cache-bust so the browser fetches the fresh image immediately.
             const avatarUrl =
                 (data.avatar_url || `/api/avatar/${Utils.getStorage("user")?.id}`) +
                 "?t=" +
                 Date.now();
 
-            // Update the profile avatar circle.
             if (avatarEl) {
                 const user = Utils.getStorage("user") || {};
                 const name = user.username || "User";
@@ -146,7 +126,6 @@ const SettingsProfile = {
                     `onerror="this.parentElement.textContent='${Utils.getInitials(name)}'">`;
             }
 
-            // Update the navbar chip.
             const userAvatarEl = document.getElementById("userAvatarImg");
             const initialsEl = document.getElementById("userInitials");
             if (userAvatarEl) {
@@ -155,7 +134,6 @@ const SettingsProfile = {
                 if (initialsEl) initialsEl.style.display = "none";
             }
 
-            // Persist the new URL so the next page load picks it up from storage.
             const user = Utils.getStorage("user") || {};
             user.avatarUrl = data.avatar_url || `/api/avatar/${user.id}`;
             Utils.setStorage("user", user);
@@ -168,8 +146,6 @@ const SettingsProfile = {
             console.error("[settings] Avatar upload error:", e);
         }
     },
-
-    // ── Profile form ──────────────────────────────────────────────────────────
 
     _checkChanges(saveBtn) {
         const changed =
@@ -197,7 +173,6 @@ const SettingsProfile = {
         const username = document.getElementById("username")?.value.trim() || "";
         const email = document.getElementById("email")?.value.trim() || "";
 
-        // 1. Identify what actually changed
         const updates = {};
         if (firstName !== this._original.firstName || lastName !== this._original.lastName) {
             updates.name = { ...updates.name, first_name: firstName };
@@ -206,7 +181,6 @@ const SettingsProfile = {
         if (username !== this._original.username) updates.username = username;
         if (email !== this._original.email) updates.email = email;
 
-        // 2. Only proceed if there is something to save
         if (Object.keys(updates).length === 0) return;
 
         this._setLoading(saveBtn, true);
@@ -236,7 +210,6 @@ const SettingsProfile = {
                 const userInitials = document.getElementById("userInitials");
                 if (profileName) profileName.textContent = fullName || username;
                 if (profileEmailEl && email) profileEmailEl.textContent = email;
-                // Only reset to initials if no avatar is currently shown.
                 if (profileAvatar && !profileAvatar.querySelector("img")) {
                     profileAvatar.textContent = Utils.getInitials(fullName || username);
                 }
@@ -257,8 +230,6 @@ const SettingsProfile = {
             this._setLoading(saveBtn, false);
         }
     },
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
 
     _feedback(message, type) {
         const el = document.getElementById("profile-feedback");

@@ -1,24 +1,15 @@
 /**
  * Settings — Account Actions
- * Handles the change-password and delete-account flows via JSON API.
- * Expects the following input IDs in the HTML:
- *   Change password: #currentPassword, #newPassword, #confirmPassword
- *                    #changePasswordBtn, #password-feedback
- *   Delete account:  #deleteEmailConfirm, #deleteAccountBtn, #delete-feedback
- * Depends on: Utils
  */
 
-const SettingsAccount = {
-    /**
-     * Populate the account email field.
-     * @param {object} user
-     */
+import Utils from "../../../static/js/full/utils/utils.js";
+
+export const SettingsAccount = {
     load(user) {
         const emailInput = document.getElementById("accountEmail");
         if (emailInput) emailInput.value = user.email || "";
     },
 
-    /** Attach click handlers for change-password and delete-account buttons. */
     setup() {
         document.getElementById("changePasswordBtn")?.addEventListener("click", () => {
             this._changePassword();
@@ -28,8 +19,6 @@ const SettingsAccount = {
             this._deleteAccount();
         });
     },
-
-    // ── Private ───────────────────────────────────────────────────────────────
 
     async _changePassword() {
         const current = document.getElementById("currentPassword")?.value.trim();
@@ -108,8 +97,6 @@ const SettingsAccount = {
             this._setLoading(btn, false);
         }
     },
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
 
     _feedback(section, message, type) {
         const el = document.getElementById(`${section}-feedback`);

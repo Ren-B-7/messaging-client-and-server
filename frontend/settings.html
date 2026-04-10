@@ -67,26 +67,19 @@
             })();
         </script>
 
-        <!-- Preloads -->
-        <link rel="preload" href="static/js/min/utils/theme.manager.js" as="script" />
-        <link rel="preload" href="static/js/min/config/platform.config.js" as="script" />
-        <link rel="preload" href="static/js/min/utils/utils.js" as="script" />
-        <link rel="preload" href="static/js/min/utils/error.interceptor.js" as="script" />
-        <link rel="preload" href="non-static/min/settings/settings.nav.js" as="script" />
-        <link rel="preload" href="non-static/min/settings/settings.profile.js" as="script" />
-        <link rel="preload" href="non-static/min/settings/settings.account.js" as="script" />
-        <link rel="preload" href="non-static/min/settings/settings.preferences.js" as="script" />
-        <link rel="preload" href="non-static/min/settings/settings.init.js" as="script" />
+        <!-- Preloads (ESM version uses modulepreload) -->
+        <link rel="modulepreload" href="static/js/min/utils/theme.manager.js" />
+        <link rel="modulepreload" href="static/js/min/config/platform.config.js" />
+        <link rel="modulepreload" href="static/js/min/utils/utils.js" />
+        <link rel="modulepreload" href="static/js/min/utils/error.interceptor.js" />
+        <link rel="modulepreload" href="non-static/min/settings/settings.nav.js" />
+        <link rel="modulepreload" href="non-static/min/settings/settings.profile.js" />
+        <link rel="modulepreload" href="non-static/min/settings/settings.account.js" />
+        <link rel="modulepreload" href="non-static/min/settings/settings.preferences.js" />
+        <link rel="modulepreload" href="non-static/min/settings/settings.init.js" />
 
-        <!-- Scripts (deferred — execute after HTML is parsed, in order) -->
-        <script defer src="static/js/min/utils/theme.manager.js"></script>
-        <script defer src="static/js/min/config/platform.config.js"></script>
-        <script defer src="static/js/min/utils/utils.js"></script>
-        <script defer src="non-static/min/settings/settings.nav.js"></script>
-        <script defer src="non-static/min/settings/settings.profile.js"></script>
-        <script defer src="non-static/min/settings/settings.account.js"></script>
-        <script defer src="non-static/min/settings/settings.preferences.js"></script>
-        <script defer src="non-static/min/settings/settings.init.js"></script>
+        <!-- Main Entry Point -->
+        <script type="module" src="non-static/min/settings/settings.init.js"></script>
     </head>
     <body>
         <div id="loading">Loading...</div>

@@ -2,17 +2,13 @@
  * Auth — Registration Flow
  *
  * Multi-step registration form with inline validation.
- * Submits via fetch so JSON error responses from the server can be shown
- * inline. On success it follows the redirect URL in the response payload.
- *
- * Expected server responses:
- *   Error:   { "status": "error",   "code": "USERNAME_TAKEN", "message": "…" }
- *   Success: { "status": "success", "redirect": "/chat" }
- *
- * Depends on: Utils, AuthLogin (showError / clearErrors), AuthPassword
  */
 
-const AuthRegister = {
+import Utils from "../../../static/js/full/utils/utils.js";
+import { AuthLogin } from "./auth.login.js";
+import AuthPassword from "../../../static/js/full/auth/auth.password.js";
+
+export const AuthRegister = {
     currentStep: 0,
     formData: {},
 
@@ -33,8 +29,6 @@ const AuthRegister = {
         this._checkUrlError();
     },
 
-    // ── URL error param (server-side redirect fallback) ───────────────────────
-
     _checkUrlError() {
         const error = new URLSearchParams(window.location.search).get("error");
         const map = {
@@ -50,11 +44,7 @@ const AuthRegister = {
         if (entry) AuthLogin.showError(entry[0], entry[1]);
     },
 
-    // ── Live validation (instant feedback as the user types) ──────────────────
-
     _setupLiveValidation() {
-        // Email: validate format on blur so it doesn't interrupt typing
-        // mid-address.
         document.getElementById("regEmail")?.addEventListener("blur", (e) => {
             const val = e.target.value.trim();
             if (val && !Utils.isValidEmail(val)) {
@@ -62,15 +52,11 @@ const AuthRegister = {
             }
         });
 
-        // Password: warn immediately if too short, refresh strength meter on every
-        // keystroke.
         document.getElementById("regPassword")?.addEventListener("input", (e) => {
             const val = e.target.value;
             if (val.length > 0 && val.length < 8) {
                 AuthLogin.showError("regPassword", "Password must be at least 8 characters");
             } else {
-                // Clear the error once the length requirement is met — the strength bar
-                // handles the rest of the feedback.
                 const errEl = document.getElementById("regPasswordError");
                 if (errEl) {
                     errEl.textContent = "";
@@ -80,7 +66,6 @@ const AuthRegister = {
             }
         });
 
-        // Confirm password: check match whenever either field changes.
         const checkMatch = () => {
             const pw = document.getElementById("regPassword")?.value;
             const cfm = document.getElementById("regConfirmPassword")?.value;
@@ -91,7 +76,6 @@ const AuthRegister = {
         document.getElementById("regPassword")?.addEventListener("change", checkMatch);
         document.getElementById("regConfirmPassword")?.addEventListener("input", checkMatch);
 
-        // Username: only allow valid characters, warn immediately on invalid input.
         document.getElementById("regUsername")?.addEventListener("input", (e) => {
             const val = e.target.value;
             if (val && !/^[a-zA-Z0-9_]*$/.test(val)) {
@@ -102,8 +86,6 @@ const AuthRegister = {
             }
         });
     },
-
-    // ── Step navigation ───────────────────────────────────────────────────────
 
     _setupStepNavigation() {
         document.getElementById("nextBtn1")?.addEventListener("click", () => {
@@ -133,8 +115,6 @@ const AuthRegister = {
         this.currentStep = n;
     },
 
-    // ── Step validation ───────────────────────────────────────────────────────
-
     _validateStep1() {
         const email = document.getElementById("regEmail")?.value.trim();
         const password = document.getElementById("regPassword")?.value;
@@ -143,7 +123,6 @@ const AuthRegister = {
         AuthLogin.clearErrors();
         let valid = true;
 
-        // Email
         if (!email) {
             AuthLogin.showError("regEmail", "Email is required");
             valid = false;
@@ -152,7 +131,6 @@ const AuthRegister = {
             valid = false;
         }
 
-        // Password length
         if (!password) {
             AuthLogin.showError("regPassword", "Password is required");
             valid = false;
@@ -160,7 +138,6 @@ const AuthRegister = {
             AuthLogin.showError("regPassword", "Password must be at least 8 characters");
             valid = false;
         } else {
-            // Strength check — warn (but don't block) if still weak/fair.
             const { level } = AuthPassword._calcStrength(password);
             if (level === "weak") {
                 AuthLogin.showError(
@@ -171,7 +148,6 @@ const AuthRegister = {
             }
         }
 
-        // Confirm match
         if (password && confirm && password !== confirm) {
             AuthLogin.showError("regConfirmPassword", "Passwords do not match");
             valid = false;
@@ -229,15 +205,11 @@ const AuthRegister = {
         return valid;
     },
 
-    // ── Review panel ──────────────────────────────────────────────────────────
-
     _updateReview() {
         document.getElementById("reviewEmail").textContent = this.formData.email || "—";
         document.getElementById("reviewName").textContent = this.formData.fullName || "—";
         document.getElementById("reviewUsername").textContent = this.formData.username || "—";
     },
-
-    // ── Submission ────────────────────────────────────────────────────────────
 
     async _handleRegistration() {
         if (!document.getElementById("termsCheckbox")?.checked) {
@@ -271,21 +243,17 @@ const AuthRegister = {
                 return;
             }
 
-            // Guard against non-JSON responses (e.g. server returning an HTML error
-            // page).
             const contentType = response.headers.get("content-type") || "";
             if (!contentType.includes("application/json")) {
                 throw new Error(`Unexpected response type: ${contentType}`);
             }
 
             const data = await response.json();
-
             if (data.status === "error") {
                 this._handleServerError(data);
                 return;
             }
 
-            // Success — navigate to the redirect the server provided.
             window.location.href = data.redirect ?? "/chat";
         } catch (err) {
             console.error("[register] submission error:", err);
@@ -298,11 +266,8 @@ const AuthRegister = {
         }
     },
 
-    // ── Server error → field mapping ──────────────────────────────────────────
-
     _handleServerError(data) {
         const msg = data.message ?? "An unexpected error occurred. Please try again.";
-
         switch (data.code) {
             case "USERNAME_TAKEN":
             case "INVALID_USERNAME":
@@ -320,17 +285,11 @@ const AuthRegister = {
                 this._goToStep(0);
                 AuthLogin.showError("regPassword", msg);
                 break;
-            case "MISSING_FIELD":
-                this._goToStep(0);
-                AuthLogin.showError("regEmail", `Missing required field: ${msg}`);
-                break;
             default:
                 this._goToStep(0);
                 AuthLogin.showError("regEmail", msg);
         }
     },
-
-    // ── UI helpers ────────────────────────────────────────────────────────────
 
     _setLoading(btn, isLoading) {
         if (!btn) return;

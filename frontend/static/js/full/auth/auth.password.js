@@ -1,10 +1,9 @@
 /**
  * Auth — Password & Avatar Helpers
  * Password visibility toggle, strength meter, and avatar upload.
- * Depends on: (none — pure DOM)
  */
 
-const AuthPassword = {
+export const AuthPassword = {
     // ── Password visibility toggle ────────────────────────────────────────────
 
     setupToggles() {
@@ -18,20 +17,17 @@ const AuthPassword = {
                 input.type = isHidden ? "text" : "password";
 
                 const img = btn.querySelector("img");
-                if (img)
+                if (img) {
                     img.src = isHidden
                         ? "static/icons/icons/eye-off.svg"
                         : "static/icons/icons/eye.svg";
+                }
             });
         });
     },
 
     // ── Password strength meter ───────────────────────────────────────────────
 
-    /**
-     * Wire the strength bar to #regPassword and validate in real-time.
-     * Also shows per-requirement hints so the user knows exactly what's missing.
-     */
     setupStrengthMeter() {
         const input = document.getElementById("regPassword");
         if (!input) return;
@@ -42,41 +38,20 @@ const AuthPassword = {
         });
     },
 
-    /**
-     * Score the password and return a level plus a list of unmet requirement
-     * hints.
-     * @param {string} password
-     * @returns {{ level: 'empty'|'weak'|'fair'|'strong', hints: string[] }}
-     */
     _calcStrength(password) {
         if (!password) return { level: "empty", hints: [] };
 
         const hints = [];
         let score = 0;
 
-        if (password.length >= 8) {
-            score++;
-        } else {
-            hints.push("At least 8 characters");
-        }
-
-        if (/[a-z]/.test(password) && /[A-Z]/.test(password)) {
-            score++;
-        } else {
-            hints.push("Mix of upper and lower case");
-        }
-
-        if (/[0-9]/.test(password)) {
-            score++;
-        } else {
-            hints.push("At least one number");
-        }
-
-        if (/[^a-zA-Z0-9]/.test(password)) {
-            score++;
-        } else {
-            hints.push("At least one special character");
-        }
+        if (password.length >= 8) score++;
+        else hints.push("At least 8 characters");
+        if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score++;
+        else hints.push("Mix of upper and lower case");
+        if (/[0-9]/.test(password)) score++;
+        else hints.push("At least one number");
+        if (/[^a-zA-Z0-9]/.test(password)) score++;
+        else hints.push("At least one special character");
 
         const level = score <= 1 ? "weak" : score <= 3 ? "fair" : "strong";
         return { level, hints };
@@ -92,16 +67,10 @@ const AuthPassword = {
         }
 
         if (label) {
-            const labels = {
-                empty: "",
-                weak: "Weak",
-                fair: "Fair",
-                strong: "Strong",
-            };
+            const labels = { empty: "", weak: "Weak", fair: "Fair", strong: "Strong" };
             label.textContent = level === "empty" ? "" : `Password strength: ${labels[level]}`;
         }
 
-        // Show unmet requirements as a hint list below the bar.
         if (hintEl) {
             if (hints.length === 0 || level === "empty") {
                 hintEl.innerHTML = "";
@@ -126,7 +95,6 @@ const AuthPassword = {
             const file = e.target.files[0];
             if (!file) return;
 
-            // Validate type and size before reading (max 5 MB).
             if (!file.type.startsWith("image/")) {
                 alert("Please select an image file.");
                 return;
@@ -149,3 +117,5 @@ const AuthPassword = {
         });
     },
 };
+
+export default AuthPassword;
