@@ -22,6 +22,7 @@ import uuid
 
 from config import (
     DEFAULT_SERVER,
+    API_BASE_URL,
     USER_AGENT,
     CONNECTION_TIMEOUT,
     RECONNECT_TIMEOUT,
@@ -120,6 +121,7 @@ class ChatAPIClient:
 
     def __init__(self, server_url=DEFAULT_SERVER):
         self.server_url = server_url.rstrip("/")
+        self.api_base = API_BASE_URL.rstrip("/")
         self.cookie_jar = http.cookiejar.CookieJar()
 
         # Build opener with compression handler
@@ -359,7 +361,7 @@ class ChatAPIClient:
         logger.info("Attempting login", extra_info=f"Username: {username}")
         return self._make_request(
             "POST",
-            "/api/login",
+            f"{self.api_base}/login",
             {"username": username, "password": password},
             use_cache=False,
         )
@@ -368,7 +370,7 @@ class ChatAPIClient:
         logger.info("Attempting registration", extra_info=f"Username: {username}")
         return self._make_request(
             "POST",
-            "/api/register",
+            f"{self.api_base}/register",
             {
                 "username": username,
                 "email": email,
@@ -381,60 +383,60 @@ class ChatAPIClient:
 
     def logout(self):
         logger.info("Logging out")
-        result = self._make_request("POST", "/api/logout", {}, use_cache=False)
+        result = self._make_request("POST", f"{self.api_base}/logout", {}, use_cache=False)
         self.clear_cache()
         return result
 
     def logout_all_sessions(self):
         logger.info("Logging out all sessions")
         return self._make_request(
-            "POST", "/api/settings/logout-all", {}, use_cache=False
+            "POST", f"{self.api_base}/settings/logout-all", {}, use_cache=False
         )
 
     def get_profile(self, use_cache=True):
         logger.debug("Loading profile")
         return self._make_request(
-            "GET", "/api/profile", use_cache=use_cache, cache_ttl=60
+            "GET", f"{self.api_base}/profile", use_cache=use_cache, cache_ttl=60
         )
 
     def update_profile(self, **kwargs):
         logger.info("Updating profile", extra_info=f"Fields: {list(kwargs.keys())}")
         return self._make_request(
-            "POST", "/api/profile/update", kwargs, use_cache=False
+            "POST", f"{self.api_base}/profile/update", kwargs, use_cache=False
         )
 
     def set_avatar(self, file_path, compress=False):
         logger.info("Uploading avatar", extra_info=f"File: {file_path}")
         return self._make_multipart_request(
-            "/api/profile/avatar", file_path, compress_upload=compress
+            f"{self.api_base}/profile/avatar", file_path, compress_upload=compress
         )
 
     def delete_account(self):
         logger.warning("Deleting account")
-        return self._make_request("DELETE", "/api/settings/delete", {}, use_cache=False)
+        return self._make_request("DELETE", f"{self.api_base}/settings/delete", {}, use_cache=False)
 
     def get_chats(self, use_cache=True):
         logger.debug("Loading chats")
         return self._make_request(
-            "GET", "/api/chats", use_cache=use_cache, cache_ttl=30
+            "GET", f"{self.api_base}/chats", use_cache=use_cache, cache_ttl=30
         )
 
     def create_chat(self, user_id):
         logger.info("Creating chat", extra_info=f"User ID: {user_id}")
         return self._make_request(
-            "POST", "/api/chats", {"user_id": user_id}, use_cache=False
+            "POST", f"{self.api_base}/chats", {"user_id": user_id}, use_cache=False
         )
 
     def get_messages(self, chat_id, limit=50, offset=0, use_cache=True):
         logger.debug("Loading messages", extra_info=f"Chat: {chat_id}")
-        url = f"/api/messages?chat_id={chat_id}&limit={limit}&offset={offset}"
+        url = ff"{self.api_base}/messages?chat_id={chat_id}&limit={limit}&offset={offset}"
         return self._make_request("GET", url, use_cache=use_cache, cache_ttl=10)
 
     def send_message(self, chat_id, content, message_type="text"):
         logger.debug("Sending message", extra_info=f"Chat: {chat_id}")
         return self._make_request(
             "POST",
-            "/api/messages/send",
+            f"{self.api_base}/messages/send",
             {"chat_id": chat_id, "content": content, "message_type": message_type},
             use_cache=False,
         )
@@ -442,31 +444,31 @@ class ChatAPIClient:
     def mark_message_read(self, message_id):
         logger.debug("Marking message read", extra_info=f"Message ID: {message_id}")
         return self._make_request(
-            "POST", f"/api/messages/{message_id}/read", {}, use_cache=False
+            "POST", ff"{self.api_base}/messages/{message_id}/read", {}, use_cache=False
         )
 
     def send_typing_indicator(self, chat_id):
         logger.debug("Sending typing indicator", extra_info=f"Chat: {chat_id}")
         return self._make_request(
-            "POST", "/api/typing", {"chat_id": chat_id}, use_cache=False
+            "POST", f"{self.api_base}/typing", {"chat_id": chat_id}, use_cache=False
         )
 
     def get_groups(self, use_cache=True):
         logger.debug("Loading groups")
         return self._make_request(
-            "GET", "/api/groups", use_cache=use_cache, cache_ttl=30
+            "GET", f"{self.api_base}/groups", use_cache=use_cache, cache_ttl=30
         )
 
     def get_group_info(self, group_id, use_cache=True):
         logger.debug("Loading group info", extra_info=f"Group: {group_id}")
         return self._make_request(
-            "GET", f"/api/groups/{group_id}", use_cache=use_cache, cache_ttl=60
+            "GET", ff"{self.api_base}/groups/{group_id}", use_cache=use_cache, cache_ttl=60
         )
 
     def get_group_members(self, group_id, use_cache=True):
         logger.debug("Loading group members", extra_info=f"Group: {group_id}")
         return self._make_request(
-            "GET", f"/api/groups/{group_id}/members", use_cache=use_cache, cache_ttl=60
+            "GET", ff"{self.api_base}/groups/{group_id}/members", use_cache=use_cache, cache_ttl=60
         )
 
     def create_group(self, name, member_ids=None, description=""):
@@ -474,18 +476,18 @@ class ChatAPIClient:
         body = {"name": name, "description": description}
         if member_ids:
             body["member_ids"] = member_ids
-        return self._make_request("POST", "/api/groups", body, use_cache=False)
+        return self._make_request("POST", f"{self.api_base}/groups", body, use_cache=False)
 
     def update_group(self, group_id, **kwargs):
         logger.info("Updating group", extra_info=f"Group: {group_id}")
         return self._make_request(
-            "PATCH", f"/api/groups/{group_id}", kwargs, use_cache=False
+            "PATCH", ff"{self.api_base}/groups/{group_id}", kwargs, use_cache=False
         )
 
     def delete_group(self, group_id):
         logger.warning("Deleting group", extra_info=f"Group: {group_id}")
         return self._make_request(
-            "DELETE", f"/api/groups/{group_id}", {}, use_cache=False
+            "DELETE", ff"{self.api_base}/groups/{group_id}", {}, use_cache=False
         )
 
     def add_group_member(self, group_id, user_id):
@@ -494,7 +496,7 @@ class ChatAPIClient:
         )
         return self._make_request(
             "POST",
-            f"/api/groups/{group_id}/members",
+            ff"{self.api_base}/groups/{group_id}/members",
             {"user_id": user_id},
             use_cache=False,
         )
@@ -505,20 +507,20 @@ class ChatAPIClient:
         )
         return self._make_request(
             "DELETE",
-            f"/api/groups/{group_id}/members",
+            ff"{self.api_base}/groups/{group_id}/members",
             {"user_id": user_id},
             use_cache=False,
         )
 
     def search_users(self, query):
         logger.debug("Searching users", extra_info=f"Query: {query}")
-        url = f"/api/users/search?q={urllib.parse.quote(query)}"
+        url = ff"{self.api_base}/users/search?q={urllib.parse.quote(query)}"
         return self._make_request("GET", url, use_cache=False)  # Don't cache search
 
     def get_avatar(self, user_id, use_cache=True):
         logger.debug("Loading avatar", extra_info=f"User: {user_id}")
         return self._make_request(
-            "GET", f"/api/avatar/{user_id}", use_cache=use_cache, cache_ttl=300
+            "GET", ff"{self.api_base}/avatar/{user_id}", use_cache=use_cache, cache_ttl=300
         )
 
     def get_files(self, chat_id=None, use_cache=True):
@@ -526,20 +528,20 @@ class ChatAPIClient:
             logger.debug("Loading files", extra_info=f"Chat: {chat_id}")
             return self._make_request(
                 "GET",
-                f"/api/files?chat_id={chat_id}",
+                ff"{self.api_base}/files?chat_id={chat_id}",
                 use_cache=use_cache,
                 cache_ttl=60,
             )
         else:
             logger.debug("Loading all files")
             return self._make_request(
-                "GET", "/api/files", use_cache=use_cache, cache_ttl=60
+                "GET", f"{self.api_base}/files", use_cache=use_cache, cache_ttl=60
             )
 
     def get_file(self, file_id, use_cache=True):
         logger.debug("Loading file", extra_info=f"File ID: {file_id}")
         return self._make_request(
-            "GET", f"/api/files/{file_id}", use_cache=use_cache, cache_ttl=60
+            "GET", ff"{self.api_base}/files/{file_id}", use_cache=use_cache, cache_ttl=60
         )
 
     def upload_file(self, file_path, chat_id, compress=False, progress_callback=None):
@@ -553,7 +555,7 @@ class ChatAPIClient:
 
         logger.info("Uploading file", extra_info=f"Chat: {chat_id}, File: {file_path}")
 
-        url = f"{self.server_url}/api/files/upload"
+        url = ff"{self.api_base}/files/upload"
         boundary = uuid.uuid4().hex
         filename = os.path.basename(file_path)
 
@@ -679,7 +681,7 @@ class ChatAPIClient:
 
     def delete_file(self, file_id):
         return self._make_request(
-            "DELETE", f"/api/files/{file_id}", {}, use_cache=False
+            "DELETE", ff"{self.api_base}/files/{file_id}", {}, use_cache=False
         )
 
     def stream_messages(
@@ -687,7 +689,7 @@ class ChatAPIClient:
     ):
         """Open a persistent SSE stream for chat_id."""
         logger.info("Starting SSE stream", extra_info=f"Chat: {chat_id}")
-        url = f"{self.server_url}/api/stream?chat_id={chat_id}&limit={limit}&offset={offset}"
+        url = ff"{self.api_base}/stream?chat_id={chat_id}&limit={limit}&offset={offset}"
 
         def _run():
             reconnect_count = 0
@@ -760,55 +762,55 @@ class ChatAPIClient:
     def get_admin_stats(self, use_cache=True):
         logger.debug("Loading admin stats")
         return self._make_request(
-            "GET", "/admin/api/stats", use_cache=use_cache, cache_ttl=10
+            "GET", f"{self.api_base}/admin/stats", use_cache=use_cache, cache_ttl=10
         )
 
     def get_admin_metrics(self, use_cache=True):
         logger.debug("Loading admin metrics")
         return self._make_request(
-            "GET", "/admin/api/metrics", use_cache=use_cache, cache_ttl=10
+            "GET", f"{self.api_base}/admin/metrics", use_cache=use_cache, cache_ttl=10
         )
 
     def get_admin_users(self, use_cache=True):
         logger.info("Loading admin users")
         return self._make_request(
-            "GET", "/admin/api/users", use_cache=use_cache, cache_ttl=30
+            "GET", f"{self.api_base}/admin/users", use_cache=use_cache, cache_ttl=30
         )
 
     def get_admin_sessions(self, use_cache=True):
         logger.info("Loading admin sessions")
         return self._make_request(
-            "GET", "/admin/api/sessions", use_cache=use_cache, cache_ttl=30
+            "GET", f"{self.api_base}/admin/sessions", use_cache=use_cache, cache_ttl=30
         )
 
     def admin_ban_user(self, user_id):
         logger.info("Banning user", extra_info=f"User ID: {user_id}")
         return self._make_request(
-            "POST", "/admin/api/users/ban", {"user_id": user_id}, use_cache=False
+            "POST", f"{self.api_base}/admin/users/ban", {"user_id": user_id}, use_cache=False
         )
 
     def admin_unban_user(self, user_id):
         logger.info("Unbanning user", extra_info=f"User ID: {user_id}")
         return self._make_request(
-            "POST", "/admin/api/users/unban", {"user_id": user_id}, use_cache=False
+            "POST", f"{self.api_base}/admin/users/unban", {"user_id": user_id}, use_cache=False
         )
 
     def admin_promote_user(self, user_id):
         logger.info("Promoting user", extra_info=f"User ID: {user_id}")
         return self._make_request(
-            "POST", "/admin/api/users/promote", {"user_id": user_id}, use_cache=False
+            "POST", f"{self.api_base}/admin/users/promote", {"user_id": user_id}, use_cache=False
         )
 
     def admin_demote_user(self, user_id):
         logger.info("Demoting user", extra_info=f"User ID: {user_id}")
         return self._make_request(
-            "POST", "/admin/api/users/demote", {"user_id": user_id}, use_cache=False
+            "POST", f"{self.api_base}/admin/users/demote", {"user_id": user_id}, use_cache=False
         )
 
     def admin_delete_user(self, user_id):
         logger.info("Deleting user (admin)", extra_info=f"User ID: {user_id}")
         return self._make_request(
-            "DELETE", f"/admin/api/users/{user_id}", {}, use_cache=False
+            "DELETE", ff"{self.api_base}/admin/users/{user_id}", {}, use_cache=False
         )
 
     def shutdown(self):

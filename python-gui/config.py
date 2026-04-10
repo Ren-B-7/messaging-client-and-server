@@ -8,6 +8,7 @@ Colors and dimensions extracted from Rust server web interface
 # ============================================================================
 
 DEFAULT_SERVER = "http://localhost:1337"
+API_BASE_URL = f"{DEFAULT_SERVER}/api"
 USER_AGENT = "ChatClient/2.0 (Python-Advanced)"
 
 # ============================================================================
