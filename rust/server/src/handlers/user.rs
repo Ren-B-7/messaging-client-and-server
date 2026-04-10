@@ -17,7 +17,7 @@ use tracing::{error, info, warn};
 
 use crate::AppState;
 use crate::handlers::http::routes::{
-    Router, build_api_router_with_config, forbidden, unauthorized,
+    Router, build_base_router, build_user_api_routes, forbidden, unauthorized,
 };
 use crate::handlers::http::{auth, utils::*};
 use crate::handlers::sse::sse_helper;
@@ -137,7 +137,10 @@ pub fn build_user_router_with_config(
         .map(|d| -> &'static str { Box::leak(d.into_boxed_str()) })
         .unwrap_or("");
 
-    let mut router = build_api_router_with_config(web_dir_static, icons_dir_static);
+    // Start with shared base API routes, layer on user messaging/profile API,
+    // then add HTML pages and the SSE stream.
+    let base = build_base_router(web_dir_static.clone(), icons_dir_static.clone());
+    let mut router = build_user_api_routes(base);
 
     router = router
         // ── HTML pages ──────────────────────────────────────────────────────

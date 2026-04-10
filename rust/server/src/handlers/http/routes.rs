@@ -663,21 +663,18 @@ pub fn not_found(
 }
 
 // ---------------------------------------------------------------------------
-// Shared API routes
+// Router Compositions
 //
-// Registered on BOTH the user server and the admin server.  The auth tier for
-// each route is chosen by the router method:
+// We use a layered approach to build routers:
 //
-//   .get(...)          → Open     — handler gets (req, state)
-//   .get_light(...)    → Light    — handler gets (req, state, claims)
-//   .post(...)         → Open     — login / register only
-//   .post_hard(...)    → Hard     — handler gets (req, state, user_id, claims)
-//   .put_hard(...)     → Hard     — same
-//   .patch_hard(...)   → Hard     — same
-//   .delete_hard(...)  → Hard     — same
+//   1. build_base_router      — public / health / basic config (shared by all)
+//   2. build_user_api_routes  — messaging, groups, profile (user-only)
+//
+// The admin server calls #1 and then adds its own admin-specific routes.
+// The user server calls #1 and #2.
 // ---------------------------------------------------------------------------
 
-pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<String>) -> Router {
+pub fn build_base_router(web_dir: Option<String>, icons_dir: Option<String>) -> Router {
     let mut router = Router::new();
     if let Some(dir) = web_dir {
         router = router.with_web_dir(dir);
@@ -702,11 +699,22 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
                 StatusCode::IM_A_TEAPOT,
             )
         })
+        // ── Password reset (Public) ──────────────────────────────────────────
+        .post("/api/auth/reset-request", |req, state| async move {
+            crate::handlers::http::auth::reset::handle_reset_request(req, state)
+                .await
+                .context("Reset request failed")
+        })
+        .post("/api/auth/reset-confirm", |req, state| async move {
+            crate::handlers::http::auth::reset::handle_reset_confirm(req, state)
+                .await
+                .context("Reset confirm failed")
+        })
+}
+
+pub fn build_user_api_routes(router: Router) -> Router {
+    router
         // ── Light auth: JWT decode only, zero DB reads ────────────────────────
-        //
-        // Safe for GET requests because reading stale data carries no real risk
-        // and avoids a DB round-trip on every page load.  The JWT is still
-        // cryptographically verified (signature + expiry).
         .get_light("/api/profile", |req, state, claims| async move {
             profile::handle_get_profile(req, state, claims)
                 .await
@@ -727,7 +735,6 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
                 .await
                 .context("Group get failed")
         })
-        // GET /api/groups/:id/members — list members of a group
         .get_light("/api/groups/:id/members", |req, state, claims| async move {
             let chat_id = req
                 .uri()
@@ -747,12 +754,7 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
                 .context("Bad request"),
             }
         })
-        // ── Hard auth: JWT + DB session lookup + IP binding ───────────────────
-        //
-        // Every route that mutates state lives here.  Auth is performed by the
-        // router before the handler is invoked; handlers receive the verified
-        // user_id directly and must NOT repeat the auth call.
-        // ── Messaging ────────────────────────────────────────────────────────
+        // ── Hard auth: Messaging ─────────────────────────────────────────────
         .post_hard(
             "/api/messages/send",
             |req, state, user_id, _claims| async move {
@@ -783,13 +785,11 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
                 }
             },
         )
-        // POST /api/typing — fire-and-forget typing indicator over SSE
         .post_hard("/api/typing", |req, state, user_id, _claims| async move {
             messaging::handle_typing(req, state, user_id)
                 .await
                 .context("Typing indicator failed")
         })
-        // DELETE /api/messages/:id — delete own message (sender only)
         .delete_hard(
             "/api/messages/:id",
             |req, state, user_id, _claims| async move {
@@ -812,7 +812,6 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
                 }
             },
         )
-        // GET /api/unread — unread message counts (optional ?chat_id=N)
         .get_light("/api/unread", |req, state, claims| async move {
             messaging::handle_get_unread(req, state, claims)
                 .await
@@ -873,7 +872,6 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
                 }
             },
         )
-        // PATCH /api/groups/:id — rename a group
         .patch_hard(
             "/api/groups/:id",
             |req, state, user_id, _claims| async move {
@@ -896,7 +894,6 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
                 }
             },
         )
-        // DELETE /api/groups/:id — delete a group
         .delete_hard(
             "/api/groups/:id",
             |req, state, user_id, _claims| async move {
@@ -919,13 +916,12 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
                 }
             },
         )
-        // GET /api/users/search?q= — search users by username
         .get_light("/api/users/search", |req, state, claims| async move {
             messaging::handle_search_users(req, state, claims)
                 .await
                 .context("User search failed")
         })
-        // ── Profile ──────────────────────────────────────────────────────────
+        // ── Profile / Settings ───────────────────────────────────────────────
         .post_hard(
             "/api/profile/update",
             |req, state, user_id, _claims| async move {
@@ -939,7 +935,6 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
                 .await
                 .context("Profile update failed")
         })
-        // ── Settings ─────────────────────────────────────────────────────────
         .post_hard(
             "/api/settings/password",
             |req, state, user_id, _claims| async move {
@@ -956,7 +951,6 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
                     .context("Logout-all failed")
             },
         )
-        // Logout: hard auth so we have the verified session_id to revoke.
         .post_hard("/api/logout", |req, state, user_id, claims| async move {
             profile::handle_logout(req, state, user_id, claims)
                 .await
@@ -970,15 +964,4 @@ pub fn build_api_router_with_config(web_dir: Option<String>, icons_dir: Option<S
                     .context("Password change failed")
             },
         )
-        // ── Password reset ───────────────────────────────────────────────────
-        .post("/api/auth/reset-request", |req, state| async move {
-            crate::handlers::http::auth::reset::handle_reset_request(req, state)
-                .await
-                .context("Reset request failed")
-        })
-        .post("/api/auth/reset-confirm", |req, state| async move {
-            crate::handlers::http::auth::reset::handle_reset_confirm(req, state)
-                .await
-                .context("Reset confirm failed")
-        })
 }

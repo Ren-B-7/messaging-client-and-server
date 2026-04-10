@@ -14,7 +14,7 @@ use tower::Service;
 use tracing::{error, info};
 
 use crate::AppState;
-use crate::handlers::http::routes::{Router, build_api_router_with_config};
+use crate::handlers::http::routes::{Router, build_base_router};
 use crate::handlers::http::{
     admin, auth,
     utils::{deliver_page::*, json_response::*},
@@ -126,7 +126,7 @@ pub fn build_admin_router_with_config(
 
     // Start with shared API routes, layer on admin-specific API routes, then
     // add admin HTML pages and login endpoints.
-    let base = build_api_router_with_config(web_dir_static, icons_dir_static);
+    let base = build_base_router(web_dir_static, icons_dir_static);
     let mut router = build_admin_api_routes(base);
 
     router = router
@@ -456,7 +456,7 @@ pub fn build_admin_api_routes(router: Router) -> Router {
         .post_hard(
             "/admin/api/reload",
             |_req, _state, user_id, claims| async move {
-                if (!claims.is_admin) || (claims.user_id != user_id) {
+                if !claims.is_admin {
                     return deliver_error_json(
                         "FORBIDDEN",
                         "Insufficient privileges",
