@@ -197,6 +197,14 @@ class ChatAPIClient:
                     url, data=data, headers=request_headers, method=method
                 )
                 response = self.opener.open(req, timeout=timeout)
+                
+                # Explicit status validation
+                if not (200 <= response.status < 300):
+                    # Trigger the exception block below for consistent error handling
+                    raise HTTPError(
+                        url, response.status, f"HTTP {response.status}", response.headers, io.BytesIO(response.read())
+                    )
+
                 body = response.read()
                 self.last_error = None
 
