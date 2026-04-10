@@ -176,6 +176,14 @@ impl SseStreamBuilder {
             Uuid::new_v4()
         )
     }
+
+    /// Emit an SSE comment as a heartbeat ("ping").
+    ///
+    /// Comments are ignored by browsers but keep the TCP connection alive
+    /// and prevent intermediate proxies from timing out.
+    pub fn format_ping() -> String {
+        format!(": ping\n\n")
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -345,9 +353,15 @@ pub async fn handle_sse_subscribe(
             yield Ok::<Bytes, Infallible>(Bytes::from(frame));
         }
 
-        // Inactivity timeout: close the connection if the client stops reading
-        // for more than 30 seconds to prevent unbounded buffer growth.
-        let mut inactivity = tokio::time::interval(Duration::from_secs(30));
+        // Heartbeat: send a ping every 15 seconds to keep the connection alive.
+        let mut heartbeat = tokio::time::interval(Duration::from_secs(15));
+        
+        // Inactivity timeout: close the connection if no events (including pings) 
+        // are sent for 60 seconds.
+        let mut inactivity = tokio::time::interval(Duration::from_secs(60));
+        
+        // Ensure intervals start from now.
+        heartbeat.reset();
         inactivity.reset();
 
         loop {
@@ -355,6 +369,8 @@ pub async fn handle_sse_subscribe(
                 result = rx.recv() => {
                     match result {
                         Ok(event) => {
+                            // Reset timers when we send a real event.
+                            heartbeat.reset();
                             inactivity.reset();
                             let formatted = SseStreamBuilder::format_event(&event);
                             info!("SSE live event '{}' → user={}", event.event_type, user_id);
@@ -374,8 +390,14 @@ pub async fn handle_sse_subscribe(
                         }
                     }
                 }
+                _ = heartbeat.tick() => {
+                    // Send a heartbeat ping to keep the connection alive.
+                    yield Ok::<Bytes, Infallible>(Bytes::from(SseStreamBuilder::format_ping()));
+                    // Reset the inactivity timer every time we send a ping.
+                    inactivity.reset();
+                }
                 _ = inactivity.tick() => {
-                    info!("SSE inactivity timeout: closing connection for user={}", user_id);
+                    info!("SSE inactivity timeout (60s): closing connection for user={}", user_id);
                     break;
                 }
             }
