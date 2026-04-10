@@ -1,9 +1,33 @@
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use tokio_rusqlite::{Connection, OptionalExtension, Result, params, rusqlite};
 
 use shared::types::user::*;
 use uuid::Uuid;
+
+pub fn is_allowed_mime_type(mime_type: &str) -> bool {
+    let allowed = [
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "image/webp",
+        "application/pdf",
+        "text/plain",
+        "application/zip",
+    ];
+    allowed.contains(&mime_type)
+}
+
+pub fn sanitize_filename(filename: &str) -> String {
+    filename.replace(|c: char| !c.is_alphanumeric() && c != '.' && c != '_', "_")
+}
+
+pub fn build_storage_path(uploads_dir: &str, filename: &str) -> PathBuf {
+    let uuid = Uuid::new_v4().to_string();
+    let stored_name = format!("{}_{}", uuid, filename);
+    PathBuf::from(uploads_dir).join(stored_name)
+}
 
 /// Get current Unix timestamp in seconds
 pub fn get_timestamp() -> i64 {

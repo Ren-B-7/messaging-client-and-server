@@ -8,7 +8,6 @@
 //!   DELETE /api/files/:id         (hard auth)  — delete own file
 
 use std::convert::Infallible;
-use std::path::PathBuf;
 
 use anyhow::Context;
 use bytes::Bytes;
@@ -18,7 +17,6 @@ use hyper::{Request, Response, StatusCode, header};
 use multer::Multipart;
 use tokio_rusqlite::rusqlite;
 use tracing::{error, info, warn};
-use uuid::Uuid;
 
 use crate::AppState;
 use crate::database::{files, groups, utils};
@@ -169,8 +167,16 @@ pub async fn handle_upload_file(
         }
     };
 
-    let filename = sanitize_filename(original_filename.as_deref().unwrap_or("unnamed"));
+    let filename = utils::sanitize_filename(original_filename.as_deref().unwrap_or("unnamed"));
     let mime_type = mime_type.unwrap_or_else(|| "application/octet-stream".to_string());
+
+    if !utils::is_allowed_mime_type(&mime_type) {
+        return deliver_error_json(
+            "INVALID_FILE_TYPE",
+            "File type not allowed",
+            StatusCode::BAD_REQUEST,
+        );
+    }
 
     // ── 4. Authorization — must be a chat member ─────────────────────────────
     let is_member = groups::is_group_member(&state.db, chat_id, user_id)
@@ -187,7 +193,7 @@ pub async fn handle_upload_file(
 
     // ── 5. Write bytes to disk ───────────────────────────────────────────────
     let storage_dir = state.config.read().await.paths.uploads_dir.clone();
-    let storage_path = build_storage_path(&storage_dir, &filename);
+    let storage_path = utils::build_storage_path(&storage_dir, &filename);
 
     tokio::fs::create_dir_all(&storage_dir)
         .await
@@ -598,29 +604,3 @@ async fn sse_broadcast_file_shared(
 // Private helpers
 // ---------------------------------------------------------------------------
 
-/// Derive a collision-free on-disk path for a new upload.
-///
-/// Layout: `<uploads_dir>/<uuid>_<sanitized-filename>`
-pub fn build_storage_path(uploads_dir: &str, filename: &str) -> PathBuf {
-    let uuid = Uuid::new_v4().to_string();
-    let stored_name = format!("{}_{}", uuid, filename);
-    PathBuf::from(uploads_dir).join(stored_name)
-}
-
-/// Strip directory traversal, null bytes, and other hazardous characters
-/// from a filename supplied by the client.
-pub fn sanitize_filename(name: &str) -> String {
-    let base = name
-        .replace('\\', "/")
-        .split('/')
-        .rfind(|s| !s.is_empty() && *s != ".." && *s != ".")
-        .unwrap_or("unnamed")
-        .to_string();
-
-    base.chars()
-        .filter(|c| !c.is_control() && *c != '\0')
-        .collect()
-}
-
-// needed for handle_get_chat_files
-use form_urlencoded;
