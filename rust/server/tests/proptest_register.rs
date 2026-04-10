@@ -10,7 +10,7 @@ proptest! {
         let valid_chars = s.chars()
             .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
             .collect::<String>();
-            
+
         if valid_chars.len() >= 3 && valid_chars.len() <= 32 {
             prop_assert!(validate_username(&valid_chars).is_ok());
         }
@@ -35,7 +35,7 @@ proptest! {
         // Ensure at least one letter and one digit to pass
         let has_digit = s.chars().any(|c| c.is_ascii_digit());
         let has_letter = s.chars().any(|c| c.is_ascii_alphabetic());
-        
+
         if has_digit && has_letter {
             prop_assert!(validate_password(&s).is_ok());
         }
