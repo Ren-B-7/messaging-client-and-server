@@ -88,7 +88,7 @@ lint-makefile:
 
 lint-typos:
 	@echo "Checking for typos..."
-	typos --check .
+	typos -j4 rust/ python-gui/ frontend/static/ frontend/non-static/ .github/
 
 # =========================
 # BUILD
