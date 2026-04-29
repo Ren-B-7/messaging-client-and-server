@@ -1,6 +1,7 @@
-use std::{env, net::SocketAddr, sync::Arc, time::Duration};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use anyhow::Context;
+use clap::Parser;
 use tracing::{debug, error, info, warn};
 
 use tokio::net::TcpListener;
@@ -25,17 +26,20 @@ use server::{
 
 use shared::config;
 
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Path to the configuration file
+    #[arg(short, long)]
+    config: String,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     tracing_subscriber::fmt().init();
 
-    let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
-        error!("Usage: {} <config_path>", args[0]);
-        return Err("Missing config path argument".into());
-    }
-
-    let config_path = args[1].clone();
+    let args = Args::parse();
+    let config_path = args.config;
 
     let db = create::open_database("messaging.db").await?;
     let app_config = config::load_config(&config_path).context("Failed to load configuration")?;

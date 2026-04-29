@@ -34,6 +34,9 @@ form_urlencoded = "1.2.2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
 # Error handling
 anyhow = "1.0"
 
