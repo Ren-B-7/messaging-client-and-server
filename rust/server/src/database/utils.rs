@@ -20,7 +20,45 @@ pub fn is_allowed_mime_type(mime_type: &str) -> bool {
 }
 
 pub fn sanitize_filename(filename: &str) -> String {
-    filename.replace(|c: char| !c.is_alphanumeric() && c != '.' && c != '_', "_")
+    // 1. Remove null bytes
+    let clean = filename.replace('\0', "");
+
+    // 2. Normalize separators: convert Windows backslashes to Unix slashes
+    let normalized = clean.replace('\\', "/");
+
+    // 3. Extract only the base name (prevents path traversal)
+    let path = std::path::Path::new(&normalized);
+    let base_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_string();
+
+    // 4. If empty or just invalid, return "unnamed"
+    if base_name.is_empty() || base_name == "." || base_name == ".." || base_name == "/" {
+        return "unnamed".to_string();
+    }
+
+    // 5. Sanitize remaining characters: only allow alphanumeric, dots, underscores, hyphens, brackets, parentheses, and @
+    let sanitized: String = base_name
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '.' || c == '_' || c == '-' || c == '[' || c == ']' || c == '(' || c == ')' || c == '@' || c == ' ' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+
+    // Remove leading/trailing underscores resulting from invalid chars
+    let trimmed = sanitized.trim_matches('_');
+
+    if trimmed.is_empty() {
+        "unnamed".to_string()
+    } else {
+        trimmed.to_string()
+    }
 }
 
 pub fn build_storage_path(uploads_dir: &str, filename: &str) -> PathBuf {
