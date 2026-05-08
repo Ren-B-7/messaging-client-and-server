@@ -35,7 +35,7 @@ all: setup format lint build
 
 .PHONY: format format-rust format-python format-frontend format-makefile format-toml
 
-format: format-rust format-python format-frontend format-makefile
+format: format-rust format-python format-frontend format-makefile format-toml
 
 format-rust:
 	@echo "Formatting Rust..."

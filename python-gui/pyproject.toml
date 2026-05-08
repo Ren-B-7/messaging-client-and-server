@@ -13,9 +13,7 @@ dependencies = []
 chat-client = "main:main"
 
 [dependency-groups]
-dev = [
-    "pytest>=9.0.3",
-]
+dev = ["pytest>=9.0.3"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["."]
