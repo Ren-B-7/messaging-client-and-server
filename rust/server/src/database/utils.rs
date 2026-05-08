@@ -43,7 +43,17 @@ pub fn sanitize_filename(filename: &str) -> String {
     let sanitized: String = base_name
         .chars()
         .map(|c| {
-            if c.is_alphanumeric() || c == '.' || c == '_' || c == '-' || c == '[' || c == ']' || c == '(' || c == ')' || c == '@' || c == ' ' {
+            if c.is_alphanumeric()
+                || c == '.'
+                || c == '_'
+                || c == '-'
+                || c == '['
+                || c == ']'
+                || c == '('
+                || c == ')'
+                || c == '@'
+                || c == ' '
+            {
                 c
             } else {
                 '_'
