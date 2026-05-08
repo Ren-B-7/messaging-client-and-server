@@ -160,16 +160,16 @@ pub fn is_valid_name(username: &str) -> bool {
         .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
 }
 
-/// Validate password strength (min 8 chars, at least one number, one letter)
+/// Validate password strength (min 12 chars, at least one uppercase, one lowercase, one number, one special)
 pub fn is_strong_password(password: &str) -> bool {
-    if password.len() < 8 {
-        return false;
-    }
+    use passcheck::PasswordChecker;
+    let checker = PasswordChecker::new()
+        .min_length(12)
+        .require_upper_lower()
+        .require_number()
+        .require_special_char();
 
-    let has_letter = password.chars().any(|c| c.is_alphabetic());
-    let has_number = password.chars().any(|c| c.is_numeric());
-
-    has_letter && has_number
+    checker.validate(password).is_ok()
 }
 
 /// Calculate session expiry (current time + duration in seconds)
