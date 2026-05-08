@@ -1,12 +1,13 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use tokio_rusqlite::{Connection, OptionalExtension, Result, params, rusqlite};
+use sqlx::FromRow;
+use sqlx::sqlite::SqlitePool;
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, FromRow)]
 pub struct FileRecord {
     pub id: i64,
     pub uploader_id: i64,
@@ -41,54 +42,54 @@ pub struct NewFileRecord {
 
 /// Persist metadata for a newly uploaded file.
 /// Returns the auto-generated `files.id`.
-pub async fn store_file_record(conn: &Connection, rec: NewFileRecord) -> Result<i64> {
+pub async fn store_file_record(pool: &SqlitePool, rec: NewFileRecord) -> anyhow::Result<i64> {
     let uploaded_at = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
 
-    conn.call(move |conn: &mut rusqlite::Connection| {
-        conn.execute(
-            "INSERT INTO files
-                 (uploader_id, chat_id, filename, mime_type, size,
-                  storage_path, uploaded_at, message_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![
-                rec.uploader_id,
-                rec.chat_id,
-                rec.filename,
-                rec.mime_type,
-                rec.size,
-                rec.storage_path,
-                uploaded_at,
-                rec.message_id,
-            ],
-        )?;
-        Ok(conn.last_insert_rowid())
-    })
-    .await
+    let res = sqlx::query(
+        "INSERT INTO files
+             (uploader_id, chat_id, filename, mime_type, size,
+              storage_path, uploaded_at, message_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(rec.uploader_id)
+    .bind(rec.chat_id)
+    .bind(rec.filename)
+    .bind(rec.mime_type)
+    .bind(rec.size)
+    .bind(rec.storage_path)
+    .bind(uploaded_at)
+    .bind(rec.message_id)
+    .execute(pool)
+    .await?;
+
+    Ok(res.last_insert_rowid())
 }
 
 /// Back-fill `message_id` after the companion message row has been inserted.
-pub async fn set_file_message_id(conn: &Connection, file_id: i64, message_id: i64) -> Result<()> {
-    conn.call(move |conn: &mut rusqlite::Connection| {
-        conn.execute(
-            "UPDATE files SET message_id = ?1 WHERE id = ?2",
-            params![message_id, file_id],
-        )?;
-        Ok(())
-    })
-    .await
+pub async fn set_file_message_id(
+    pool: &SqlitePool,
+    file_id: i64,
+    message_id: i64,
+) -> anyhow::Result<()> {
+    sqlx::query("UPDATE files SET message_id = ? WHERE id = ?")
+        .bind(message_id)
+        .bind(file_id)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 /// Delete a file record.  Callers are responsible for removing the file from
 /// disk afterwards (so that a DB error doesn't leave orphaned bytes).
-pub async fn delete_file_record(conn: &Connection, file_id: i64) -> Result<bool> {
-    conn.call(move |conn: &mut rusqlite::Connection| {
-        let count = conn.execute("DELETE FROM files WHERE id = ?1", params![file_id])?;
-        Ok(count > 0)
-    })
-    .await
+pub async fn delete_file_record(pool: &SqlitePool, file_id: i64) -> anyhow::Result<bool> {
+    let res = sqlx::query("DELETE FROM files WHERE id = ?")
+        .bind(file_id)
+        .execute(pool)
+        .await?;
+    Ok(res.rows_affected() > 0)
 }
 
 // ---------------------------------------------------------------------------
@@ -96,80 +97,54 @@ pub async fn delete_file_record(conn: &Connection, file_id: i64) -> Result<bool>
 // ---------------------------------------------------------------------------
 
 /// Fetch a single file record by its primary key.
-pub async fn get_file(conn: &Connection, file_id: i64) -> Result<Option<FileRecord>> {
-    conn.call(move |conn: &mut rusqlite::Connection| {
-        let mut stmt = conn.prepare(
-            "SELECT id, uploader_id, chat_id, filename, mime_type, size,
-                    storage_path, uploaded_at, message_id
-             FROM   files
-             WHERE  id = ?1",
-        )?;
+pub async fn get_file(pool: &SqlitePool, file_id: i64) -> anyhow::Result<Option<FileRecord>> {
+    let rec = sqlx::query_as::<_, FileRecord>(
+        "SELECT id, uploader_id, chat_id, filename, mime_type, size,
+                storage_path, uploaded_at, message_id
+         FROM   files
+         WHERE  id = ?",
+    )
+    .bind(file_id)
+    .fetch_optional(pool)
+    .await?;
 
-        let rec = stmt
-            .query_row(params![file_id], |row| {
-                Ok(FileRecord {
-                    id: row.get(0)?,
-                    uploader_id: row.get(1)?,
-                    chat_id: row.get(2)?,
-                    filename: row.get(3)?,
-                    mime_type: row.get(4)?,
-                    size: row.get(5)?,
-                    storage_path: row.get(6)?,
-                    uploaded_at: row.get(7)?,
-                    message_id: row.get(8)?,
-                })
-            })
-            .optional()?;
-
-        Ok(rec)
-    })
-    .await
+    Ok(rec)
 }
 
 /// Fetch all files shared in a chat, newest first.
 pub async fn get_files_for_chat(
-    conn: &Connection,
+    pool: &SqlitePool,
     chat_id: i64,
     limit: i64,
     offset: i64,
-) -> Result<Vec<FileRecord>> {
-    conn.call(move |conn: &mut rusqlite::Connection| {
-        let mut stmt = conn.prepare(
-            "SELECT id, uploader_id, chat_id, filename, mime_type, size,
-                    storage_path, uploaded_at, message_id
-             FROM   files
-             WHERE  chat_id = ?1
-             ORDER  BY uploaded_at DESC
-             LIMIT  ?2 OFFSET ?3",
-        )?;
+) -> anyhow::Result<Vec<FileRecord>> {
+    let recs = sqlx::query_as::<_, FileRecord>(
+        "SELECT id, uploader_id, chat_id, filename, mime_type, size,
+                storage_path, uploaded_at, message_id
+         FROM   files
+         WHERE  chat_id = ?
+         ORDER  BY uploaded_at DESC
+         LIMIT  ? OFFSET ?",
+    )
+    .bind(chat_id)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(pool)
+    .await?;
 
-        let recs = stmt
-            .query_map(params![chat_id, limit, offset], |row| {
-                Ok(FileRecord {
-                    id: row.get(0)?,
-                    uploader_id: row.get(1)?,
-                    chat_id: row.get(2)?,
-                    filename: row.get(3)?,
-                    mime_type: row.get(4)?,
-                    size: row.get(5)?,
-                    storage_path: row.get(6)?,
-                    uploaded_at: row.get(7)?,
-                    message_id: row.get(8)?,
-                })
-            })?
-            .collect::<std::result::Result<Vec<FileRecord>, rusqlite::Error>>()?;
-
-        Ok(recs)
-    })
-    .await
+    Ok(recs)
 }
 
 /// Check whether a file belongs to a given chat (used for access control).
-pub async fn file_belongs_to_chat(conn: &Connection, file_id: i64, chat_id: i64) -> Result<bool> {
-    conn.call(move |conn: &mut rusqlite::Connection| {
-        let mut stmt = conn.prepare("SELECT COUNT(*) FROM files WHERE id = ?1 AND chat_id = ?2")?;
-        let count: i64 = stmt.query_row(params![file_id, chat_id], |row| row.get(0))?;
-        Ok(count > 0)
-    })
-    .await
+pub async fn file_belongs_to_chat(
+    pool: &SqlitePool,
+    file_id: i64,
+    chat_id: i64,
+) -> anyhow::Result<bool> {
+    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM files WHERE id = ? AND chat_id = ?")
+        .bind(file_id)
+        .bind(chat_id)
+        .fetch_one(pool)
+        .await?;
+    Ok(row.0 > 0)
 }

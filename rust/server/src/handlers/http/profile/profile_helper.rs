@@ -1,18 +1,4 @@
 // handlers/http/profile.rs
-//
-// Consolidates get, update, and settings into one flat file so all imports
-// are shared and the compiler sees a single translation unit.
-//
-// Public surface:
-//
-//   handle_get_profile(req, state, claims)            Light-auth (JWT only)
-//   handle_update_profile(req, state, user_id)        Hard-auth  (JWT + DB + IP)
-//   handle_change_password(req, state, user_id)       Hard-auth
-//   handle_logout(req, state, user_id, claims)        Hard-auth
-//   handle_logout_all(req, state, user_id)            Hard-auth
-//
-// Auth is performed by the router before any handler is called.
-// No handler touches decode_jwt_claims or validate_jwt_secure internally.
 
 use std::convert::Infallible;
 
@@ -21,7 +7,6 @@ use bytes::Bytes;
 use http_body_util::{BodyExt, Full, combinators::BoxBody};
 use hyper::{Request, Response, StatusCode};
 use multer::Multipart;
-use tokio_rusqlite::rusqlite;
 use tracing::{error, info, warn};
 
 use shared::types::jwt::JwtClaims;
@@ -41,10 +26,6 @@ use crate::handlers::http::utils::{
 // ===========================================================================
 
 /// GET /api/profile — return the authenticated user's profile.
-///
-/// Light-auth: `claims` are pre-verified by the router (JWT only, no DB).
-/// A DB read is still needed to fetch email / created_at, but auth itself
-/// costs nothing.
 pub async fn handle_get_profile(
     _req: Request<hyper::body::Incoming>,
     state: AppState,
@@ -60,7 +41,6 @@ pub async fn handle_get_profile(
         Err(e) => return Err(anyhow::anyhow!("Database error: {}", e)),
     };
 
-    // Resolve avatar URL — returns a usable path the browser can GET directly.
     let avatar_url = utils::get_user_avatar(&state.db, claims.user_id)
         .await
         .ok()
@@ -97,8 +77,6 @@ pub async fn handle_get_profile(
 // ===========================================================================
 
 /// PUT /api/profile  or  POST /api/profile/update — update the user's profile.
-///
-/// Hard-auth: `user_id` is pre-verified by the router (JWT + DB + IP).
 pub async fn handle_update_profile(
     req: Request<hyper::body::Incoming>,
     state: AppState,
@@ -141,10 +119,11 @@ async fn parse_update_body(
         .to_bytes();
 
     serde_json::from_slice::<UpdateProfileData>(&body).map_err(|e| {
-        error!("Failed to parse admin login JSON: {}", e);
+        error!("Failed to parse JSON: {}", e);
         ProfileError::InternalError
     })
 }
+
 async fn update_user_profile(
     user_id: i64,
     data: &UpdateProfileData,
@@ -153,13 +132,11 @@ async fn update_user_profile(
     // ── first_name / last_name ──────────────────────────────────────────────
     if let Some(name_full) = &data.name {
         let first = name_full.first_name.as_deref().unwrap_or("").trim();
-
         let last = name_full.last_name.as_deref().unwrap_or("").trim();
 
         if !first.is_empty() && !utils::is_valid_name(first) {
             return Err(ProfileError::InvalidFirstname);
         }
-
         if !last.is_empty() && !utils::is_valid_name(last) {
             return Err(ProfileError::InvalidLastname);
         }
@@ -183,12 +160,10 @@ async fn update_user_profile(
                 error!("Database error updating name: {}", e);
                 ProfileError::DatabaseError
             })?;
-        info!("Updated! first: {}, last; {}", first, last);
     }
 
     // ── username ────────────────────────────────────────────────────────────
     if let Some(new_username) = &data.username {
-        info!("Updated! username: {}", new_username);
         if new_username.is_empty() || !utils::is_valid_name(new_username) {
             return Err(ProfileError::InvalidUsername);
         }
@@ -221,7 +196,6 @@ async fn update_user_profile(
 
     // ── email ───────────────────────────────────────────────────────────────
     if let Some(new_email) = &data.email {
-        info!("Updated! email: {}", new_email);
         if new_email.is_empty() || !utils::is_valid_email(new_email) {
             return Err(ProfileError::InvalidEmail);
         }
@@ -253,8 +227,6 @@ async fn update_user_profile(
 // ===========================================================================
 
 /// POST /api/settings/password — change the authenticated user's password.
-///
-/// Hard-auth: `user_id` is pre-verified by the router (JWT + DB + IP).
 pub async fn handle_change_password(
     req: Request<hyper::body::Incoming>,
     state: AppState,
@@ -293,10 +265,6 @@ pub async fn handle_change_password(
 }
 
 /// POST /api/logout — invalidate the current session.
-///
-/// Hard-auth: `user_id` and `claims` are pre-verified by the router.
-/// `claims.session_id` is the revocation key — the router already confirmed
-/// this session exists in the DB, so the delete is guaranteed to hit a real row.
 pub async fn handle_logout(
     req: Request<hyper::body::Incoming>,
     state: AppState,
@@ -323,8 +291,6 @@ pub async fn handle_logout(
 }
 
 /// POST /api/settings/logout-all — revoke every session for this user.
-///
-/// Hard-auth: `user_id` and `claims` are pre-verified by the router.
 pub async fn handle_logout_all(
     req: Request<hyper::body::Incoming>,
     state: AppState,
@@ -355,7 +321,7 @@ async fn parse_password_form(
         .to_bytes();
 
     serde_json::from_slice::<ChangePasswordData>(&body).map_err(|e| {
-        error!("Failed to parse change password JSON: {}", e);
+        error!("Failed to parse JSON: {}", e);
         SettingsError::InternalError
     })
 }
@@ -409,7 +375,6 @@ async fn change_user_password(
             SettingsError::DatabaseError
         })?;
 
-    // Revoke all sessions — any stolen token is now dead
     login::delete_all_user_sessions(&state.db, user_id)
         .await
         .map_err(|e| {
@@ -424,12 +389,6 @@ async fn change_user_password(
 // ===========================================================================
 
 /// DELETE /api/user — permanently delete the authenticated user's own account.
-///
-/// Hard-auth: `user_id` and `claims` are pre-verified by the router (JWT + DB + IP).
-/// Sequence:
-///   1. Revoke every session for this user so no token can be reused.
-///   2. Delete the user row (cascades to any FK-constrained child rows).
-///   3. Clear the auth cookie so the browser drops the session immediately.
 pub async fn handle_delete_profile(
     req: Request<hyper::body::Incoming>,
     state: AppState,
@@ -440,21 +399,25 @@ pub async fn handle_delete_profile(
 
     let secure_cookie = is_https(&req);
 
-    // Revoke all sessions first so any in-flight requests are dead.
-    match login::delete_all_user_sessions(&state.db, user_id).await {
-        Ok(_) => info!("All sessions revoked for deleted user {}", user_id),
-        Err(e) => error!("Failed to revoke sessions for user {}: {}", user_id, e),
-    }
+    // Use a transaction for atomic deletion
+    let mut tx = state.db.begin().await?;
 
-    // Delete the user row.
-    state
-        .db
-        .call(move |conn| {
-            conn.execute("DELETE FROM users WHERE id = ?1", [user_id])?;
-            Ok::<_, rusqlite::Error>(())
-        })
-        .await
-        .context("Failed to delete user account")?;
+    sqlx::query("DELETE FROM sessions WHERE user_id = ?")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+
+    sqlx::query("DELETE FROM password_reset_tokens WHERE user_id = ?")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+
+    sqlx::query("DELETE FROM users WHERE id = ?")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
 
     info!("Account deleted for user {}", user_id);
 
@@ -473,11 +436,6 @@ pub async fn handle_delete_profile(
 // ===========================================================================
 
 /// POST /api/profile/avatar — replace the authenticated user's profile picture.
-///
-/// Accepts `multipart/form-data` with a single field named `avatar`.
-/// Allowed types: JPEG, PNG, GIF, WebP.  Hard cap: 5 MiB.
-///
-/// Hard-auth: `user_id` is pre-verified by the router (JWT + DB + IP).
 pub async fn handle_upload_avatar(
     req: Request<hyper::body::Incoming>,
     state: AppState,
@@ -487,7 +445,6 @@ pub async fn handle_upload_avatar(
 
     const MAX_AVATAR_BYTES: usize = 5 * 1024 * 1024; // 5 MiB
 
-    // ── Parse multipart boundary ─────────────────────────────────────────────
     let content_type = req
         .headers()
         .get(hyper::header::CONTENT_TYPE)
@@ -509,7 +466,6 @@ pub async fn handle_upload_avatar(
         .map_err(|e| anyhow::anyhow!("Multipart read error: {}", e))?
     {
         if field.name().unwrap_or("") != "avatar" {
-            // Drain unknown fields silently.
             while field
                 .chunk()
                 .await
@@ -519,7 +475,6 @@ pub async fn handle_upload_avatar(
             continue;
         }
 
-        // Derive extension from MIME type reported by the client.
         let mime = field.content_type().map(|m| m.to_string());
         detected_ext = Some(
             match mime.as_deref().unwrap_or("") {
@@ -528,7 +483,6 @@ pub async fn handle_upload_avatar(
                 "image/gif" => "gif",
                 "image/webp" => "webp",
                 other => {
-                    // Reject non-image content types up front.
                     if !other.is_empty() {
                         return deliver_error_json(
                             "INVALID_TYPE",
@@ -536,7 +490,7 @@ pub async fn handle_upload_avatar(
                             StatusCode::BAD_REQUEST,
                         );
                     }
-                    "jpg" // fallback when client omits Content-Type
+                    "jpg"
                 }
             }
             .to_string(),
@@ -569,7 +523,6 @@ pub async fn handle_upload_avatar(
 
     let ext = detected_ext.unwrap_or_else(|| "jpg".to_string());
 
-    // ── Write new file to disk ───────────────────────────────────────────────
     let uploads_dir = state.config.read().await.paths.uploads_dir.clone();
     let avatars_dir = format!("{}/avatars", uploads_dir);
 
@@ -577,10 +530,6 @@ pub async fn handle_upload_avatar(
         .await
         .context("Failed to create avatars directory")?;
 
-    // Deterministic filename: <user_id>.<ext>
-    // Writing this path overwrites the old avatar automatically when the
-    // extension matches.  If the extension changed we delete the old file
-    // first so stale files don't accumulate on disk.
     let filename = format!("{}.{}", user_id, ext);
     let new_path = format!("{}/{}", avatars_dir, filename);
 
@@ -588,14 +537,12 @@ pub async fn handle_upload_avatar(
         .await
         .with_context(|| format!("Failed to write avatar to {}", new_path))?;
 
-    // ── Swap out old file (best-effort) ──────────────────────────────────────
     if let Ok(Some(old_path)) = utils::get_user_avatar(&state.db, user_id).await
         && let Err(e) = tokio::fs::remove_file(&old_path).await
     {
         warn!("Could not remove old avatar {:?}: {}", old_path, e);
     }
 
-    // ── Persist new path ─────────────────────────────────────────────────────
     register::set_user_avatar(&state.db, user_id, new_path)
         .await
         .context("Failed to update avatar path in DB")?;
@@ -617,19 +564,12 @@ pub async fn handle_upload_avatar(
 // ===========================================================================
 
 /// GET /api/avatar/:user_id — serve a user's avatar image.
-///
-/// Returns 404 when the user has no avatar set, allowing the frontend to
-/// fall back to initials gracefully.
-///
-/// Light-auth: `claims` are pre-verified by the router (JWT only).
-/// The auth cookie is sent automatically on same-origin `<img>` requests.
 pub async fn handle_get_avatar(
     _req: Request<hyper::body::Incoming>,
     state: AppState,
     _claims: JwtClaims,
     target_user_id: i64,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
-    // Look up stored path
     let avatar_path = match utils::get_user_avatar(&state.db, target_user_id).await {
         Ok(Some(p)) => p,
         Ok(None) => {
@@ -642,18 +582,15 @@ pub async fn handle_get_avatar(
         Err(e) => return Err(anyhow::anyhow!("DB error fetching avatar: {}", e)),
     };
 
-    // Read bytes from disk
     let bytes = match tokio::fs::read(&avatar_path).await {
         Ok(b) => b,
         Err(e) => {
             error!("Avatar file missing from disk ({:?}): {}", avatar_path, e);
-            // Treat a missing file as "no avatar" — clean up the stale DB row.
             let _ = register::clear_user_avatar(&state.db, target_user_id).await;
             return deliver_error_json("NOT_FOUND", "Avatar not found", StatusCode::NOT_FOUND);
         }
     };
 
-    // Derive MIME type from extension
     let mime = match std::path::Path::new(&avatar_path)
         .extension()
         .and_then(|e| e.to_str())
@@ -671,8 +608,6 @@ pub async fn handle_get_avatar(
     Response::builder()
         .status(StatusCode::OK)
         .header(hyper::header::CONTENT_TYPE, mime)
-        // Cache for 5 minutes — short enough to show a fresh upload quickly,
-        // long enough to avoid hammering the disk on every re-render.
         .header(hyper::header::CACHE_CONTROL, "public, max-age=300")
         .body(Full::new(Bytes::from(bytes)).boxed())
         .context("Failed to build avatar response")

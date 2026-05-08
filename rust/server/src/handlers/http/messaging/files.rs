@@ -1,11 +1,4 @@
 //! File-sharing handlers
-//!
-//! Routes
-//! ──────
-//!   POST   /api/files/upload      (hard auth) — multipart upload
-//!   GET    /api/files/:id         (light auth) — download / stream a file
-//!   GET    /api/files?chat_id=N   (light auth) — list files in a chat
-//!   DELETE /api/files/:id         (hard auth)  — delete own file
 
 use std::convert::Infallible;
 
@@ -15,7 +8,6 @@ use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full};
 use hyper::{Request, Response, StatusCode, header};
 use multer::Multipart;
-use tokio_rusqlite::rusqlite;
 use tracing::{error, info, warn};
 
 use crate::AppState;
@@ -24,42 +16,12 @@ use crate::handlers::http::utils::{deliver_error_json, deliver_serialized_json};
 use shared::types::jwt::JwtClaims;
 use shared::types::sse::SseEvent;
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-/// Hard cap on a single uploaded file (50 MiB).
 pub const MAX_FILE_SIZE: usize = 50 * 1024 * 1024;
-
-/// How many files to return per page by default.
 pub const DEFAULT_PAGE_SIZE: i64 = 50;
-
-// ---------------------------------------------------------------------------
-// POST /api/files/upload
-// ---------------------------------------------------------------------------
 
 /// Accept a `multipart/form-data` upload, persist the bytes to disk, record
 /// metadata in the DB, create a companion `file` message, and broadcast a
 /// `file_shared` SSE event to all chat members.
-///
-/// Expected form fields:
-///   - `file`     — the binary payload (required)
-///   - `chat_id`  — destination chat (required)
-///   - `filename` — original filename override (optional; falls back to the
-///     `filename` from the `Content-Disposition` header)
-///
-/// # Atomicity
-///
-/// The `files` row and the companion `messages` row are inserted inside a
-/// single SQLite transaction.  Previously these were separate inserts with a
-/// back-fill step, which left an orphaned `files` row (and bytes on disk) if
-/// the message insert failed.  Now both inserts succeed or fail together.
-///
-/// Note: the disk write still happens before the transaction.  If the process
-/// crashes between the disk write and the transaction commit, unreferenced
-/// bytes may accumulate under `uploads_dir`.  A periodic scrub of files not
-/// referenced in the `files` table is the correct mitigation for that edge
-/// case, but is not yet implemented.
 pub async fn handle_upload_file(
     req: Request<hyper::body::Incoming>,
     state: AppState,
@@ -67,7 +29,6 @@ pub async fn handle_upload_file(
 ) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("File upload request from user {}", user_id);
 
-    // ── 1. Parse Content-Type boundary ──────────────────────────────────────
     let content_type = req
         .headers()
         .get(header::CONTENT_TYPE)
@@ -77,7 +38,6 @@ pub async fn handle_upload_file(
     let boundary = multer::parse_boundary(content_type)
         .map_err(|e| anyhow::anyhow!("Invalid multipart boundary: {}", e))?;
 
-    // ── 2. Stream the multipart body ─────────────────────────────────────────
     let body_stream = req.into_body().into_data_stream();
     let mut multipart = Multipart::new(body_stream, boundary);
 
@@ -133,7 +93,6 @@ pub async fn handle_upload_file(
                 }
             }
             _ => {
-                // Drain unknown fields silently.
                 while field
                     .chunk()
                     .await
@@ -144,7 +103,6 @@ pub async fn handle_upload_file(
         }
     }
 
-    // ── 3. Validate required fields ──────────────────────────────────────────
     let file_bytes = match file_bytes {
         Some(b) if !b.is_empty() => b,
         _ => {
@@ -178,7 +136,6 @@ pub async fn handle_upload_file(
         );
     }
 
-    // ── 4. Authorization — must be a chat member ─────────────────────────────
     let is_member = groups::is_group_member(&state.db, chat_id, user_id)
         .await
         .context("DB error checking membership")?;
@@ -191,7 +148,6 @@ pub async fn handle_upload_file(
         );
     }
 
-    // ── 5. Write bytes to disk ───────────────────────────────────────────────
     let storage_dir = state.config.read().await.paths.uploads_dir.clone();
     let storage_path = utils::build_storage_path(&storage_dir, &filename);
 
@@ -206,13 +162,6 @@ pub async fn handle_upload_file(
     let file_size = file_bytes.len() as i64;
     let storage_path_str = storage_path.to_string_lossy().to_string();
 
-    // ── 6. Build compressed message content ──────────────────────────────────
-    //
-    // Note: `file_id` is not yet known at this point — it is assigned by
-    // SQLite's auto-increment during the transaction below.  The message
-    // content therefore carries filename/mime/size metadata only.  Clients
-    // that need the `file_id` can use the `file_id` field in the HTTP
-    // response or the `file_shared` SSE event, both of which include it.
     let msg_content_json = serde_json::json!({
         "filename":  filename,
         "mime_type": mime_type,
@@ -225,69 +174,50 @@ pub async fn handle_upload_file(
 
     let sent_at = utils::get_timestamp();
 
-    // ── 7. Atomic DB transaction: insert message + file together ─────────────
-    //
-    // Previously these were two separate async DB calls with a back-fill step:
-    //   store_file_record(message_id: None)  →  file_id
-    //   send_message(...)                    →  message_id
-    //   set_file_message_id(file_id, ...)    (back-fill)
-    //
-    // If `send_message` failed, the `files` row was orphaned (no message_id,
-    // unreachable via the API).  Combining both inserts in a single
-    // `conn.transaction()` ensures they succeed or fail atomically.
-    let filename_c = filename.clone();
-    let mime_type_c = mime_type.clone();
+    let mut tx = state.db.begin().await?;
 
-    let (file_id, message_id) = state
-        .db
-        .call(move |conn| {
-            let tx = conn.transaction()?;
+    let res_msg = sqlx::query(
+        "INSERT INTO messages (sender_id, chat_id, content, sent_at, is_encrypted, message_type)
+         VALUES (?, ?, ?, ?, 1, 'file')",
+    )
+    .bind(user_id)
+    .bind(chat_id)
+    .bind(compressed)
+    .bind(sent_at)
+    .execute(&mut *tx)
+    .await?;
+    let message_id = res_msg.last_insert_rowid();
 
-            // Insert the companion message first.
-            tx.execute(
-                "INSERT INTO messages (sender_id, chat_id, content, sent_at, is_encrypted, message_type)
-                 VALUES (?1, ?2, ?3, ?4, 1, 'file')",
-                rusqlite::params![user_id, chat_id, compressed, sent_at],
-            )?;
-            let message_id = tx.last_insert_rowid();
+    let res_file = sqlx::query(
+        "INSERT INTO files
+             (uploader_id, chat_id, filename, mime_type, size,
+              storage_path, uploaded_at, message_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(user_id)
+    .bind(chat_id)
+    .bind(&filename)
+    .bind(&mime_type)
+    .bind(file_size)
+    .bind(storage_path_str)
+    .bind(sent_at)
+    .bind(message_id)
+    .execute(&mut *tx)
+    .await?;
+    let file_id = res_file.last_insert_rowid();
 
-            // Insert the file record referencing the message.
-            tx.execute(
-                "INSERT INTO files
-                     (uploader_id, chat_id, filename, mime_type, size,
-                      storage_path, uploaded_at, message_id)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                rusqlite::params![
-                    user_id,
-                    chat_id,
-                    filename_c,
-                    mime_type_c,
-                    file_size,
-                    storage_path_str,
-                    sent_at,
-                    message_id,
-                ],
-            )?;
-            let file_id = tx.last_insert_rowid();
-
-            tx.commit()?;
-            Ok::<_, rusqlite::Error>((file_id, message_id))
-        })
-        .await
-        .context("Failed to complete file upload transaction")?;
+    tx.commit().await?;
 
     info!(
         "File {} uploaded by user {} to chat {} (message {})",
         file_id, user_id, chat_id, message_id
     );
 
-    // ── 8. SSE broadcast ─────────────────────────────────────────────────────
     sse_broadcast_file_shared(
         &state, file_id, user_id, chat_id, &filename, &mime_type, file_size,
     )
     .await;
 
-    // ── 9. Respond ───────────────────────────────────────────────────────────
     deliver_serialized_json(
         &serde_json::json!({
             "status":     "success",
@@ -301,15 +231,7 @@ pub async fn handle_upload_file(
     )
 }
 
-// ---------------------------------------------------------------------------
-// GET /api/files/:id
-// ---------------------------------------------------------------------------
-
 /// Stream a file to the client.
-///
-/// Access control: the requesting user must be a member of the chat the file
-/// belongs to.  The original filename and MIME type are restored from the DB
-/// so the browser handles the download correctly.
 pub async fn handle_download_file(
     req: Request<hyper::body::Incoming>,
     state: AppState,
@@ -319,7 +241,6 @@ pub async fn handle_download_file(
     let user_id = claims.user_id;
     info!("File download: file={} user={}", file_id, user_id);
 
-    // ── 1. Load metadata ─────────────────────────────────────────────────────
     let rec = match files::get_file(&state.db, file_id).await? {
         Some(r) => r,
         None => {
@@ -327,7 +248,6 @@ pub async fn handle_download_file(
         }
     };
 
-    // ── 2. Auth — must be a chat member ──────────────────────────────────────
     let is_member = groups::is_group_member(&state.db, rec.chat_id, user_id)
         .await
         .context("DB error checking membership")?;
@@ -340,7 +260,6 @@ pub async fn handle_download_file(
         );
     }
 
-    // ── 3. Check for inline vs attachment preference ──────────────────────────
     let inline = req
         .uri()
         .query()
@@ -348,12 +267,10 @@ pub async fn handle_download_file(
         .split('&')
         .any(|p| p == "inline=1" || p == "inline=true");
 
-    // ── 4. Read from disk ────────────────────────────────────────────────────
     let file_bytes = tokio::fs::read(&rec.storage_path)
         .await
         .with_context(|| format!("Failed to read file from {:?}", rec.storage_path))?;
 
-    // ── 5. Build response ────────────────────────────────────────────────────
     let disposition = if inline {
         format!("inline; filename=\"{}\"", rec.filename)
     } else {
@@ -372,16 +289,7 @@ pub async fn handle_download_file(
     Ok(response)
 }
 
-// ---------------------------------------------------------------------------
-// GET /api/files?chat_id=N
-// ---------------------------------------------------------------------------
-
 /// List files shared in a chat, newest first.
-///
-/// Query params:
-///   - `chat_id` (required)
-///   - `limit`   (optional, default 50, max 100)
-///   - `offset`  (optional, default 0)
 pub async fn handle_get_chat_files(
     req: Request<hyper::body::Incoming>,
     state: AppState,
@@ -461,26 +369,7 @@ pub async fn handle_get_chat_files(
     )
 }
 
-// ---------------------------------------------------------------------------
-// DELETE /api/files/:id
-// ---------------------------------------------------------------------------
-
-/// Delete a file.  Only the uploader (or an admin) may delete their files.
-/// Removes both the DB record and the bytes on disk.
 /// Delete a file and its companion message atomically.
-///
-/// Only the uploader may delete their own files.
-///
-/// # Companion message cleanup
-///
-/// Previously the handler deleted only the `files` DB row and bytes on disk,
-/// leaving the companion `messages` row (with `message_type = 'file'`) intact.
-/// Clients would render a broken file card in the chat with no backing bytes.
-///
-/// Now the `files` row and the companion `messages` row are deleted in a
-/// single transaction — the DB rows are the authoritative access gate, so
-/// deleting them first ensures the file is inaccessible even if disk removal
-/// fails afterwards.
 pub async fn handle_delete_file(
     _req: Request<hyper::body::Incoming>,
     state: AppState,
@@ -507,35 +396,27 @@ pub async fn handle_delete_file(
     let companion_message_id = rec.message_id;
     let storage_path = rec.storage_path.clone();
 
-    // Delete the files row and the companion message atomically.
-    let deleted = state
-        .db
-        .call(move |conn| {
-            let tx = conn.transaction()?;
+    let mut tx = state.db.begin().await?;
 
-            let count = tx.execute(
-                "DELETE FROM files WHERE id = ?1",
-                rusqlite::params![file_id],
-            )?;
+    let res = sqlx::query("DELETE FROM files WHERE id = ?")
+        .bind(file_id)
+        .execute(&mut *tx)
+        .await?;
 
-            if let Some(msg_id) = companion_message_id {
-                tx.execute(
-                    "DELETE FROM messages WHERE id = ?1",
-                    rusqlite::params![msg_id],
-                )?;
-            }
+    if let Some(msg_id) = companion_message_id {
+        sqlx::query("DELETE FROM messages WHERE id = ?")
+            .bind(msg_id)
+            .execute(&mut *tx)
+            .await?;
+    }
 
-            tx.commit()?;
-            Ok::<_, rusqlite::Error>(count > 0)
-        })
-        .await
-        .context("Failed to delete file record")?;
+    tx.commit().await?;
+    let deleted = res.rows_affected() > 0;
 
     if !deleted {
         return deliver_error_json("NOT_FOUND", "File not found", StatusCode::NOT_FOUND);
     }
 
-    // Best-effort disk removal — log but don't fail the request if it errors.
     if let Err(e) = tokio::fs::remove_file(&storage_path).await {
         warn!("Could not remove file {:?} from disk: {}", storage_path, e);
     } else {
@@ -547,10 +428,6 @@ pub async fn handle_delete_file(
         StatusCode::OK,
     )
 }
-
-// ---------------------------------------------------------------------------
-// SSE helper
-// ---------------------------------------------------------------------------
 
 async fn sse_broadcast_file_shared(
     state: &AppState,
@@ -599,7 +476,3 @@ async fn sse_broadcast_file_shared(
         error!("SSE file_shared broadcast failed: {:?}", e);
     }
 }
-
-// ---------------------------------------------------------------------------
-// Private helpers
-// ---------------------------------------------------------------------------

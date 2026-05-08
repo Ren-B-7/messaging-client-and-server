@@ -31,7 +31,6 @@ pub async fn handle_register_api(
             info!("API User registered successfully: ID {}", user_id);
             let cookie = create_session_cookie("auth_id", &jwt, secure_cookie)?;
 
-            // Returns JSON success message with the cookie header
             Ok(deliver_serialized_json_with_cookie(
                 &serde_json::json!({ "status": "success", "user_id": user_id }),
                 StatusCode::CREATED,
@@ -86,19 +85,12 @@ async fn register_internal(
     };
 
     // The first registered user is auto-promoted to admin (see db::register).
-    // Re-fetch the flag so the JWT carries the correct value.
-    let is_admin = state
-        .db
-        .call(move |conn| {
-            let v: i64 = conn
-                .query_row("SELECT is_admin FROM users WHERE id = ?1", [user_id], |r| {
-                    r.get(0)
-                })
-                .unwrap_or(0);
-            Ok::<_, tokio_rusqlite::rusqlite::Error>(v != 0)
-        })
+    let row: (i64,) = sqlx::query_as("SELECT is_admin FROM users WHERE id = ?")
+        .bind(user_id)
+        .fetch_one(&state.db)
         .await
-        .unwrap_or(false);
+        .unwrap_or((0,));
+    let is_admin = row.0 != 0;
 
     let session_id = generate_uuid_token();
     let session_created =

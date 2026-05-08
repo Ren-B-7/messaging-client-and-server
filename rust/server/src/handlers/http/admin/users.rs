@@ -13,9 +13,20 @@ use crate::database::{ban, register, utils};
 use crate::handlers::http::routes::PathParams;
 use crate::handlers::http::utils::json_response::*;
 
+use sqlx::FromRow;
+
+#[derive(FromRow)]
+struct UserRow {
+    id: i64,
+    username: String,
+    email: Option<String>,
+    created_at: i64,
+    is_banned: i64, // SQLite BOOLEAN is i64
+    ban_reason: Option<String>,
+    is_admin: i64,
+}
+
 /// GET /admin/api/users — list all users.
-///
-/// Hard-auth + is_admin guard applied by the router before this is called.
 pub async fn handle_get_users(
     _req: Request<IncomingBody>,
     state: AppState,
@@ -23,33 +34,29 @@ pub async fn handle_get_users(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Serving user list");
 
-    let users = state
-        .db
-        .call(|conn| {
-            let mut stmt = conn.prepare(
-                "SELECT id, username, email, created_at, is_banned, ban_reason, is_admin
-                 FROM   users
-                 ORDER  BY created_at DESC",
-            )?;
+    let rows: Vec<UserRow> = sqlx::query_as(
+        "SELECT id, username, email, created_at, is_banned, ban_reason, is_admin
+         FROM   users
+         ORDER  BY created_at DESC",
+    )
+    .fetch_all(&state.db)
+    .await
+    .context("Failed to query user list")?;
 
-            let rows = stmt
-                .query_map([], |row| {
-                    Ok(serde_json::json!({
-                        "id":         row.get::<_, i64>(0)?,
-                        "username":   row.get::<_, String>(1)?,
-                        "email":      row.get::<_, Option<String>>(2)?,
-                        "created_at": row.get::<_, i64>(3)?,
-                        "is_banned":  row.get::<_, i64>(4)? != 0,
-                        "ban_reason": row.get::<_, Option<String>>(5)?,
-                        "is_admin":   row.get::<_, i64>(6)? != 0,
-                    }))
-                })?
-                .collect::<std::result::Result<Vec<_>, tokio_rusqlite::rusqlite::Error>>()?;
-
-            Ok::<_, tokio_rusqlite::rusqlite::Error>(rows)
+    let users: Vec<serde_json::Value> = rows
+        .into_iter()
+        .map(|r| {
+            serde_json::json!({
+                "id":         r.id,
+                "username":   r.username,
+                "email":      r.email,
+                "created_at": r.created_at,
+                "is_banned":  r.is_banned != 0,
+                "ban_reason": r.ban_reason,
+                "is_admin":   r.is_admin != 0,
+            })
         })
-        .await
-        .context("Failed to query user list")?;
+        .collect();
 
     deliver_success_json(
         Some(serde_json::json!({ "users": users, "total": users.len() })),
@@ -58,9 +65,7 @@ pub async fn handle_get_users(
     )
 }
 
-/// GET /admin/api/sessions — list all users.
-///
-/// Hard-auth + is_admin guard applied by the router before this is called.
+/// GET /admin/api/sessions — list all active sessions.
 pub async fn handle_get_sessions(
     _req: Request<IncomingBody>,
     state: AppState,
@@ -70,35 +75,32 @@ pub async fn handle_get_sessions(
 
     let now = utils::get_timestamp();
 
-    let sessions = state
-        .db
-        .call(move |conn| {
-            let mut stmt = conn.prepare(
-                "SELECT s.id, s.user_id, u.username, s.ip_address,
-                        s.created_at, s.expires_at
-                 FROM   sessions s
-                 JOIN   users u ON u.id = s.user_id
-                 WHERE  s.expires_at > ?1
-                 ORDER  BY s.created_at DESC",
-            )?;
+    let rows: Vec<(i64, i64, String, Option<String>, i64, i64)> = sqlx::query_as(
+        "SELECT s.id, s.user_id, u.username, s.ip_address,
+                s.created_at, s.expires_at
+         FROM   sessions s
+         JOIN   users u ON u.id = s.user_id
+         WHERE  s.expires_at > ?
+         ORDER  BY s.created_at DESC",
+    )
+    .bind(now)
+    .fetch_all(&state.db)
+    .await
+    .context("Failed to query sessions")?;
 
-            let rows = stmt
-                .query_map([now], |row| {
-                    Ok(serde_json::json!({
-                        "id":         row.get::<_, i64>(0)?,
-                        "user_id":    row.get::<_, i64>(1)?,
-                        "username":   row.get::<_, String>(2)?,
-                        "ip_address": row.get::<_, Option<String>>(3)?,
-                        "created_at": row.get::<_, i64>(4)?,
-                        "expires_at": row.get::<_, i64>(5)?,
-                    }))
-                })?
-                .collect::<std::result::Result<Vec<_>, tokio_rusqlite::rusqlite::Error>>()?;
-
-            Ok::<_, tokio_rusqlite::rusqlite::Error>(rows)
+    let sessions: Vec<serde_json::Value> = rows
+        .into_iter()
+        .map(|r| {
+            serde_json::json!({
+                "id":         r.0,
+                "user_id":    r.1,
+                "username":   r.2,
+                "ip_address": r.3,
+                "created_at": r.4,
+                "expires_at": r.5,
+            })
         })
-        .await
-        .context("Failed to query sessions")?;
+        .collect();
 
     deliver_success_json(
         Some(serde_json::json!({ "sessions": sessions, "total": sessions.len() })),
@@ -108,8 +110,6 @@ pub async fn handle_get_sessions(
 }
 
 /// POST /admin/api/users/ban — ban a user.
-///
-/// Hard-auth + is_admin guard applied by the router.
 pub async fn handle_ban_user(
     req: Request<IncomingBody>,
     state: AppState,
@@ -129,8 +129,6 @@ pub async fn handle_ban_user(
         .cloned()
         .unwrap_or_else(|| "No reason provided".to_string());
 
-    // Strip null bytes and cap length so a malformed request can't write
-    // unbounded data into the ban_reason column.
     let reason = reason.replace('\0', "");
     let reason = if reason.len() > 500 {
         reason.chars().take(500).collect()
@@ -159,8 +157,6 @@ pub async fn handle_ban_user(
 }
 
 /// POST /admin/api/users/unban — unban a user.
-///
-/// Hard-auth + is_admin guard applied by the router.
 pub async fn handle_unban_user(
     req: Request<IncomingBody>,
     state: AppState,
@@ -188,11 +184,7 @@ pub async fn handle_unban_user(
     )
 }
 
-// ... (previous functions handle_get_users, handle_ban_user, handle_unban_user)
-
 /// DELETE /admin/api/users/:id — permanently delete a user.
-///
-/// Hard-auth + is_admin guard applied by the router.
 pub async fn handle_delete_user(
     req: Request<IncomingBody>,
     state: AppState,
@@ -217,12 +209,9 @@ pub async fn handle_delete_user(
 
     info!("Admin {} deleting user {}", admin_id, user_id);
 
-    state
-        .db
-        .call(move |conn| {
-            conn.execute("DELETE FROM users WHERE id = ?1", [user_id])?;
-            Ok::<_, tokio_rusqlite::rusqlite::Error>(())
-        })
+    sqlx::query("DELETE FROM users WHERE id = ?")
+        .bind(user_id)
+        .execute(&state.db)
         .await
         .context("Failed to delete user")?;
 
@@ -234,8 +223,6 @@ pub async fn handle_delete_user(
 }
 
 /// POST /admin/api/users/promote — grant admin privileges to a user.
-///
-/// Hard-auth + is_admin guard applied by the router.
 pub async fn handle_promote_user(
     req: Request<IncomingBody>,
     state: AppState,
@@ -284,8 +271,6 @@ pub async fn handle_promote_user(
 }
 
 /// POST /admin/api/users/demote — revoke admin privileges from a user.
-///
-/// Hard-auth + is_admin guard applied by the router.
 pub async fn handle_demote_user(
     req: Request<IncomingBody>,
     state: AppState,
@@ -372,7 +357,3 @@ async fn parse_body(req: Request<IncomingBody>) -> Result<HashMap<String, String
             .collect::<HashMap<String, String>>())
     }
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------

@@ -1,15 +1,6 @@
 // -----------------------------------------------------------------------
 // handlers/http/messaging/groups.rs
 // -----------------------------------------------------------------------
-// Two quality fixes in this file:
-//
-//  1. handle_get_members: was calling get_user_by_id() in a loop —
-//     one DB query per member. Replaced with a single JOIN query.
-//
-//  2. handle_delete_file: was leaving the companion `message_type='file'`
-//     row in the messages table after deleting the file record and bytes
-//     on disk. The message row is now deleted in the same transaction.
-// -----------------------------------------------------------------------
 
 use anyhow::Context;
 use bytes::Bytes;
@@ -146,13 +137,6 @@ pub async fn handle_create_group(
 // ---------------------------------------------------------------------------
 
 /// List members of a group with their usernames.
-///
-/// # N+1 fix
-///
-/// Previously this called `get_user_by_id()` inside a `for m in members` loop
-/// — one extra DB query per member.  With large groups this scaled linearly.
-///
-/// Now a single JOIN query fetches all member usernames at once.
 pub async fn handle_get_members(
     _req: Request<Incoming>,
     state: AppState,
@@ -161,36 +145,32 @@ pub async fn handle_get_members(
 ) -> anyhow::Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Fetching members for group {}", chat_id);
 
-    // Single query: join group_members with users to get username in one shot.
-    let members_json: Vec<serde_json::Value> = state
-        .db
-        .call(move |conn| {
-            let mut stmt = conn.prepare(
-                "SELECT gm.id, gm.chat_id, gm.user_id, gm.joined_at, gm.role,
-                        u.username
-                 FROM   group_members gm
-                 JOIN   users u ON u.id = gm.user_id
-                 WHERE  gm.chat_id = ?1
-                 ORDER  BY gm.joined_at ASC",
-            )?;
+    let rows: Vec<(i64, i64, i64, i64, String, String)> = sqlx::query_as(
+        "SELECT gm.id, gm.chat_id, gm.user_id, gm.joined_at, gm.role,
+                u.username
+         FROM   chat_members gm
+         JOIN   users u ON u.id = gm.user_id
+         WHERE  gm.chat_id = ?
+         ORDER  BY gm.joined_at ASC",
+    )
+    .bind(chat_id)
+    .fetch_all(&state.db)
+    .await
+    .context("Failed to fetch group members")?;
 
-            let rows = stmt
-                .query_map([chat_id], |row| {
-                    Ok(serde_json::json!({
-                        "id":        row.get::<_, i64>(0)?,
-                        "chat_id":   row.get::<_, i64>(1)?,
-                        "user_id":   row.get::<_, i64>(2)?,
-                        "joined_at": row.get::<_, i64>(3)?,
-                        "role":      row.get::<_, String>(4)?,
-                        "username":  row.get::<_, String>(5)?,
-                    }))
-                })?
-                .collect::<std::result::Result<Vec<_>, tokio_rusqlite::rusqlite::Error>>()?;
-
-            Ok::<_, tokio_rusqlite::rusqlite::Error>(rows)
+    let members_json: Vec<serde_json::Value> = rows
+        .into_iter()
+        .map(|r| {
+            serde_json::json!({
+                "id":        r.0,
+                "chat_id":   r.1,
+                "user_id":   r.2,
+                "joined_at": r.3,
+                "role":      r.4,
+                "username":  r.5,
+            })
         })
-        .await
-        .context("Failed to fetch group members")?;
+        .collect();
 
     http::utils::deliver_success_json(
         Some(serde_json::json!({

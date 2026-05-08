@@ -30,15 +30,6 @@ pub const MAX_LIMIT: i64 = 100;
 // ---------------------------------------------------------------------------
 
 /// List all chats (DM + group) for the authenticated user.
-///
-/// # N+1 fix
-///
-/// Previously, for each DM conversation the handler made 3 sequential DB
-/// round-trips: `get_group_members`, `get_user_by_id`, `get_user_avatar`.
-/// With 50 DMs that is 150+ queries.
-///
-/// Now a single JOIN query fetches the other participant's username and avatar
-/// for all DMs at once, replacing the entire inner loop.
 pub async fn handle_get_chats(
     _req: Request<Incoming>,
     state: AppState,
@@ -51,70 +42,42 @@ pub async fn handle_get_chats(
         .await
         .map_err(|e| anyhow::anyhow!("Database error getting chats: {}", e))?;
 
-    // Collect all chat IDs that are DMs so we can enrich them in one query.
     let dm_ids: Vec<i64> = chats
         .iter()
         .filter(|g| g.chat_type == "direct")
         .map(|g| g.id)
         .collect();
 
-    // Single query: for every DM that `user_id` is part of, find the *other*
-    // member's username and avatar.  This replaces the previous per-DM loop
-    // that called get_group_members + get_user_by_id + get_user_avatar
-    // sequentially for each conversation.
-    let dm_info: HashMap<i64, (String, Option<String>)> = if dm_ids.is_empty() {
-        HashMap::new()
-    } else {
-        state
-            .db
-            .call(move |conn| {
-                // Build a parameterised IN clause.  tokio-rusqlite runs this on
-                // the blocking thread so we can use a Vec directly.
-                let placeholders = dm_ids
-                    .iter()
-                    .enumerate()
-                    .map(|(i, _)| format!("?{}", i + 2)) // ?2, ?3, …
-                    .collect::<Vec<_>>()
-                    .join(", ");
+    let mut dm_info: HashMap<i64, (String, Option<String>)> = HashMap::new();
+    if !dm_ids.is_empty() {
+        // sqlx doesn't support binding Vec directly in IN clause easily without macros or extensions.
+        // We'll use a manual join for now or multiple queries if necessary.
+        // For efficiency, we'll build a query with placeholders.
+        let mut query_builder = sqlx::QueryBuilder::new(
+            "SELECT gm.chat_id, u.username, u.avatar_path
+             FROM   chat_members gm
+             JOIN   users u ON u.id = gm.user_id
+             WHERE  gm.user_id != ",
+        );
+        query_builder.push_bind(user_id);
+        query_builder.push(" AND gm.chat_id IN (");
+        let mut separated = query_builder.separated(", ");
+        for id in dm_ids {
+            separated.push_bind(id);
+        }
+        separated.push_unseparated(")");
 
-                let sql = format!(
-                    "SELECT gm.chat_id, u.username, u.avatar_path
-                     FROM   group_members gm
-                     JOIN   users u ON u.id = gm.user_id
-                     WHERE  gm.user_id != ?1
-                       AND  gm.chat_id IN ({placeholders})",
-                    placeholders = placeholders
-                );
-
-                let mut stmt = conn.prepare(&sql)?;
-
-                // Bind user_id as ?1 and all DM chat IDs as ?2…?N.
-                use tokio_rusqlite::rusqlite::types::ToSql;
-                let mut params: Vec<Box<dyn ToSql>> = Vec::with_capacity(dm_ids.len() + 1);
-                params.push(Box::new(user_id));
-                for id in &dm_ids {
-                    params.push(Box::new(*id));
-                }
-                let param_refs: Vec<&dyn ToSql> = params.iter().map(|p| p.as_ref()).collect();
-
-                let rows = stmt.query_map(param_refs.as_slice(), |row| {
-                    let chat_id: i64 = row.get(0)?;
-                    let username: String = row.get(1)?;
-                    let avatar_path: Option<String> = row.get(2)?;
-                    Ok((chat_id, username, avatar_path))
-                })?;
-
-                let mut map = HashMap::new();
-                for row in rows {
-                    let (chat_id, username, avatar_path) = row?;
-                    let avatar_url = avatar_path.map(|_| format!("/api/avatar/{}", chat_id));
-                    map.insert(chat_id, (username, avatar_url));
-                }
-                Ok::<_, tokio_rusqlite::rusqlite::Error>(map)
-            })
+        let rows: Vec<(i64, String, Option<String>)> = query_builder
+            .build_query_as()
+            .fetch_all(&state.db)
             .await
-            .unwrap_or_default()
-    };
+            .unwrap_or_default();
+
+        for (chat_id, username, avatar_path) in rows {
+            let avatar_url = avatar_path.map(|_| format!("/api/avatar/{}", chat_id));
+            dm_info.insert(chat_id, (username, avatar_url));
+        }
+    }
 
     let mut chats_json: Vec<serde_json::Value> = Vec::with_capacity(chats.len());
 
@@ -150,7 +113,6 @@ pub async fn handle_get_chats(
 // ---------------------------------------------------------------------------
 
 /// Create a new direct message (DM) with another user.
-/// Idempotent: returns the existing DM if one already exists between the pair.
 pub async fn handle_create_chat(
     req: Request<Incoming>,
     state: AppState,
@@ -212,10 +174,7 @@ pub async fn handle_create_chat(
     if let Some(existing_chat_id) =
         groups::find_existing_dm(&state.db, user_id, other_user_id).await?
     {
-        // Re-verify membership in case find_existing_dm matched a chat the
-        // caller was removed from.
         if !groups::is_group_member(&state.db, existing_chat_id, user_id).await? {
-            // Re-add the creator to the existing DM if they are missing.
             groups::add_group_member(&state.db, existing_chat_id, user_id, "admin".to_string())
                 .await
                 .context("Failed to rejoin existing DM")?;
@@ -360,17 +319,6 @@ pub async fn handle_get_messages(
 }
 
 /// Mark a single message as read and — now also as delivered if not already.
-///
-/// Previously `mark_delivered` was never called anywhere, meaning
-/// `delivered_at` was always NULL for every message in the system.
-///
-/// The read event implies delivery (if you read it, it was delivered), so
-/// we now call both `mark_delivered` and `mark_read`.  `mark_delivered` uses
-/// `INSERT OR IGNORE` semantics: if `delivered_at` is already set it's a
-/// no-op, so calling it here is safe even for messages that were already
-/// delivered through another path.
-///
-/// Fires a `message_read` SSE event to all chat members except the reader.
 pub async fn handle_mark_read(
     _req: Request<Incoming>,
     state: AppState,
@@ -383,12 +331,10 @@ pub async fn handle_mark_read(
         .await
         .context("Failed to fetch message")?;
 
-    // Mark delivered first (sets delivered_at if not already set).
     messages::mark_delivered(&state.db, message_id)
         .await
         .context("Failed to mark message as delivered")?;
 
-    // Then mark read.
     messages::mark_read(&state.db, message_id)
         .await
         .context("Failed to mark message as read")?;
@@ -405,15 +351,6 @@ pub async fn handle_mark_read(
 }
 
 /// Delete a message the caller sent.
-///
-/// Only the sender may delete their own messages.  The DB function enforces
-/// this with `WHERE id = ?1 AND sender_id = ?2` so the constraint cannot be
-/// bypassed even if the router auth is misconfigured.
-///
-/// Fires a `message_deleted` SSE event to all chat members so clients can
-/// remove the message from their local state without polling.
-///
-/// Hard-auth route: `user_id` is pre-verified (JWT + DB session + IP).
 pub async fn handle_delete_message(
     _req: Request<Incoming>,
     state: AppState,
@@ -425,7 +362,6 @@ pub async fn handle_delete_message(
         message_id, user_id
     );
 
-    // Fetch the message first to get chat_id for the SSE broadcast.
     let msg = match messages::get_message_by_id(&state.db, message_id).await? {
         Some(m) => m,
         None => {
@@ -433,8 +369,6 @@ pub async fn handle_delete_message(
         }
     };
 
-    // Verify membership — prevents probing existence of messages in chats the
-    // caller doesn't belong to.
     let is_member = groups::is_group_member(&state.db, msg.chat_id, user_id)
         .await
         .context("DB error checking membership")?;
@@ -447,13 +381,11 @@ pub async fn handle_delete_message(
         );
     }
 
-    // delete_message enforces sender_id = user_id at the SQL level.
     let deleted = messages::delete_message(&state.db, message_id, user_id)
         .await
         .context("Failed to delete message")?;
 
     if !deleted {
-        // Row exists (we fetched it above) but sender_id didn't match.
         return deliver_error_json(
             "FORBIDDEN",
             "You can only delete your own messages",
@@ -463,7 +395,6 @@ pub async fn handle_delete_message(
 
     info!("Message {} deleted by user {}", message_id, user_id);
 
-    // Broadcast so every connected client removes the message from their UI.
     sse_broadcast_message_deleted(&state, message_id, user_id, msg.chat_id).await;
 
     deliver_success_json(
@@ -478,25 +409,6 @@ pub async fn handle_delete_message(
 
 /// Return the total number of unread messages for the authenticated user
 /// across all their chats, and a per-chat breakdown.
-///
-/// Response shape:
-/// ```json
-/// {
-///   "status": "success",
-///   "data": {
-///     "total": 12,
-///     "by_chat": [
-///       { "chat_id": 5, "unread": 8 },
-///       { "chat_id": 9, "unread": 4 }
-///     ]
-///   }
-/// }
-/// ```
-///
-/// If `?chat_id=N` is supplied, only that chat's count is returned (and
-/// `total` equals the single count).
-///
-/// Light-auth route: no DB session lookup.
 pub async fn handle_get_unread(
     req: Request<Incoming>,
     state: AppState,
@@ -505,14 +417,12 @@ pub async fn handle_get_unread(
     let user_id = claims.user_id;
     info!("Unread count request for user {}", user_id);
 
-    // Optional ?chat_id=N filter.
     let chat_id_filter: Option<i64> =
         form_urlencoded::parse(req.uri().query().unwrap_or("").as_bytes())
             .find(|(k, _)| k == "chat_id")
             .and_then(|(_, v)| v.parse().ok());
 
     if let Some(chat_id) = chat_id_filter {
-        // Single-chat path: one DB call.
         let count = messages::get_unread_count_for_chat(&state.db, chat_id, user_id)
             .await
             .context("Failed to fetch unread count for chat")?;
@@ -527,53 +437,49 @@ pub async fn handle_get_unread(
         );
     }
 
-    // All-chats path: fetch total and per-chat breakdown in one query.
-    let (total, by_chat) = state
-        .db
-        .call(move |conn| {
-            // Total across all chats.
-            let total: i64 = conn
-                .query_row(
-                    "SELECT COUNT(*)
-                     FROM messages m
-                     INNER JOIN group_members gm ON gm.chat_id = m.chat_id
-                     WHERE gm.user_id = ?1
-                       AND m.sender_id != ?1
-                       AND m.read_at IS NULL",
-                    [user_id],
-                    |r| r.get(0),
-                )
-                .unwrap_or(0);
+    let total: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*)
+         FROM messages m
+         INNER JOIN chat_members gm ON gm.chat_id = m.chat_id
+         WHERE gm.user_id = ?
+           AND m.sender_id != ?
+           AND m.read_at IS NULL",
+    )
+    .bind(user_id)
+    .bind(user_id)
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or((0,));
 
-            // Per-chat breakdown — only chats with > 0 unread.
-            let mut stmt = conn.prepare(
-                "SELECT m.chat_id, COUNT(*) as unread
-                 FROM messages m
-                 INNER JOIN group_members gm ON gm.chat_id = m.chat_id
-                 WHERE gm.user_id = ?1
-                   AND m.sender_id != ?1
-                   AND m.read_at IS NULL
-                 GROUP BY m.chat_id
-                 ORDER BY unread DESC",
-            )?;
+    let rows: Vec<(i64, i64)> = sqlx::query_as(
+        "SELECT m.chat_id, COUNT(*) as unread
+         FROM messages m
+         INNER JOIN chat_members gm ON gm.chat_id = m.chat_id
+         WHERE gm.user_id = ?
+           AND m.sender_id != ?
+           AND m.read_at IS NULL
+         GROUP BY m.chat_id
+         ORDER BY unread DESC",
+    )
+    .bind(user_id)
+    .bind(user_id)
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
 
-            let rows = stmt
-                .query_map([user_id], |row| {
-                    Ok(serde_json::json!({
-                        "chat_id": row.get::<_, i64>(0)?,
-                        "unread":  row.get::<_, i64>(1)?,
-                    }))
-                })?
-                .collect::<std::result::Result<Vec<_>, tokio_rusqlite::rusqlite::Error>>()?;
-
-            Ok::<_, tokio_rusqlite::rusqlite::Error>((total, rows))
+    let by_chat: Vec<serde_json::Value> = rows
+        .into_iter()
+        .map(|r| {
+            serde_json::json!({
+                "chat_id": r.0,
+                "unread":  r.1,
+            })
         })
-        .await
-        .context("Failed to fetch unread counts")?;
+        .collect();
 
     deliver_success_json(
         Some(serde_json::json!({
-            "total":   total,
+            "total":   total.0,
             "by_chat": by_chat,
         })),
         None,
@@ -828,9 +734,6 @@ async fn parse_message_body(
 }
 
 pub fn validate_message(data: &SendMessageData) -> anyhow::Result<(), MessageError> {
-    // Trim before the empty check so whitespace-only content ("   ", "\t\n")
-    // is treated the same as an empty string — both are semantically empty
-    // messages that should never be stored.
     if data.content.trim().is_empty() {
         return Err(MessageError::EmptyMessage);
     }
@@ -952,6 +855,7 @@ async fn retrieve_messages(
         })
         .collect()
 }
+
 async fn sse_broadcast_message_deleted(
     state: &AppState,
     message_id: i64,

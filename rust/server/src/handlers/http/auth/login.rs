@@ -49,7 +49,6 @@ async fn login_internal(
     req: Request<hyper::body::Incoming>,
     state: AppState,
 ) -> anyhow::Result<(i64, hyper::header::HeaderValue), LoginError> {
-    // Simplified return
     let ip_address = get_client_ip(&req);
     let user_agent = get_user_agent(&req).unwrap_or_default();
     let secure_cookie = is_https(&req);
@@ -110,16 +109,12 @@ pub fn validate_login(data: &LoginData) -> anyhow::Result<(), LoginError> {
     if data.username.is_empty() {
         return Err(LoginError::MissingField("username".to_string()));
     }
-    // Cap at 32 chars — same limit as registration. Prevents a client from
-    // sending a multi-MB username string that gets logged and passed to the DB.
     if data.username.len() > 32 {
         return Err(LoginError::MissingField("username".to_string()));
     }
     if data.password.is_empty() {
         return Err(LoginError::MissingField("password".to_string()));
     }
-    // Passwords are never stored — Argon2id compares against the stored hash.
-    // Still cap at 1024 bytes to avoid a long-password DoS on the hash itself.
     if data.password.len() > 1024 {
         return Err(LoginError::MissingField("password".to_string()));
     }
@@ -130,12 +125,6 @@ pub fn validate_login(data: &LoginData) -> anyhow::Result<(), LoginError> {
 // Core login logic
 // ---------------------------------------------------------------------------
 
-/// Verify credentials, create a DB session, and mint a signed JWT.
-///
-/// The JWT embeds `{username, user_id, session_id, user_agent, is_admin}` so
-/// that GET requests can be authorised with **zero DB reads** (signature
-/// verification only).  The `session_id` UUID links back to the DB row for
-/// revocation checks on mutating requests.
 async fn attempt_login(
     data: &LoginData,
     state: &AppState,
@@ -171,21 +160,13 @@ async fn attempt_login(
         return Err(LoginError::InvalidCredentials);
     }
 
-    // Check whether this user is an admin so we can embed the flag in the JWT.
-    let is_admin = state
-        .db
-        .call(move |conn| {
-            let v: i64 = conn
-                .query_row(
-                    "SELECT is_admin FROM users WHERE id = ?1",
-                    [user_auth.id],
-                    |r| r.get(0),
-                )
-                .unwrap_or(0);
-            Ok::<_, tokio_rusqlite::rusqlite::Error>(v != 0)
-        })
+    // Check whether this user is an admin
+    let row: (i64,) = sqlx::query_as("SELECT is_admin FROM users WHERE id = ?")
+        .bind(user_auth.id)
+        .fetch_one(&state.db)
         .await
-        .unwrap_or(false);
+        .unwrap_or((0,));
+    let is_admin = row.0 != 0;
 
     let session_id = generate_uuid_token();
     let token_expiry_secs = state.config.read().await.auth.token_expiry_minutes * 60;

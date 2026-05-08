@@ -105,7 +105,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let rate_limiter_cleanup = state.clone().rate_limiter;
     let admin_rate_limiter_cleanup = admin_rate_limiter.clone();
-    let db_cleanup = state.clone().db;
+    let db_cleanup = state.db.clone();
     let sse_manager_clone = state.clone().sse_manager;
     let metrics_clone = state.clone().metrics;
     let timeout = Duration::from_secs(state.config.read().await.server.timeout);

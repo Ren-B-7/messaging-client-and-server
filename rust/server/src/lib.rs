@@ -4,7 +4,7 @@ use hyper::{
     Method,
     header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderValue},
 };
-use tokio_rusqlite::Connection;
+use sqlx::sqlite::SqlitePool;
 use tower_http::cors::CorsLayer;
 use tracing::info;
 
@@ -39,7 +39,7 @@ use shared::config::LiveConfig;
 /// would invalidate every live session immediately, so it requires a restart.
 #[derive(Clone, Debug)]
 pub struct AppState {
-    pub db: Arc<Connection>,
+    pub db: SqlitePool,
     pub config: LiveConfig,
     pub ip_filter: IpFilter,
     pub rate_limiter: RateLimiter,
@@ -54,7 +54,7 @@ pub struct AppState {
 impl AppState {
     pub fn new(
         config: LiveConfig,
-        db: Connection,
+        db: SqlitePool,
         jwt_secret: String,
         user_router: Arc<Router>,
         admin_router: Arc<Router>,
@@ -65,7 +65,7 @@ impl AppState {
             .as_secs() as i64;
 
         Self {
-            db: Arc::new(db),
+            db,
             config,
             ip_filter: IpFilter::new(),
             rate_limiter: RateLimiter::new(100, 200),

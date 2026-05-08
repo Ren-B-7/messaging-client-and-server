@@ -1,11 +1,10 @@
+use sqlx::sqlite::SqlitePool;
 use std::path::PathBuf;
 use tempfile::TempDir;
-/// Common utilities shared across all database tests
-use tokio_rusqlite::Connection;
 
 /// Database test context holding temporary database and path
 pub struct DbTestContext {
-    pub db: Connection,
+    pub db: SqlitePool,
     pub temp_dir: TempDir,
     pub db_path: PathBuf,
 }
@@ -17,7 +16,7 @@ impl DbTestContext {
         let db_path = temp_dir.path().join("test.db");
 
         // Initialize database connection
-        let db = Connection::open(db_path.clone()).await?;
+        let db = SqlitePool::connect(&format!("sqlite:{}", db_path.to_string_lossy())).await?;
 
         Ok(Self {
             db,
@@ -28,15 +27,13 @@ impl DbTestContext {
 
     /// Run database initialization/schema setup
     pub async fn initialize_schema(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        // This should match your actual schema initialization
-        // For now, it's a placeholder
-        // You'll want to call your actual schema setup function here
+        server::database::create::create_tables(&self.db).await?;
         Ok(())
     }
 
     /// Close the database connection
     pub async fn close(self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        self.db.close().await?;
+        self.db.close().await;
         Ok(())
     }
 }
@@ -47,50 +44,31 @@ pub struct DbAssertions;
 impl DbAssertions {
     /// Verify a row count in a table
     pub async fn assert_row_count(
-        db: &Connection,
+        db: &SqlitePool,
         table: &str,
         expected: u32,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        // We must clone the string to move it into the closure
-        let table_name = table.to_string();
-
-        let count: u32 = db
-            .call(move |conn| {
-                conn.query_row(&format!("SELECT COUNT(*) FROM {}", table_name), [], |row| {
-                    row.get(0)
-                })
-            })
+        let count: (i64,) = sqlx::query_as(&format!("SELECT COUNT(*) FROM {}", table))
+            .fetch_one(db)
             .await?;
 
         assert_eq!(
-            count, expected,
+            count.0 as u32, expected,
             "Table {} has {} rows, expected {}",
-            table, count, expected
+            table, count.0, expected
         );
         Ok(())
     }
 
     /// Verify a specific value exists in the database
     pub async fn assert_value_exists(
-        db: &Connection,
+        db: &SqlitePool,
         query: &str,
         value: &str,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let query_str = query.to_string();
+        let row: Option<(i64,)> = sqlx::query_as(query).fetch_optional(db).await?;
 
-        let exists = db
-            .call(move |conn| {
-                let result = conn.query_row(&query_str, [], |_| Ok(true));
-
-                match result {
-                    Ok(_) => Ok(true),
-                    Err(tokio_rusqlite::rusqlite::Error::QueryReturnedNoRows) => Ok(false),
-                    Err(e) => Err(e),
-                }
-            })
-            .await?;
-
-        assert!(exists, "Expected value not found: {}", value);
+        assert!(row.is_some(), "Expected value not found: {}", value);
         Ok(())
     }
 }

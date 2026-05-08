@@ -7,7 +7,6 @@ use http_body_util::combinators::BoxBody;
 use hyper::body::Incoming as IncomingBody;
 use hyper::{Request, Response, StatusCode};
 use serde::{Deserialize, Serialize};
-use tokio_rusqlite::rusqlite;
 use tracing::info;
 
 use crate::AppState;
@@ -30,54 +29,44 @@ pub async fn handle_server_config(
         cfg.paths.db_path.clone()
     };
 
-    let db_info = state
-        .db
-        .call(move |conn| {
-            let total_users: i64 = conn
-                .query_row("SELECT COUNT(*) FROM users", [], |r| r.get(0))
-                .unwrap_or(0);
-
-            // Only count non-expired sessions so the dashboard figure is
-            // meaningful — expired rows are cleaned up lazily by the periodic
-            // task but may linger between runs.
-            let active_sessions: i64 = conn
-                .query_row(
-                    "SELECT COUNT(*) FROM sessions WHERE expires_at > CAST(strftime('%s','now') AS INTEGER)",
-                    [],
-                    |r| r.get(0),
-                )
-                .unwrap_or(0);
-
-            let banned_users: i64 = conn
-                .query_row("SELECT COUNT(*) FROM users WHERE is_banned = 1", [], |r| {
-                    r.get(0)
-                })
-                .unwrap_or(0);
-
-            let total_messages: i64 = conn
-                .query_row("SELECT COUNT(*) FROM messages", [], |r| r.get(0))
-                .unwrap_or(0);
-
-            let total_groups: i64 = conn
-                .query_row("SELECT COUNT(*) FROM groups", [], |r| r.get(0))
-                .unwrap_or(0);
-
-            Ok::<_, rusqlite::Error>(DatabaseInfo {
-                path: db_path,
-                total_users,
-                active_sessions,
-                banned_users,
-                total_messages,
-                total_groups,
-            })
-        })
+    let total_users: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users")
+        .fetch_one(&state.db)
         .await
-        .context("Failed to query database stats")?;
+        .unwrap_or((0,));
+
+    let active_sessions: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM sessions WHERE expires_at > ?")
+            .bind(crate::database::utils::get_timestamp())
+            .fetch_one(&state.db)
+            .await
+            .unwrap_or((0,));
+
+    let banned_users: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users WHERE is_banned = 1")
+        .fetch_one(&state.db)
+        .await
+        .unwrap_or((0,));
+
+    let total_messages: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM messages")
+        .fetch_one(&state.db)
+        .await
+        .unwrap_or((0,));
+
+    let total_groups: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM chats")
+        .fetch_one(&state.db)
+        .await
+        .unwrap_or((0,));
+
+    let db_info = DatabaseInfo {
+        path: db_path,
+        total_users: total_users.0,
+        active_sessions: active_sessions.0,
+        banned_users: banned_users.0,
+        total_messages: total_messages.0,
+        total_groups: total_groups.0,
+    };
 
     // `state.started_at` is captured once at AppState::new() and never
     // changes, so this gives real elapsed time since the server started.
-    // Previously this was passed as `0`, which caused uptime to display
-    // the number of seconds since the Unix epoch (i.e. ~55 years).
     let stats = {
         let cfg = state.config.read().await;
         ServerStats::build(&cfg, db_info, state.started_at)
@@ -87,11 +76,6 @@ pub async fn handle_server_config(
 }
 
 /// GET /admin/api/metrics — live Tower middleware metrics snapshot.
-///
-/// Pure in-memory read — no database queries. Returns counters collected by
-/// `MetricsLayer` plus current rate-limiter bucket stats.
-///
-/// Hard-auth + is_admin guard applied by the router before this is called.
 pub async fn handle_metrics(
     _req: Request<IncomingBody>,
     state: AppState,
@@ -135,12 +119,6 @@ pub async fn handle_metrics(
 // ---------------------------------------------------------------------------
 
 /// Sent to the browser on GET /admin/api/config.
-///
-/// Mirrors `AppConfig` field-for-field with two intentional differences:
-///   - `jwt_secret` is always `null` — it is write-only and must never be
-///     echoed back in a response.
-///   - `blocked_paths` is a sorted `Vec` rather than a `HashSet` so the UI
-///     renders fields in a stable order.
 #[derive(Debug, Serialize)]
 struct ConfigView {
     server: ServerView,
@@ -161,7 +139,6 @@ struct AuthView {
     token_expiry_minutes: u64,
     email_required: bool,
     strict_ip_binding: bool,
-    /// Always `null` in responses — the secret is write-only.
     jwt_secret: Option<String>,
     cors_origins: Vec<String>,
 }
@@ -171,7 +148,6 @@ struct PathsView {
     icons: String,
     web_dir: String,
     uploads_dir: String,
-    /// Sorted for a stable rendering order in the UI.
     blocked_paths: Vec<String>,
 }
 
@@ -191,7 +167,7 @@ impl From<&AppConfig> for ConfigView {
                 token_expiry_minutes: cfg.auth.token_expiry_minutes,
                 email_required: cfg.auth.email_required,
                 strict_ip_binding: cfg.auth.strict_ip_binding,
-                jwt_secret: None, // redacted — never echoed
+                jwt_secret: None,
                 cors_origins: cfg.auth.cors_origins.clone(),
             },
             paths: PathsView {
@@ -208,8 +184,6 @@ impl From<&AppConfig> for ConfigView {
 // Patch body (PATCH request)
 // ---------------------------------------------------------------------------
 
-/// Partial update sent by the browser.  Every sub-object is optional so the
-/// client only needs to include sections that contain modified fields.
 #[derive(Debug, Deserialize)]
 struct ConfigPatch {
     server: Option<ServerPatch>,
@@ -230,8 +204,6 @@ struct AuthPatch {
     token_expiry_minutes: Option<u64>,
     email_required: Option<bool>,
     strict_ip_binding: Option<bool>,
-    /// Replaces the active JWT secret when supplied and non-empty.
-    /// Rejected with 422 if shorter than 32 characters.
     jwt_secret: Option<String>,
     cors_origins: Option<Vec<String>>,
 }
@@ -249,9 +221,6 @@ struct PathsPatch {
 // ---------------------------------------------------------------------------
 
 /// GET /admin/api/config — return the live config as `ConfigView` JSON.
-///
-/// `jwt_secret` is always redacted (null) in the response.
-/// Hard-auth + is_admin guard applied by the router before this is called.
 pub async fn handle_get_config(
     _req: Request<IncomingBody>,
     state: AppState,
@@ -266,12 +235,6 @@ pub async fn handle_get_config(
 }
 
 /// PATCH /admin/api/config — apply a partial config update.
-///
-/// Reads the JSON body, validates it, clones the live config, applies the
-/// patch field-by-field, then hot-reloads via `LiveConfig::reload`.
-///
-/// Returns 422 if `jwt_secret` is present but shorter than 32 characters.
-/// Hard-auth + is_admin guard applied by the router before this is called.
 pub async fn handle_patch_config(
     req: Request<IncomingBody>,
     state: AppState,
@@ -279,7 +242,6 @@ pub async fn handle_patch_config(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Patching admin config");
 
-    // ── Consume + parse body ─────────────────────────────────────────────────
     let body_bytes = req
         .into_body()
         .collect()
@@ -290,7 +252,6 @@ pub async fn handle_patch_config(
     let patch: ConfigPatch =
         serde_json::from_slice(&body_bytes).context("Invalid JSON in config patch body")?;
 
-    // ── Validate before touching the lock ────────────────────────────────────
     if let Some(auth) = &patch.auth
         && let Some(secret) = &auth.jwt_secret
         && !secret.is_empty()
@@ -303,8 +264,6 @@ pub async fn handle_patch_config(
         );
     }
 
-    // ── Clone → patch → hot-reload ───────────────────────────────────────────
-    // Read guard is dropped before reload to avoid a deadlock on the write lock.
     let new_config = {
         let current = state.config.read().await;
         apply_patch(current.clone(), patch)
@@ -315,8 +274,6 @@ pub async fn handle_patch_config(
     deliver_success_json(None::<()>, None, StatusCode::OK)
 }
 
-/// Pure function — clones the current config, applies every `Some` field from
-/// the patch, and returns the updated value.  Nothing is mutated in-place.
 fn apply_patch(mut cfg: AppConfig, patch: ConfigPatch) -> AppConfig {
     if let Some(sp) = patch.server {
         if let Some(v) = sp.bind {
@@ -346,9 +303,6 @@ fn apply_patch(mut cfg: AppConfig, patch: ConfigPatch) -> AppConfig {
         if let Some(v) = ap.cors_origins {
             cfg.auth.cors_origins = v;
         }
-        // Only replace the secret when the caller supplies a non-empty string.
-        // An empty string means "leave unchanged" — the UI never sends a value
-        // for the password field unless the admin explicitly types a new one.
         if let Some(v) = ap.jwt_secret
             && !v.is_empty()
         {

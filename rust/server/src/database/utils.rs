@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use tokio_rusqlite::{Connection, OptionalExtension, Result, params, rusqlite};
+use sqlx::sqlite::SqlitePool;
 
 use shared::types::user::*;
 use uuid::Uuid;
@@ -178,110 +178,118 @@ pub fn calculate_expiry(duration_secs: i64) -> i64 {
 }
 
 /// Get user by ID.
-pub async fn get_user_by_id(conn: &Connection, user_id: i64) -> Result<Option<User>> {
-    conn.call(move |conn: &mut rusqlite::Connection| {
-        let mut stmt = conn.prepare(
-            "SELECT id, username, email, created_at, is_banned, first_name, last_name FROM users WHERE id = ?1",
-        )?;
-        let user = stmt
-            .query_row(params![user_id], |row: &rusqlite::Row| {
-                Ok(User {
-                    id: row.get(0)?,
-                    username: row.get(1)?,
-                    email: row.get(2)?,
-                    created_at: row.get(3)?,
-                    is_banned: row.get::<_, i64>(4)? != 0,
-                    name: Some(NameSurname{first_name: row.get(5)?, last_name: row.get(6)?}),
-                })
-            })
-            .optional()?;
-        Ok(user)
-    })
-    .await
+pub async fn get_user_by_id(pool: &SqlitePool, user_id: i64) -> anyhow::Result<Option<User>> {
+    let row = sqlx::query_as::<_, (i64, String, Option<String>, i64, i64, Option<String>, Option<String>)>(
+        "SELECT id, username, email, created_at, is_banned, first_name, last_name FROM users WHERE id = ?"
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(|r| User {
+        id: r.0,
+        username: r.1,
+        email: r.2,
+        created_at: r.3,
+        is_banned: r.4 != 0,
+        name: Some(NameSurname {
+            first_name: r.5,
+            last_name: r.6,
+        }),
+    }))
 }
 
 /// Get user by username.
-pub async fn get_user_by_username(conn: &Connection, username: String) -> Result<Option<User>> {
-    conn.call(move |conn: &mut rusqlite::Connection| {
-        let mut stmt = conn.prepare(
-            "SELECT id, username, email, created_at, is_banned, first_name, last_name FROM users WHERE username = ?1",
-        )?;
-        let user = stmt
-            .query_row(params![username], |row: &rusqlite::Row| {
-                Ok(User {
-                    id: row.get(0)?,
-                    username: row.get(1)?,
-                    email: row.get(2)?,
-                    created_at: row.get(3)?,
-                    is_banned: row.get::<_, i64>(4)? != 0,
-                    name: Some(NameSurname{first_name: row.get(5)?, last_name: row.get(6)?}),
-                })
-            })
-            .optional()?;
-        Ok(user)
-    })
-    .await
+pub async fn get_user_by_username(
+    pool: &SqlitePool,
+    username: String,
+) -> anyhow::Result<Option<User>> {
+    let row = sqlx::query_as::<_, (i64, String, Option<String>, i64, i64, Option<String>, Option<String>)>(
+        "SELECT id, username, email, created_at, is_banned, first_name, last_name FROM users WHERE username = ?"
+    )
+    .bind(username)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(|r| User {
+        id: r.0,
+        username: r.1,
+        email: r.2,
+        created_at: r.3,
+        is_banned: r.4 != 0,
+        name: Some(NameSurname {
+            first_name: r.5,
+            last_name: r.6,
+        }),
+    }))
 }
 
-pub async fn get_user_avatar(conn: &Connection, user_id: i64) -> Result<Option<String>> {
-    conn.call(move |conn: &mut rusqlite::Connection| {
-        let mut stmt = conn.prepare("SELECT avatar_path FROM users WHERE id = ?1")?;
-        let path = stmt
-            .query_row(params![user_id], |row: &rusqlite::Row| row.get(0))
-            .optional()?;
-        Ok(path)
-    })
-    .await
+pub async fn get_user_avatar(pool: &SqlitePool, user_id: i64) -> anyhow::Result<Option<String>> {
+    let row: Option<(Option<String>,)> =
+        sqlx::query_as("SELECT avatar_path FROM users WHERE id = ?")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?;
+    Ok(row.and_then(|r| r.0))
 }
 
 /// Search users whose username starts with `prefix` (case-insensitive).
-/// Returns at most `limit` results.
 pub async fn search_users_by_username(
-    conn: &Connection,
+    pool: &SqlitePool,
     prefix: &str,
     limit: i64,
-) -> Result<Vec<User>> {
+) -> anyhow::Result<Vec<User>> {
     let pattern = format!("{}%", prefix.to_lowercase());
-    conn.call(move |conn: &mut rusqlite::Connection| {
-        let mut stmt = conn.prepare(
-            "SELECT id, username, email, created_at, is_banned, first_name, last_name
-             FROM users
-             WHERE lower(username) LIKE ?1
-             ORDER BY username ASC
-             LIMIT ?2",
-        )?;
-        let users = stmt
-            .query_map(params![pattern, limit], |row: &rusqlite::Row| {
-                Ok(User {
-                    id: row.get(0)?,
-                    username: row.get(1)?,
-                    email: row.get(2)?,
-                    created_at: row.get(3)?,
-                    is_banned: row.get::<_, i64>(4)? != 0,
-                    name: Some(NameSurname {
-                        first_name: row.get(5)?,
-                        last_name: row.get(6)?,
-                    }),
-                })
-            })?
-            .collect::<std::result::Result<Vec<User>, rusqlite::Error>>()?;
-        Ok(users)
-    })
-    .await
+    let rows = sqlx::query_as::<
+        _,
+        (
+            i64,
+            String,
+            Option<String>,
+            i64,
+            i64,
+            Option<String>,
+            Option<String>,
+        ),
+    >(
+        "SELECT id, username, email, created_at, is_banned, first_name, last_name
+         FROM users
+         WHERE lower(username) LIKE ?
+         ORDER BY username ASC
+         LIMIT ?",
+    )
+    .bind(pattern)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|r| User {
+            id: r.0,
+            username: r.1,
+            email: r.2,
+            created_at: r.3,
+            is_banned: r.4 != 0,
+            name: Some(NameSurname {
+                first_name: r.5,
+                last_name: r.6,
+            }),
+        })
+        .collect())
 }
 
 /// Update `first_name` and `last_name` for a user.
-pub async fn update_user_names(conn: &Connection, user_id: i64, name: NameSurname) -> Result<()> {
-    conn.call(move |conn: &mut rusqlite::Connection| {
-        conn.execute(
-            "UPDATE users SET first_name = ?1, last_name = ?2 WHERE id = ?3",
-            params![
-                name.first_name.unwrap_or_default(),
-                name.last_name.unwrap_or_default(),
-                user_id
-            ],
-        )?;
-        Ok(())
-    })
-    .await
+pub async fn update_user_names(
+    pool: &SqlitePool,
+    user_id: i64,
+    name: NameSurname,
+) -> anyhow::Result<()> {
+    sqlx::query("UPDATE users SET first_name = ?, last_name = ? WHERE id = ?")
+        .bind(name.first_name)
+        .bind(name.last_name)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
 }

@@ -1,334 +1,311 @@
 // -----------------------------------------------------------------------
-// database/groups.rs — delete_group cascade fix
-// -----------------------------------------------------------------------
-// Previously delete_group deleted group_members and groups rows but left
-// behind all messages and files belonging to that chat. SQLite does not
-// enforce FK cascades unless PRAGMA foreign_keys = ON is set at connection
-// open time.  Until that PRAGMA is added, the deletes must be explicit.
-//
-// The fixed delete_group function removes in the correct dependency order:
-//   1. files (references messages + groups)
-//   2. messages (references groups)
-//   3. group_members (references groups)
-//   4. groups
-// All inside a single transaction so the group is never half-deleted.
+// database/groups.rs — Refactored to sqlx and chats/chat_members schema
 // -----------------------------------------------------------------------
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use tokio_rusqlite::{Connection, OptionalExtension, Result, params, rusqlite};
+use sqlx::sqlite::SqlitePool;
 
 use shared::types::groups::*;
 
-pub async fn create_group(conn: &Connection, new_group: NewGroup) -> Result<i64> {
+// Note: Using FromRow on types from shared might require those types to derive it.
+// If shared types don't derive FromRow, we'll map manually in the functions.
+// Assuming for now they don't, so we map manually or use local wrappers.
+
+pub async fn create_group(pool: &SqlitePool, new_group: NewGroup) -> anyhow::Result<i64> {
     let created_at = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
 
-    let chat_id = conn
-        .call(move |conn: &mut rusqlite::Connection| {
-            conn.execute(
-                "INSERT INTO groups (name, created_by, created_at, description, chat_type)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![
-                    new_group.name,
-                    new_group.created_by,
-                    created_at,
-                    new_group.description,
-                    new_group.chat_type,
-                ],
-            )?;
-            Ok(conn.last_insert_rowid())
-        })
-        .await?;
+    let mut tx = pool.begin().await?;
 
-    add_group_member(conn, chat_id, new_group.created_by, "admin".to_string()).await?;
+    let res = sqlx::query(
+        "INSERT INTO chats (name, created_by, created_at, description, chat_type)
+         VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind(&new_group.name)
+    .bind(new_group.created_by)
+    .bind(created_at)
+    .bind(&new_group.description)
+    .bind(&new_group.chat_type)
+    .execute(&mut *tx)
+    .await?;
+
+    let chat_id = res.last_insert_rowid();
+
+    let joined_at = created_at;
+    sqlx::query(
+        "INSERT INTO chat_members (chat_id, user_id, joined_at, role)
+         VALUES (?, ?, ?, ?)",
+    )
+    .bind(chat_id)
+    .bind(new_group.created_by)
+    .bind(joined_at)
+    .bind("admin")
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
     Ok(chat_id)
 }
 
 pub async fn add_group_member(
-    conn: &Connection,
+    pool: &SqlitePool,
     chat_id: i64,
     user_id: i64,
     role: String,
-) -> Result<i64> {
+) -> anyhow::Result<i64> {
     let joined_at = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64;
 
-    conn.call(move |conn: &mut rusqlite::Connection| {
-        conn.execute(
-            "INSERT INTO group_members (chat_id, user_id, joined_at, role)
-             VALUES (?1, ?2, ?3, ?4)",
-            params![chat_id, user_id, joined_at, role],
-        )?;
-        Ok(conn.last_insert_rowid())
-    })
-    .await
+    let res = sqlx::query(
+        "INSERT INTO chat_members (chat_id, user_id, joined_at, role)
+         VALUES (?, ?, ?, ?)",
+    )
+    .bind(chat_id)
+    .bind(user_id)
+    .bind(joined_at)
+    .bind(role)
+    .execute(pool)
+    .await?;
+
+    Ok(res.last_insert_rowid())
 }
 
-pub async fn remove_group_member(conn: &Connection, chat_id: i64, user_id: i64) -> Result<bool> {
-    conn.call(move |conn: &mut rusqlite::Connection| {
-        let count = conn.execute(
-            "DELETE FROM group_members WHERE chat_id = ?1 AND user_id = ?2",
-            params![chat_id, user_id],
-        )?;
-        Ok(count > 0)
-    })
-    .await
+pub async fn remove_group_member(
+    pool: &SqlitePool,
+    chat_id: i64,
+    user_id: i64,
+) -> anyhow::Result<bool> {
+    let res = sqlx::query("DELETE FROM chat_members WHERE chat_id = ? AND user_id = ?")
+        .bind(chat_id)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(res.rows_affected() > 0)
 }
 
-pub async fn get_group_members(conn: &Connection, chat_id: i64) -> Result<Vec<GroupMember>> {
-    conn.call(move |conn: &mut rusqlite::Connection| {
-        let mut stmt = conn.prepare(
-            "SELECT id, chat_id, user_id, joined_at, role
-             FROM group_members
-             WHERE chat_id = ?1",
-        )?;
+pub async fn get_group_members(
+    pool: &SqlitePool,
+    chat_id: i64,
+) -> anyhow::Result<Vec<GroupMember>> {
+    let rows = sqlx::query_as::<_, (i64, i64, i64, i64, String)>(
+        "SELECT id, chat_id, user_id, joined_at, role
+         FROM chat_members
+         WHERE chat_id = ?",
+    )
+    .bind(chat_id)
+    .fetch_all(pool)
+    .await?;
 
-        let members = stmt
-            .query_map(params![chat_id], |row: &rusqlite::Row| {
-                Ok(GroupMember {
-                    id: row.get(0)?,
-                    chat_id: row.get(1)?,
-                    user_id: row.get(2)?,
-                    joined_at: row.get(3)?,
-                    role: row.get(4)?,
-                })
-            })?
-            .collect::<std::result::Result<Vec<GroupMember>, rusqlite::Error>>()?;
-
-        Ok(members)
-    })
-    .await
+    Ok(rows
+        .into_iter()
+        .map(|r| GroupMember {
+            id: r.0,
+            chat_id: r.1,
+            user_id: r.2,
+            joined_at: r.3,
+            role: r.4,
+        })
+        .collect())
 }
 
-pub async fn get_user_groups(conn: &Connection, user_id: i64) -> Result<Vec<Group>> {
-    conn.call(move |conn: &mut rusqlite::Connection| {
-        let mut stmt = conn.prepare(
-            "SELECT g.id, g.name, g.created_by, g.created_at, g.description, g.chat_type
-             FROM groups g
-             INNER JOIN group_members gm ON g.id = gm.chat_id
-             WHERE gm.user_id = ?1
-             ORDER BY g.created_at DESC",
-        )?;
+pub async fn get_user_groups(pool: &SqlitePool, user_id: i64) -> anyhow::Result<Vec<Group>> {
+    let rows = sqlx::query_as::<_, (i64, String, i64, i64, Option<String>, String)>(
+        "SELECT g.id, g.name, g.created_by, g.created_at, g.description, g.chat_type
+         FROM chats g
+         INNER JOIN chat_members gm ON g.id = gm.chat_id
+         WHERE gm.user_id = ?
+         ORDER BY g.created_at DESC",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
 
-        let groups = stmt
-            .query_map(params![user_id], |row: &rusqlite::Row| {
-                Ok(Group {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    created_by: row.get(2)?,
-                    created_at: row.get(3)?,
-                    description: row.get(4)?,
-                    chat_type: row.get(5)?,
-                })
-            })?
-            .collect::<std::result::Result<Vec<Group>, rusqlite::Error>>()?;
-
-        Ok(groups)
-    })
-    .await
+    Ok(rows
+        .into_iter()
+        .map(|r| Group {
+            id: r.0,
+            name: r.1,
+            created_by: r.2,
+            created_at: r.3,
+            description: r.4,
+            chat_type: r.5,
+        })
+        .collect())
 }
 
-pub async fn get_group(conn: &Connection, chat_id: i64) -> Result<Option<Group>> {
-    conn.call(move |conn: &mut rusqlite::Connection| {
-        let mut stmt = conn.prepare(
-            "SELECT id, name, created_by, created_at, description, chat_type
-             FROM groups
-             WHERE id = ?1",
-        )?;
+pub async fn get_group(pool: &SqlitePool, chat_id: i64) -> anyhow::Result<Option<Group>> {
+    let row = sqlx::query_as::<_, (i64, String, i64, i64, Option<String>, String)>(
+        "SELECT id, name, created_by, created_at, description, chat_type
+         FROM chats
+         WHERE id = ?",
+    )
+    .bind(chat_id)
+    .fetch_optional(pool)
+    .await?;
 
-        let group = stmt
-            .query_row(params![chat_id], |row: &rusqlite::Row| {
-                Ok(Group {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    created_by: row.get(2)?,
-                    created_at: row.get(3)?,
-                    description: row.get(4)?,
-                    chat_type: row.get(5)?,
-                })
-            })
-            .optional()?;
-
-        Ok(group)
-    })
-    .await
+    Ok(row.map(|r| Group {
+        id: r.0,
+        name: r.1,
+        created_by: r.2,
+        created_at: r.3,
+        description: r.4,
+        chat_type: r.5,
+    }))
 }
 
-pub async fn is_group_member(conn: &Connection, chat_id: i64, user_id: i64) -> Result<bool> {
-    conn.call(move |conn: &mut rusqlite::Connection| {
-        let mut stmt =
-            conn.prepare("SELECT COUNT(*) FROM group_members WHERE chat_id = ?1 AND user_id = ?2")?;
-        let count: i64 = stmt.query_row(params![chat_id, user_id], |row| row.get(0))?;
-        Ok(count > 0)
-    })
-    .await
+pub async fn is_group_member(
+    pool: &SqlitePool,
+    chat_id: i64,
+    user_id: i64,
+) -> anyhow::Result<bool> {
+    let row: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM chat_members WHERE chat_id = ? AND user_id = ?")
+            .bind(chat_id)
+            .bind(user_id)
+            .fetch_one(pool)
+            .await?;
+    Ok(row.0 > 0)
 }
 
-pub async fn is_group_admin(conn: &Connection, chat_id: i64, user_id: i64) -> Result<bool> {
-    conn.call(move |conn: &mut rusqlite::Connection| {
-        let mut stmt = conn.prepare(
-            "SELECT COUNT(*) FROM group_members
-             WHERE chat_id = ?1 AND user_id = ?2 AND role = 'admin'",
-        )?;
-        let count: i64 = stmt.query_row(params![chat_id, user_id], |row| row.get(0))?;
-        Ok(count > 0)
-    })
-    .await
+pub async fn is_group_admin(pool: &SqlitePool, chat_id: i64, user_id: i64) -> anyhow::Result<bool> {
+    let row: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM chat_members
+         WHERE chat_id = ? AND user_id = ? AND role = 'admin'",
+    )
+    .bind(chat_id)
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.0 > 0)
 }
 
 pub async fn find_existing_dm(
-    conn: &Connection,
+    pool: &SqlitePool,
     user1_id: i64,
     user2_id: i64,
-) -> Result<Option<i64>> {
-    conn.call(move |conn: &mut rusqlite::Connection| {
-        // Find a 'direct' chat where:
-        // 1. Both user1 and user2 are members.
-        // 2. The total member count is exactly 2.
-        // This ensures we find the unique DM between these two users.
-        let mut stmt = conn.prepare(
-            "SELECT g.id
-             FROM groups g
-             JOIN group_members gm1 ON g.id = gm1.chat_id AND gm1.user_id = ?1
-             JOIN group_members gm2 ON g.id = gm2.chat_id AND gm2.user_id = ?2
-             WHERE g.chat_type = 'direct'
-             AND (SELECT COUNT(*) FROM group_members WHERE chat_id = g.id) = 2
-             LIMIT 1",
-        )?;
+) -> anyhow::Result<Option<i64>> {
+    let row: Option<(i64,)> = sqlx::query_as(
+        "SELECT g.id
+         FROM chats g
+         JOIN chat_members gm1 ON g.id = gm1.chat_id AND gm1.user_id = ?
+         JOIN chat_members gm2 ON g.id = gm2.chat_id AND gm2.user_id = ?
+         WHERE g.chat_type = 'direct'
+         AND (SELECT COUNT(*) FROM chat_members WHERE chat_id = g.id) = 2
+         LIMIT 1",
+    )
+    .bind(user1_id)
+    .bind(user2_id)
+    .fetch_optional(pool)
+    .await?;
 
-        let chat_id = stmt
-            .query_row(params![user1_id, user2_id], |row: &rusqlite::Row| {
-                row.get(0)
-            })
-            .optional()?;
-
-        Ok(chat_id)
-    })
-    .await
+    Ok(row.map(|r| r.0))
 }
 
-pub async fn update_group_name(conn: &Connection, chat_id: i64, new_name: String) -> Result<()> {
-    conn.call(move |conn: &mut rusqlite::Connection| {
-        conn.execute(
-            "UPDATE groups SET name = ?1 WHERE id = ?2",
-            params![new_name, chat_id],
-        )?;
-        Ok(())
-    })
-    .await
+pub async fn update_group_name(
+    pool: &SqlitePool,
+    chat_id: i64,
+    new_name: String,
+) -> anyhow::Result<()> {
+    sqlx::query("UPDATE chats SET name = ? WHERE id = ?")
+        .bind(new_name)
+        .bind(chat_id)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 pub async fn update_group_description(
-    conn: &Connection,
+    pool: &SqlitePool,
     chat_id: i64,
     new_description: String,
-) -> Result<()> {
-    conn.call(move |conn: &mut rusqlite::Connection| {
-        conn.execute(
-            "UPDATE groups SET description = ?1 WHERE id = ?2",
-            params![new_description, chat_id],
-        )?;
-        Ok(())
-    })
-    .await
+) -> anyhow::Result<()> {
+    sqlx::query("UPDATE chats SET description = ? WHERE id = ?")
+        .bind(new_description)
+        .bind(chat_id)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 /// Delete a group and all data that belongs to it.
-///
-/// Deletes in dependency order inside a single transaction:
-///   1. `files`         — references `messages` and `groups`
-///   2. `messages`      — references `groups`
-///   3. `group_members` — references `groups`
-///   4. `groups`        — the root row
-///
-/// Previously only `group_members` and `groups` were deleted, leaving
-/// orphaned `messages` and `files` rows that accumulated indefinitely.
-/// SQLite does not enforce FK cascades by default
-/// (`PRAGMA foreign_keys` defaults to OFF), so the deletes must be explicit
-/// until that PRAGMA is enabled at connection-open time.
-pub async fn delete_group(conn: &Connection, chat_id: i64) -> Result<()> {
-    conn.call(move |conn: &mut rusqlite::Connection| {
-        let tx = conn.transaction()?;
+pub async fn delete_group(pool: &SqlitePool, chat_id: i64) -> anyhow::Result<()> {
+    let mut tx = pool.begin().await?;
 
-        // 1. Files that belong to this chat (must go before messages because
-        //    the files table has a nullable FK to messages).
-        tx.execute("DELETE FROM files WHERE chat_id = ?1", params![chat_id])?;
+    // 1. Files that belong to this chat
+    sqlx::query("DELETE FROM files WHERE chat_id = ?")
+        .bind(chat_id)
+        .execute(&mut *tx)
+        .await?;
 
-        // 2. Messages in this chat.
-        tx.execute("DELETE FROM messages WHERE chat_id = ?1", params![chat_id])?;
+    // 2. Messages in this chat.
+    sqlx::query("DELETE FROM messages WHERE chat_id = ?")
+        .bind(chat_id)
+        .execute(&mut *tx)
+        .await?;
 
-        // 3. Group membership rows.
-        tx.execute(
-            "DELETE FROM group_members WHERE chat_id = ?1",
-            params![chat_id],
-        )?;
+    // 3. Group membership rows.
+    sqlx::query("DELETE FROM chat_members WHERE chat_id = ?")
+        .bind(chat_id)
+        .execute(&mut *tx)
+        .await?;
 
-        // 4. The group itself.
-        tx.execute("DELETE FROM groups WHERE id = ?1", params![chat_id])?;
+    // 4. The group itself.
+    sqlx::query("DELETE FROM chats WHERE id = ?")
+        .bind(chat_id)
+        .execute(&mut *tx)
+        .await?;
 
-        tx.commit()?;
-        Ok(())
-    })
-    .await
+    tx.commit().await?;
+    Ok(())
 }
 
 pub async fn update_member_role(
-    conn: &Connection,
+    pool: &SqlitePool,
     chat_id: i64,
     user_id: i64,
     new_role: String,
-) -> Result<()> {
-    conn.call(move |conn: &mut rusqlite::Connection| {
-        conn.execute(
-            "UPDATE group_members SET role = ?1 WHERE chat_id = ?2 AND user_id = ?3",
-            params![new_role, chat_id, user_id],
-        )?;
-        Ok(())
-    })
-    .await
+) -> anyhow::Result<()> {
+    sqlx::query("UPDATE chat_members SET role = ? WHERE chat_id = ? AND user_id = ?")
+        .bind(new_role)
+        .bind(chat_id)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 /// Return all groups/chats a user belongs to, ordered by most-recent message activity.
-///
-/// Previously `get_user_groups` ordered by `g.created_at DESC`, which meant
-/// a chat created a year ago but messaged today would appear at the bottom of
-/// the list.  This function replaces it for the chat-list endpoint, using
-/// `COALESCE(MAX(m.sent_at), g.created_at)` as the sort key so chats bubble
-/// up when they receive new messages — matching every standard messenger UX.
-///
-/// Chats with no messages are sorted by their creation time and appear after
-/// active chats (because `COALESCE` falls back to `created_at`).
-pub async fn get_user_groups_by_activity(conn: &Connection, user_id: i64) -> Result<Vec<Group>> {
-    conn.call(move |conn: &mut rusqlite::Connection| {
-        let mut stmt = conn.prepare(
-            "SELECT g.id, g.name, g.created_by, g.created_at, g.description, g.chat_type
-             FROM   groups g
-             INNER JOIN group_members gm ON g.id = gm.chat_id
-             LEFT  JOIN messages m       ON m.chat_id = g.id
-             WHERE  gm.user_id = ?1
-             GROUP  BY g.id
-             ORDER  BY COALESCE(MAX(m.sent_at), g.created_at) DESC",
-        )?;
+pub async fn get_user_groups_by_activity(
+    pool: &SqlitePool,
+    user_id: i64,
+) -> anyhow::Result<Vec<Group>> {
+    let rows = sqlx::query_as::<_, (i64, String, i64, i64, Option<String>, String)>(
+        "SELECT g.id, g.name, g.created_by, g.created_at, g.description, g.chat_type
+         FROM   chats g
+         INNER JOIN chat_members gm ON g.id = gm.chat_id
+         LEFT  JOIN messages m       ON m.chat_id = g.id
+         WHERE  gm.user_id = ?
+         GROUP  BY g.id
+         ORDER  BY COALESCE(MAX(m.sent_at), g.created_at) DESC",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
 
-        let groups = stmt
-            .query_map(params![user_id], |row: &rusqlite::Row| {
-                Ok(Group {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    created_by: row.get(2)?,
-                    created_at: row.get(3)?,
-                    description: row.get(4)?,
-                    chat_type: row.get(5)?,
-                })
-            })?
-            .collect::<std::result::Result<Vec<Group>, rusqlite::Error>>()?;
-
-        Ok(groups)
-    })
-    .await
+    Ok(rows
+        .into_iter()
+        .map(|r| Group {
+            id: r.0,
+            name: r.1,
+            created_by: r.2,
+            created_at: r.3,
+            description: r.4,
+            chat_type: r.5,
+        })
+        .collect())
 }

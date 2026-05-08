@@ -64,7 +64,12 @@ hyper-util = { version = "0.1", default-features = false, features = [
   "service",
 ] }
 
-tokio-rusqlite = "0.7.0"
+sqlx = { version = "0.8", features = [
+  "runtime-tokio",
+  "sqlite",
+  "macros",
+  "chrono",
+] }
 
 # Used for tests
 tempfile = "3.26.0"
