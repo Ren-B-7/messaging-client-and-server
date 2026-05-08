@@ -78,8 +78,16 @@ lint-python:
 lint-frontend:
 	@echo "Linting frontend..."
 	cd $(FRONTEND_DIR) && [ -d node_modules ] || npm install
-	cd $(FRONTEND_DIR) && npm run lint:css
-	cd $(FRONTEND_DIR) && npm run lint:html
+	# Lint CSS files (excluding minified/node_modules)
+	cd $(FRONTEND_DIR) && find . -type f -name "*.css" \
+		-not -path "*/min/*" \
+		-not -path "*/node_modules/*" \
+		| xargs ./node_modules/.bin/stylelint
+	# Lint HTML files (excluding minified/node_modules)
+	cd $(FRONTEND_DIR) && find . -type f -name "*.html" \
+		-not -path "*/min/*" \
+		-not -path "*/node_modules/*" \
+		| xargs ./node_modules/.bin/htmlhint
 
 lint-makefile:
 	@echo "Linting Makefile..."
