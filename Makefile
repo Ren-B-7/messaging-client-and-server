@@ -87,7 +87,7 @@ lint-makefile:
 
 lint-typos:
 	@echo "Checking for typos..."
-	typos -j4 rust/ python-gui/ frontend/static/ frontend/non-static/ .github/
+	typos -j4 --exclude node_modules --exclude target rust/ python-gui/ frontend/static/ frontend/non-static/ .github/
 
 # =========================
 # BUILD
@@ -111,9 +111,23 @@ build-python:
 build-frontend:
 	@echo "Building frontend..."
 	cd $(FRONTEND_DIR) && [ -d node_modules ] || npm install
-	cd $(FRONTEND_DIR) && npm run minify:js:static
-	cd $(FRONTEND_DIR) && npm run minify:js:non
-	cd $(FRONTEND_DIR) && npm run minify:css
+	# Build JS minification
+	cd $(FRONTEND_DIR) && for file in $$(find static/js/full -name '*.js'); do \
+		out=$$(echo $$file | sed 's|static/js/full/|static/js/min/|'); \
+		mkdir -p $$(dirname $$out); \
+		./node_modules/.bin/terser $$file -o $$out --compress; \
+	done
+	cd $(FRONTEND_DIR) && for file in $$(find non-static/full -name '*.js'); do \
+		out=$$(echo $$file | sed 's|non-static/full/|non-static/min/|'); \
+		mkdir -p $$(dirname $$out); \
+		./node_modules/.bin/terser $$file -o $$out --compress; \
+	done
+	# Build CSS minification
+	cd $(FRONTEND_DIR) && for file in $$(find static/css/full -name '*.css'); do \
+		out=$$(echo $$file | sed 's|static/css/full/|static/css/min/|'); \
+		mkdir -p $$(dirname $$out); \
+		./node_modules/.bin/csso $$file -o $$out; \
+	done
 
 # =========================
 # RUN TARGETS
