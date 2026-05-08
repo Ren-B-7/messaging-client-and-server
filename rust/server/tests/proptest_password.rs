@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod proptest_utils {
-    use server::database::utils;
     use proptest::prelude::*;
+    use server::database::utils;
 
     proptest! {
         #[test]
