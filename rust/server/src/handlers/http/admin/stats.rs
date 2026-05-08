@@ -25,9 +25,14 @@ pub async fn handle_server_config(
 ) -> Result<Response<BoxBody<Bytes, Infallible>>> {
     info!("Serving admin stats");
 
+    let db_path = {
+        let cfg = state.config.read().await;
+        cfg.paths.db_path.clone()
+    };
+
     let db_info = state
         .db
-        .call(|conn| {
+        .call(move |conn| {
             let total_users: i64 = conn
                 .query_row("SELECT COUNT(*) FROM users", [], |r| r.get(0))
                 .unwrap_or(0);
@@ -58,7 +63,7 @@ pub async fn handle_server_config(
                 .unwrap_or(0);
 
             Ok::<_, rusqlite::Error>(DatabaseInfo {
-                path: "messaging.db".to_string(),
+                path: db_path,
                 total_users,
                 active_sessions,
                 banned_users,

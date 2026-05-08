@@ -42,6 +42,12 @@ pub struct PathsConfig {
     #[serde(default)]
     pub blocked_paths: HashSet<String>,
     pub uploads_dir: String,
+    #[serde(default = "default_db_path")]
+    pub db_path: String,
+}
+
+pub fn default_db_path() -> String {
+    "messaging.db".to_string()
 }
 
 #[derive(Debug, Deserialize, Clone)]

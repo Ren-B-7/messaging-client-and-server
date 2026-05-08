@@ -41,8 +41,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let args = Args::parse();
     let config_path = args.config;
 
-    let db = create::open_database("messaging.db").await?;
     let app_config = config::load_config(&config_path).context("Failed to load configuration")?;
+
+    let db = create::open_database(&app_config.paths.db_path).await?;
 
     let jwt_secret = app_config.auth.resolved_jwt_secret().unwrap();
 
