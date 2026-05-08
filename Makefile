@@ -48,11 +48,8 @@ format-python:
 
 format-frontend:
 	@echo "Formatting frontend..."
-	cd $(FRONTEND_DIR) && prettier --write "static/css/full/**/*.css"
-	cd $(FRONTEND_DIR) && prettier --write "**/*.html"
-	cd $(FRONTEND_DIR) && prettier --write "static/js/full/**/*.js"
-	cd $(FRONTEND_DIR) && prettier --write "non-static/full/**/*.js"
-	cd $(FRONTEND_DIR) && prettier --write "**/*.json"
+	cd $(FRONTEND_DIR) && [ -d node_modules ] || npm install
+	cd $(FRONTEND_DIR) && npm run format
 
 format-makefile:
 	@echo "Formatting Makefile..."
@@ -80,8 +77,9 @@ lint-python:
 
 lint-frontend:
 	@echo "Linting frontend..."
-	cd $(FRONTEND_DIR) && stylelint --config ../.stylelintrc.yml "**/*.css"
-	cd $(FRONTEND_DIR) && htmlhint --config ../.htmlhintrc"**/*.html"
+	cd $(FRONTEND_DIR) && [ -d node_modules ] || npm install
+	cd $(FRONTEND_DIR) && npm run lint:css
+	cd $(FRONTEND_DIR) && npm run lint:html
 
 lint-makefile:
 	@echo "Linting Makefile..."
@@ -111,7 +109,11 @@ build-python:
 	cd $(PY_DIR) && uv sync
 
 build-frontend:
-	@echo "Frontend has no build step (static)"
+	@echo "Building frontend..."
+	cd $(FRONTEND_DIR) && [ -d node_modules ] || npm install
+	cd $(FRONTEND_DIR) && npm run minify:js:static
+	cd $(FRONTEND_DIR) && npm run minify:js:non
+	cd $(FRONTEND_DIR) && npm run minify:css
 
 # =========================
 # RUN TARGETS
