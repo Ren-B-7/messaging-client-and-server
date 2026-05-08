@@ -76,8 +76,11 @@ fn test_username_validation() {
 
 #[test]
 fn test_password_strength() {
-    assert!(utils::is_strong_password("password123"));
-    assert!(!utils::is_strong_password("short1"));
-    assert!(!utils::is_strong_password("nodigits"));
-    assert!(!utils::is_strong_password("12345678"));
+    // New policy: min 12 chars, upper, lower, digit, special
+    assert!(utils::is_strong_password("SecurePass123!"));
+    assert!(!utils::is_strong_password("short1")); // Too short
+    assert!(!utils::is_strong_password("password123!")); // No uppercase
+    assert!(!utils::is_strong_password("PASSWORD123!")); // No lowercase
+    assert!(!utils::is_strong_password("SecurePass!!!")); // No digit
+    assert!(!utils::is_strong_password("SecurePass123")); // No special
 }
